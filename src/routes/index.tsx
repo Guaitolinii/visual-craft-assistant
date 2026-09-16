@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({
 
 type Channel = { id: number; name: string; category: string; initials: string; color: string; status: string; live?: boolean; progress?: number };
 
-const channels: Channel[] = [
+const channels: [Channel, ...Channel[]] = [
   { id: 1, name: "TV Brasil", category: "TV aberta", initials: "TV", color: "logo-olive", status: "Brasil em pauta", live: true },
   { id: 2, name: "Arena Sports", category: "Esportes", initials: "AS", color: "logo-red", status: "Futebol ao vivo", live: true },
   { id: 3, name: "Notícia 24", category: "Notícias", initials: "N24", color: "logo-blue", status: "Jornal da noite", live: true },
@@ -41,7 +41,7 @@ function Index() {
   const [active, setActive] = useState("Início");
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<number[]>([2, 4]);
-  const [selected, setSelected] = useState(channels[0]);
+  const [selected, setSelected] = useState<Channel>(channels[0]);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [fit, setFit] = useState<"Original" | "Preencher" | "Esticar">("Original");
