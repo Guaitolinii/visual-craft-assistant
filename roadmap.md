@@ -4,4 +4,4 @@
 - [x] Implementar favoritos, busca, filtros e seleção de canal.
 - [x] Implementar os controles do player e os modos de enquadramento.
 - [x] Aplicar o sistema visual bronze das referências.
-- [ ] Validar a experiência em desktop e celular.
+- [x] Validar a experiência em desktop e celular.
