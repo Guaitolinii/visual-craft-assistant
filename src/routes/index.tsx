@@ -71,7 +71,7 @@ function Index() {
           {nav.map(([label, Icon]) => <button key={label} className={`nav-item ${active === label ? "nav-active" : ""}`} onClick={() => { setActive(label); setMenuOpen(false); }}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{label === "Favoritos" && <span className="nav-count">{favorites.length}</span>}</button>)}
         </nav>
         <div className="border-t border-border p-4">
-          <button className="nav-item"><Settings size={19} /><span>Configurações</span></button>
+          <Link to="/configuracoes" className="nav-item"><Settings size={19} /><span>Configurações</span></Link>
           <div className="mt-3 flex items-center gap-3 rounded-md bg-secondary p-3"><div className="avatar">GA</div><div className="min-w-0"><p className="truncate text-sm font-medium">Guaitolini</p><p className="text-xs text-muted-foreground">Plano pessoal</p></div><ChevronDown className="ml-auto" size={16} /></div>
         </div>
       </aside>
