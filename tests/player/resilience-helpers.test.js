@@ -83,3 +83,26 @@ test("MPEGTS_RESILIENCE_CONFIG: balances latency-chasing against stall-proofing"
     "liveBufferLatencyMinRemain",
   ]);
 });
+
+test("computeReconnectBackoffMs: grows exponentially with attempt number", () => {
+  const ctx = loadResilienceHelpers();
+  const fixedRandom = () => 0; // pin jitter to the low end (50% of the exponential value)
+  assert.equal(ctx.computeReconnectBackoffMs(0, { baseMs: 1000, randomFn: fixedRandom }), 500);
+  assert.equal(ctx.computeReconnectBackoffMs(1, { baseMs: 1000, randomFn: fixedRandom }), 1000);
+  assert.equal(ctx.computeReconnectBackoffMs(2, { baseMs: 1000, randomFn: fixedRandom }), 2000);
+});
+
+test("computeReconnectBackoffMs: caps at maxMs regardless of attempt", () => {
+  const ctx = loadResilienceHelpers();
+  const fixedRandom = () => 1; // pin jitter to the high end (100% of the exponential value)
+  assert.equal(
+    ctx.computeReconnectBackoffMs(10, { baseMs: 1000, maxMs: 15000, randomFn: fixedRandom }),
+    15000
+  );
+});
+
+test("computeReconnectBackoffMs: uses sane defaults when opts is omitted", () => {
+  const ctx = loadResilienceHelpers();
+  const value = ctx.computeReconnectBackoffMs(0);
+  assert.ok(value >= 500 && value <= 1000, `expected 500-1000, got ${value}`);
+});

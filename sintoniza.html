@@ -1028,6 +1028,20 @@ var MPEGTS_RESILIENCE_CONFIG = {
   autoCleanupMaxBackwardDuration: 60,
   autoCleanupMinBackwardDuration: 30,
 };
+
+// Exponential backoff with jitter for HLS NETWORK_ERROR retries. Without
+// this, hls.js's NETWORK_ERROR handler called startLoad() immediately on
+// every fatal network error - if the origin is truly down, that hammers it
+// with requests instead of backing off.
+function computeReconnectBackoffMs(attempt, opts) {
+  var options = opts || {};
+  var baseMs = options.baseMs || 1000;
+  var maxMs = options.maxMs || 15000;
+  var randomFn = options.randomFn || Math.random;
+  var exp = Math.min(maxMs, baseMs * Math.pow(2, attempt));
+  var jitter = 0.5 + randomFn() * 0.5; // 50%-100% of the exponential value
+  return Math.round(exp * jitter);
+}
 </script>
 
 <script>
