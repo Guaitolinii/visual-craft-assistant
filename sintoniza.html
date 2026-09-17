@@ -1071,6 +1071,14 @@ function createMediaErrorEscalation(opts) {
     },
   };
 }
+
+// While the tab is hidden, background-tab timer throttling can make the
+// watchdog's 1s interval fire unevenly, producing false "frozen" readings
+// and needless reconnection storms nobody is there to see. Suspend the
+// watchdog while hidden and resume (with fresh counters) when visible again.
+function getVisibilityAction(visibilityState) {
+  return visibilityState === "hidden" ? "SUSPEND_WATCHDOG" : "RESUME_WATCHDOG";
+}
 </script>
 
 <script>

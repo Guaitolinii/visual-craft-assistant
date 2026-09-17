@@ -133,3 +133,13 @@ test("createMediaErrorEscalation: reset() manually clears the ladder", () => {
   escalation.reset();
   assert.equal(escalation.record(200), "RECOVER");
 });
+
+test("getVisibilityAction: hidden tab suspends the watchdog", () => {
+  const ctx = loadResilienceHelpers();
+  assert.equal(ctx.getVisibilityAction("hidden"), "SUSPEND_WATCHDOG");
+});
+
+test("getVisibilityAction: visible tab resumes the watchdog", () => {
+  const ctx = loadResilienceHelpers();
+  assert.equal(ctx.getVisibilityAction("visible"), "RESUME_WATCHDOG");
+});
