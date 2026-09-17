@@ -61,3 +61,25 @@ test("pickInitialBufferStageIndex: returns 0 when stagesLength is missing or 0",
   assert.equal(ctx.pickInitialBufferStageIndex({ connectionEffectiveType: "2g", stagesLength: 0 }), 0);
   assert.equal(ctx.pickInitialBufferStageIndex({}), 0);
 });
+
+test("MPEGTS_RESILIENCE_CONFIG: balances latency-chasing against stall-proofing", () => {
+  // Compared field-by-field instead of via deepEqual: the config object is
+  // created inside the vm sandbox realm, and Node's assert.deepEqual/
+  // deepStrictEqual reject cross-realm plain objects as "not reference-equal"
+  // even when every own-enumerable property matches.
+  const config = loadResilienceHelpers().MPEGTS_RESILIENCE_CONFIG;
+  assert.equal(config.liveBufferLatencyChasing, true);
+  assert.equal(config.liveBufferLatencyMaxLatency, 10);
+  assert.equal(config.liveBufferLatencyMinRemain, 4);
+  assert.equal(config.autoCleanupSourceBuffer, true);
+  assert.equal(config.autoCleanupMaxBackwardDuration, 60);
+  assert.equal(config.autoCleanupMinBackwardDuration, 30);
+  assert.deepEqual(Object.keys(config).sort(), [
+    "autoCleanupMaxBackwardDuration",
+    "autoCleanupMinBackwardDuration",
+    "autoCleanupSourceBuffer",
+    "liveBufferLatencyChasing",
+    "liveBufferLatencyMaxLatency",
+    "liveBufferLatencyMinRemain",
+  ]);
+});

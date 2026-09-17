@@ -1011,6 +1011,23 @@ function pickInitialBufferStageIndex(opts) {
   }
   return Math.min(index, stagesLength - 1);
 }
+
+// Relaxed latency-chasing (10s max / 4s min remain) + bounded backward cleanup
+// (60s/30s) instead of "no chasing + never clean up". Values match the fix
+// validated in production by a real mpegts.js-based IPTV player
+// (alvarolobato/iptv-proxy PR #51): the old chase-to-1.5s config caused 28
+// stalls per 45s; disabling chasing entirely (this project's previous config)
+// avoids that but lets the buffer grow forever, risking memory bloat on
+// hours-long viewing sessions. This keeps ~5-6s of forward buffer while
+// pruning the backward buffer instead of letting it grow unbounded.
+var MPEGTS_RESILIENCE_CONFIG = {
+  liveBufferLatencyChasing: true,
+  liveBufferLatencyMaxLatency: 10,
+  liveBufferLatencyMinRemain: 4,
+  autoCleanupSourceBuffer: true,
+  autoCleanupMaxBackwardDuration: 60,
+  autoCleanupMinBackwardDuration: 30,
+};
 </script>
 
 <script>
