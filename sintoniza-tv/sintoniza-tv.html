@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>Sintoniza IPTV — Smart TV</title>
+  <meta name="description" content="Sintoniza IPTV — versão Smart TV para LG webOS e Samsung Tizen." />
+
+  <!-- Google Fonts (requer internet; se offline, cai para system-ui) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" />
+
+  <!-- Bibliotecas de player -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
+
+  <!-- CSS e motor de navegação TV -->
+  <link rel="stylesheet" href="tv-styles.css" />
+  <script src="tv-nav.js" defer></script>
+
+  <style>
+    /* Variáveis de ícone SVG embutidas (substitui Lucide CDN) */
+    .icon { display:inline-flex; align-items:center; justify-content:center; }
+    .icon svg { width:1em; height:1em; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     ONBOARDING — Aparece quando não há lista M3U carregada
+═══════════════════════════════════════════════════════════════ -->
+<div id="tv-onboarding">
+  <h1><span>Sintoniza</span> IPTV</h1>
+  <p>Informe a URL da sua lista M3U para começar a assistir</p>
+  <div class="tv-onboarding-input-group">
+    <input
+      id="tv-m3u-url"
+      class="tv-input"
+      type="url"
+      placeholder="http://127.0.0.1:8088/lista.m3u"
+      autocomplete="off"
+    />
+    <button id="tv-load-btn" class="tv-btn" data-focusable>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Carregar
+    </button>
+  </div>
+  <p style="font-size:18px;color:#5c5c78">Pressione OK no controle para selecionar o campo e usar o teclado da TV</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     APP PRINCIPAL
+═══════════════════════════════════════════════════════════════ -->
+<div id="tv-app" style="display:none">
+
+  <!-- Header fixo com logo e relógio -->
+  <div id="tv-header">
+    <div class="tv-logo">Sintoni<span>za</span></div>
+    <div id="tv-clock"></div>
+  </div>
+
+  <!-- ── Zona Superior: Player ────────────────────────────────── -->
+  <div id="tv-player-zone">
+
+    <!-- Arte (estado inicial) -->
+    <div id="tv-art">
+      <div class="tv-art-monogram" id="tv-art-text">TV</div>
+    </div>
+
+    <!-- Vídeo -->
+    <video id="tv-video" playsinline></video>
+
+    <!-- Loader de buffer -->
+    <div id="tv-loader">
+      <div class="tv-spinner"></div>
+      <p id="tv-loader-text">Conectando ao canal...</p>
+    </div>
+
+    <!-- Overlay de erro -->
+    <div id="tv-error" class="hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#9898b0" stroke-width="2" width="48" height="48"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 5a10.94 10.94 0 0 0-2.36 5.5M10.5 21C12 20.5 13 19.5 13.5 18M6.5 9.5a7 7 0 0 0-.17 1.5"/><path d="M21 3L3 21"/></svg>
+      <h3>Não foi possível reproduzir</h3>
+      <p id="tv-error-msg">Canal fora do ar ou formato não suportado.</p>
+      <button id="tv-retry-btn" class="tv-btn" data-focusable style="margin-top:12px">Tentar novamente</button>
+    </div>
+
+    <!-- Informações do canal (direita) -->
+    <div id="tv-channel-info">
+      <div class="tv-live-badge" id="tv-live-badge">AO VIVO</div>
+      <div id="tv-channel-name">Nenhum canal</div>
+      <div id="tv-channel-category">Selecione um canal abaixo</div>
+
+      <!-- Botões de controle -->
+      <div id="tv-controls">
+        <button class="tv-ctrl-btn" id="tv-play-btn" data-focusable title="Play/Pause" aria-label="Play/Pause">
+          <svg id="tv-play-icon" viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><polygon points="5,3 19,12 5,21"/></svg>
+        </button>
+        <button class="tv-ctrl-btn" id="tv-reload-btn" data-focusable title="Recarregar canal" aria-label="Recarregar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="28" height="28"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+        <button class="tv-ctrl-btn" id="tv-mute-btn" data-focusable title="Mudo" aria-label="Silenciar">
+          <svg id="tv-mute-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="28" height="28"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        </button>
+        <button class="tv-ctrl-btn" id="tv-fav-btn" data-focusable title="Favorito" aria-label="Favoritar">
+          <svg id="tv-fav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="28" height="28"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+      </div>
+
+      <!-- Barra de buffer -->
+      <div style="font-size:14px;color:#5c5c78;margin-top:4px" id="tv-buf-info"></div>
+    </div>
+
+    <!-- Barra de status Watchdog -->
+    <div id="tv-status-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span id="tv-status-text">Reconectando sinal...</span>
+    </div>
+
+    <!-- Debug overlay -->
+    <div id="tv-debug" class="hidden">
+      Canal: <span id="dbg-ch">—</span><br>
+      Tipo: <span id="dbg-type">—</span><br>
+      Buffer: <span id="dbg-buf">0s</span><br>
+      Stage: <span id="dbg-stage">0</span><br>
+      Reconexões: <span id="dbg-rec">0</span>
+    </div>
+  </div><!-- /tv-player-zone -->
+
+  <!-- ── Zona Inferior: Catálogo ──────────────────────────────── -->
+  <div id="tv-catalog-zone">
+    <!-- Abas de categoria -->
+    <div id="tv-tabs"></div>
+    <!-- Faixa de canais -->
+    <div id="tv-channel-row"></div>
+  </div>
+
+</div><!-- /tv-app -->
+
+<!-- Sidebar overlay -->
+<div id="tv-sidebar">
+  <div class="tv-sidebar-title">Menu</div>
+  <div class="tv-sidebar-item active" id="sb-home" data-focusable>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Início
+  </div>
+  <div class="tv-sidebar-item" id="sb-favs" data-focusable>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    Favoritos
+  </div>
+  <div class="tv-sidebar-item" id="sb-reload-list" data-focusable>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+    Recarregar lista
+  </div>
+  <div class="tv-sidebar-item" id="sb-debug" data-focusable>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    Telemetria
+  </div>
+</div>
+
+<!-- Toast de notificações -->
+<div id="tv-toast"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ──────────────────────────────────────────────────────────────
+// DETECÇÃO DE PLATAFORMA
+// ──────────────────────────────────────────────────────────────
+const IS_TIZEN  = typeof window.tizen  !== 'undefined';
+const IS_WEBOS  = typeof window.webOS  !== 'undefined';
+const IS_TV     = IS_TIZEN || IS_WEBOS;
+
+console.log('[Sintoniza TV] Plataforma:', IS_TIZEN ? 'Samsung Tizen' : IS_WEBOS ? 'LG webOS' : 'Browser/Dev');
+
+// ──────────────────────────────────────────────────────────────
+// CANAIS DEMO
+// ──────────────────────────────────────────────────────────────
+const DEMO_CHANNELS = [
+  { id:1, name:'TV Brasil',      category:'TV aberta', initials:'TV', logo:null, url:null, live:true  },
+  { id:2, name:'Canal Demo',     category:'Geral',     initials:'CD', logo:null, url:null, live:true  },
+  { id:3, name:'Exemplo Filmes', category:'Filmes',    initials:'EF', logo:null, url:null, live:false },
+];
+
+// ──────────────────────────────────────────────────────────────
+// ESTADO CENTRAL
+// ──────────────────────────────────────────────────────────────
+let _state = {
+  activeTab:  'Todos',
+  channels:   null,
+  categories: [],
+  favorites:  JSON.parse(localStorage.getItem('sint_fav')  || '[]'),
+  recents:    JSON.parse(localStorage.getItem('sint_recents') || '[]'),
+  selected:   null,
+  playing:    false,
+  muted:      false,
+};
+const _subs = [];
+function subscribe(fn) { _subs.push(fn); }
+function _notify()     { _subs.forEach(fn => fn()); }
+function setState(patch, silent) {
+  Object.assign(_state, patch);
+  if (!silent) _notify();
+}
+
+const getChannels = () => _state.channels || DEMO_CHANNELS;
+
+function isFav(ch) {
+  if (!ch) return false;
+  const name = ch.name || '';
+  return _state.favorites.some(f =>
+    f === ch.id || (name && (f === name || f.toString().toLowerCase() === name.toLowerCase()))
+  );
+}
+
+function toggleFav(ch) {
+  if (!ch) return;
+  const already = isFav(ch);
+  let favs;
+  if (already) {
+    favs = _state.favorites.filter(f => f !== ch.id && f.toString().toLowerCase() !== ch.name.toLowerCase());
+  } else {
+    favs = [ch.name, ..._state.favorites.filter(f => f.toString().toLowerCase() !== ch.name.toLowerCase())];
+  }
+  setState({ favorites: favs });
+  localStorage.setItem('sint_fav', JSON.stringify(favs));
+  showTVToast(already ? 'Removido dos favoritos' : 'Adicionado aos favoritos!');
+  updateFavBtn();
+}
+
+function visibleChannels() {
+  const { activeTab, favorites, recents } = _state;
+  const all = getChannels();
+  if (activeTab === 'Todos')      return all;
+  if (activeTab === 'Favoritos')  return all.filter(ch => isFav(ch));
+  if (activeTab === 'Recentes')   return all.filter(ch => recents.includes(ch.id));
+  return all.filter(ch => ch.category === activeTab);
+}
+
+// ──────────────────────────────────────────────────────────────
+// M3U PARSER
+// ──────────────────────────────────────────────────────────────
+const FILTERED_NAMES = ['pcnelid','eixo','pluto tv','praia','rádio','radio'];
+
+function makeInitials(name) {
+  const clean = name.replace(/[^\w\s]/g,' ').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return name.substring(0, Math.min(3, name.length)).toUpperCase();
+}
+
+function parseM3U(text) {
+  const lines = text.split(/\r?\n/);
+  const channels = [];
+  let extinf = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#EXTINF:')) {
+      const logoMatch  = line.match(/tvg-logo="([^"]+)"/);
+      const groupMatch = line.match(/group-title="([^"]+)"/);
+      const commaIdx   = line.lastIndexOf(',');
+      const displayName = commaIdx >= 0 ? line.slice(commaIdx + 1).trim() : 'Canal';
+      extinf = {
+        name:     displayName || 'Canal',
+        logo:     logoMatch  ? logoMatch[1].trim()  : null,
+        category: groupMatch ? groupMatch[1].trim() : 'Geral',
+      };
+    } else if (!line.startsWith('#') && line.length > 0 && extinf) {
+      const lower = extinf.name.trim().toLowerCase();
+      if (!FILTERED_NAMES.some(f => lower.startsWith(f))) {
+        channels.push({
+          id:       channels.length + 1,
+          name:     extinf.name,
+          category: extinf.category,
+          logo:     extinf.logo,
+          initials: makeInitials(extinf.name),
+          live:     true,
+          url:      line,
+        });
+      }
+      extinf = null;
+    }
+  }
+  return channels;
+}
+
+// ──────────────────────────────────────────────────────────────
+// CARREGAMENTO DA LISTA M3U
+// ──────────────────────────────────────────────────────────────
+async function loadPlaylist(url) {
+  showTVToast('Carregando lista...');
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const channels = parseM3U(text);
+    if (!channels.length) throw new Error('Nenhum canal encontrado');
+
+    const cats = [...new Set(channels.map(c => c.category).filter(Boolean))].sort();
+    setState({ channels, categories: cats, activeTab: 'Todos' });
+    // 'sint_url' é a MESMA chave usada pelo app web (sintoniza.html)
+  // Isso permite que a URL configurada no browser seja automaticamente
+  // reconhecida pela TV, sem precisar reconfigurar.
+  localStorage.setItem('sint_url', url);
+    ensureEssentialFavs();
+    showTVToast(`${channels.length} canais carregados!`);
+    showApp();
+    renderTabs();
+    renderChannels();
+  } catch (err) {
+    showTVToast('Erro ao carregar lista: ' + err.message);
+    console.error('[M3U Load]', err);
+  }
+}
+
+function ensureEssentialFavs() {
+  const essentials = ['Combate','Combate SD²','ESPN','ESPN 2','ESPN 3','ESPN 4','ESPN 5','ESPN 6'];
+  let changed = false;
+  const all = getChannels();
+  essentials.forEach(name => {
+    const ch = all.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (ch && !isFav(ch)) {
+      _state.favorites.unshift(ch.name);
+      changed = true;
+    }
+  });
+  if (changed) localStorage.setItem('sint_fav', JSON.stringify(_state.favorites));
+}
+
+// ──────────────────────────────────────────────────────────────
+// BUFFER E PLAYER
+// ──────────────────────────────────────────────────────────────
+const BUFFER_STAGES = [
+  { seconds: 20, hlsMax: 15, hlsMaxMax: 30, mpegBufSec: 20 },
+  { seconds: 25, hlsMax: 20, hlsMaxMax: 40, mpegBufSec: 25 },
+  { seconds: 35, hlsMax: 30, hlsMaxMax: 60, mpegBufSec: 35 },
+  { seconds: 50, hlsMax: 45, hlsMaxMax: 90, mpegBufSec: 50 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax:120, mpegBufSec: 60 },
+];
+let currentBufferStageIndex = 0;
+let hlsInstance     = null;
+let mpegtsPlayer    = null;
+let mpegPrebufTimer = null;
+let mpegPrebufTimeout = null;
+let isReloading     = false;
+let currentStreamUrl = null;
+let currentStreamType = 'unknown';
+
+// ── Watchdog ────────────────────────────────────────────────
+let wdInterval = null;
+let wdFrozenSec = 0;
+let wdLastTime  = -1;
+let sessionReconnects = 0;
+
+function startWatchdog(url) {
+  stopWatchdog();
+  wdFrozenSec = 0;
+  wdLastTime  = -1;
+  const video = document.getElementById('tv-video');
+  wdInterval = setInterval(() => {
+    if (!video || document.hidden) return;
+    if (video.paused || video.readyState < 2) return;
+    const t = video.currentTime;
+    if (t === wdLastTime) {
+      wdFrozenSec++;
+      if (wdFrozenSec >= 6) {
+        stopWatchdog();
+        sessionReconnects++;
+        showStatusBar('Reconectando sinal...');
+        reloadChannel(true);
+      }
+    } else {
+      wdFrozenSec = 0;
+      hideStatusBar();
+    }
+    wdLastTime = t;
+    updateDebug();
+  }, 1000);
+}
+
+function stopWatchdog() {
+  if (wdInterval) clearInterval(wdInterval);
+  wdInterval = null;
+}
+
+function escalateBuffer() {
+  if (currentBufferStageIndex < BUFFER_STAGES.length - 1) {
+    currentBufferStageIndex++;
+    const s = BUFFER_STAGES[currentBufferStageIndex];
+    showTVToast(`Buffer ampliado para ${s.seconds}s`);
+  }
+}
+
+// ── Detecção de tipo de stream ────────────────────────────────
+async function detectStreamType(url) {
+  if (!url) return { type: 'unknown', url };
+  const clean = url.split('?')[0].toLowerCase();
+  if (clean.endsWith('.m3u8')) return { type: 'hls', url };
+  if (clean.endsWith('.ts'))   {
+    // Tenta promover .ts → .m3u8 (padrão Xtream Codes)
+    const m3u8 = url.replace(/\.ts(\?.*)?$/, '.m3u8$1').replace(/\/\d+\.m3u8/, '.m3u8');
+    try {
+      const r = await fetch(m3u8, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
+      if (r.ok) { console.log('[detectStreamType] .ts → HLS promovido'); return { type: 'hls', url: m3u8 }; }
+    } catch {}
+    return { type: 'mpegts', url };
+  }
+  if (url.includes('/live/') || url.includes('/stream')) return { type: 'hls', url };
+  return { type: 'hls', url }; // padrão
+}
+
+// ── Parar stream ──────────────────────────────────────────────
+function stopStream() {
+  stopWatchdog();
+  if (mpegPrebufTimer)   { clearInterval(mpegPrebufTimer);   mpegPrebufTimer   = null; }
+  if (mpegPrebufTimeout) { clearTimeout(mpegPrebufTimeout);  mpegPrebufTimeout = null; }
+  if (hlsInstance)  { try { hlsInstance.destroy();  } catch {} hlsInstance   = null; }
+  if (mpegtsPlayer) { try { mpegtsPlayer.destroy(); } catch {} mpegtsPlayer  = null; }
+  const video = document.getElementById('tv-video');
+  if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+  isReloading = false;
+}
+
+// ── Play principal ────────────────────────────────────────────
+async function playStream(url) {
+  if (!url) return;
+  stopStream();
+  showLoader('Detectando stream...');
+  hideError();
+  hideArt();
+
+  currentStreamUrl = url;
+  const { type, url: playUrl } = await detectStreamType(url);
+  currentStreamType = type;
+  const stage = BUFFER_STAGES[currentBufferStageIndex];
+  const video = document.getElementById('tv-video');
+
+  // Samsung Tizen → AVPlay nativo (HLS via hardware)
+  if (IS_TIZEN && window.webapis?.avplay) {
+    playViaTizenAVPlay(playUrl);
+    return;
+  }
+
+  // LG webOS + fallback: HLS.js / mpegts.js
+  if (type === 'hls') {
+    playViaHLS(playUrl, stage, video);
+  } else {
+    playViaMpegTS(playUrl, stage, video);
+  }
+}
+
+// ── HLS.js (LG webOS e browser) ──────────────────────────────
+function playViaHLS(url, stage, video) {
+  if (Hls.isSupported()) {
+    hlsInstance = new Hls({
+      maxBufferLength:    stage.hlsMax,
+      maxMaxBufferLength: stage.hlsMaxMax,
+      maxBufferSize:      60 * 1000 * 1000,
+      enableWorker:       true,
+      lowLatencyMode:     false,
+    });
+    hlsInstance.loadSource(url);
+    hlsInstance.attachMedia(video);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().then(() => {
+        hideLoader();
+        setState({ playing: true });
+        updatePlayBtn();
+        startWatchdog(url);
+      }).catch(console.warn);
+    });
+    hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          escalateBuffer();
+          reloadChannel(true);
+        } else {
+          hlsInstance.recoverMediaError();
+        }
+      }
+    });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari / webOS nativo
+    video.src = url;
+    video.play().then(() => { hideLoader(); setState({ playing: true }); updatePlayBtn(); startWatchdog(url); }).catch(console.warn);
+  } else {
+    showError('HLS não suportado nesta TV.');
+  }
+}
+
+// ── mpegts.js (stream .ts direto) ────────────────────────────
+function playViaMpegTS(url, stage, video) {
+  if (typeof mpegts === 'undefined' || !mpegts.isSupported()) {
+    showError('MPEG-TS não suportado nesta TV.');
+    return;
+  }
+  const mpegBufTarget = stage.mpegBufSec || 20;
+  mpegtsPlayer = mpegts.createPlayer({ type: 'm2ts', isLive: true, url }, {
+    enableWorker: true,
+    enableStashBuffer: true,
+    stashInitialSize: 1024 * 1024,
+    liveBufferLatencyChasing: false,
+    autoCleanupSourceBuffer: false,
+    lazyLoad: false,
+    deferLoadAfterSourceOpen: false,
+  });
+  mpegtsPlayer.attachMediaElement(video);
+  mpegtsPlayer.load();
+
+  const loaderText = document.getElementById('tv-loader-text');
+  let started = false;
+
+  const tryPlay = () => {
+    if (started) return;
+    let buf = 0;
+    if (video.buffered && video.buffered.length > 0) {
+      buf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
+    }
+    if (loaderText) {
+      const pct = Math.min(100, Math.round((buf / mpegBufTarget) * 100));
+      loaderText.textContent = `Carregando buffer: ${buf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
+    }
+    if (buf >= mpegBufTarget) launch();
+  };
+
+  const launch = () => {
+    if (started) return;
+    started = true;
+    if (mpegPrebufTimer)   { clearInterval(mpegPrebufTimer);   mpegPrebufTimer   = null; }
+    if (mpegPrebufTimeout) { clearTimeout(mpegPrebufTimeout);  mpegPrebufTimeout = null; }
+    if (loaderText) loaderText.textContent = 'Conectando ao canal...';
+    video.play().then(() => {
+      hideLoader();
+      setState({ playing: true });
+      updatePlayBtn();
+      startWatchdog(url);
+    }).catch(console.warn);
+  };
+
+  mpegPrebufTimer   = setInterval(tryPlay, 300);
+  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, 35000);
+
+  mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail) => {
+    if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) reloadChannel(true);
+  });
+}
+
+// ── Samsung Tizen AVPlay ─────────────────────────────────────
+function playViaTizenAVPlay(url) {
+  try {
+    const av = window.webapis.avplay;
+    av.open(url);
+    av.setDisplayRect(0, 0, 1920, 1080);
+    av.setListener({
+      onbufferingstart: () => showLoader('Carregando...'),
+      onbufferingcomplete: () => hideLoader(),
+      onerror: (code) => {
+        console.error('[AVPlay error]', code);
+        showError(`Erro AVPlay: ${code}`);
+      },
+    });
+    av.prepareAsync(
+      () => {
+        av.play();
+        hideLoader();
+        setState({ playing: true });
+        updatePlayBtn();
+        startWatchdog(url);
+      },
+      (code) => {
+        console.error('[AVPlay prepareAsync error]', code);
+        // Fallback para HLS.js
+        const video = document.getElementById('tv-video');
+        const stage = BUFFER_STAGES[currentBufferStageIndex];
+        playViaHLS(url, stage, video);
+      }
+    );
+  } catch (err) {
+    console.error('[AVPlay]', err);
+    // Fallback
+    const video = document.getElementById('tv-video');
+    const stage = BUFFER_STAGES[currentBufferStageIndex];
+    playViaHLS(url, stage, video);
+  }
+}
+
+// ── Recarregar canal ─────────────────────────────────────────
+function reloadChannel(escalate) {
+  if (isReloading) return;
+  isReloading = true;
+  if (escalate) escalateBuffer();
+  setTimeout(() => {
+    isReloading = false;
+    if (_state.selected?.url) playStream(_state.selected.url);
+  }, 1200);
+}
+
+// ── Selecionar canal ─────────────────────────────────────────
+function selectChannel(ch) {
+  if (!ch) return;
+  currentBufferStageIndex = 0;
+  const recents = [ch.id, ..._state.recents.filter(id => id !== ch.id)].slice(0, 12);
+  setState({ selected: ch, playing: false, recents });
+  localStorage.setItem('sint_recents', JSON.stringify(recents));
+  stopStream();
+  updateChannelInfo(ch);
+  if (ch.url) playStream(ch.url);
+  else { showArt(ch); hideLoader(); }
+  updateFavBtn();
+  renderChannels(); // atualiza destaque "is-playing"
+}
+
+// ──────────────────────────────────────────────────────────────
+// RENDER
+// ──────────────────────────────────────────────────────────────
+function buildTabs() {
+  const cats = _state.categories;
+  const tabs = ['Todos', 'Favoritos', 'Recentes', ...cats];
+  return tabs;
+}
+
+function renderTabs() {
+  const tabsEl = document.getElementById('tv-tabs');
+  if (!tabsEl) return;
+  const tabs = buildTabs();
+  tabsEl.innerHTML = tabs.map(t => `
+    <button class="tv-tab${t === _state.activeTab ? ' active' : ''}"
+            data-tab="${t}" data-focusable>
+      ${t}
+    </button>`).join('');
+
+  tabsEl.querySelectorAll('.tv-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setState({ activeTab: btn.dataset.tab });
+      renderTabs();
+      renderChannels();
+      // Mover foco para o primeiro card
+      setTimeout(() => {
+        const first = document.querySelector('#tv-channel-row .tv-channel-card');
+        if (first) TVNav.focusEl(first);
+      }, 50);
+    });
+  });
+}
+
+function renderChannels() {
+  const rowEl = document.getElementById('tv-channel-row');
+  if (!rowEl) return;
+  const channels = visibleChannels();
+  if (!channels.length) {
+    rowEl.innerHTML = '<div style="color:#5c5c78;font-size:20px;padding:32px 0">Nenhum canal encontrado</div>';
+    return;
+  }
+
+  rowEl.innerHTML = channels.map((ch, idx) => {
+    const playing = _state.selected?.id === ch.id;
+    const logoHtml = ch.logo
+      ? `<img class="tv-channel-logo" src="${ch.logo}" alt="${ch.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        + `<div class="tv-channel-logo-fallback" style="display:none">${ch.initials}</div>`
+      : `<div class="tv-channel-logo-fallback">${ch.initials}</div>`;
+
+    return `
+      <div class="tv-channel-card${playing ? ' is-playing' : ''}"
+           data-focusable
+           data-id="${ch.id}"
+           style="animation-delay:${Math.min(idx * 0.03, 0.5)}s"
+           tabindex="-1">
+        ${ch.live ? '<div class="tv-card-live">LIVE</div>' : ''}
+        ${logoHtml}
+        <div class="tv-channel-label" title="${ch.name}">${ch.name}</div>
+      </div>`;
+  }).join('');
+
+  rowEl.querySelectorAll('.tv-channel-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id  = parseInt(card.dataset.id);
+      const ch  = getChannels().find(c => c.id === id);
+      if (ch) selectChannel(ch);
+    });
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// UI HELPERS
+// ──────────────────────────────────────────────────────────────
+function showApp() {
+  document.getElementById('tv-onboarding').classList.add('hidden');
+  document.getElementById('tv-app').style.display = '';
+}
+
+function showLoader(msg) {
+  const el = document.getElementById('tv-loader');
+  const txt = document.getElementById('tv-loader-text');
+  if (el)  el.classList.remove('hidden');
+  if (txt) txt.textContent = msg || 'Conectando ao canal...';
+}
+
+function hideLoader() {
+  const el = document.getElementById('tv-loader');
+  if (el) el.classList.add('hidden');
+}
+
+function showError(msg) {
+  hideLoader();
+  const el  = document.getElementById('tv-error');
+  const txt = document.getElementById('tv-error-msg');
+  if (el)  el.classList.remove('hidden');
+  if (txt) txt.textContent = msg || '';
+}
+
+function hideError() {
+  const el = document.getElementById('tv-error');
+  if (el) el.classList.add('hidden');
+}
+
+function showArt(ch) {
+  const artEl  = document.getElementById('tv-art');
+  const artTxt = document.getElementById('tv-art-text');
+  if (artEl)  artEl.classList.remove('hidden');
+  if (artTxt) artTxt.textContent = ch ? ch.initials : 'TV';
+}
+
+function hideArt() {
+  const el = document.getElementById('tv-art');
+  if (el) el.classList.add('hidden');
+}
+
+function showStatusBar(msg) {
+  const bar = document.getElementById('tv-status-bar');
+  const txt = document.getElementById('tv-status-text');
+  if (bar) bar.classList.add('visible');
+  if (txt) txt.textContent = msg;
+}
+
+function hideStatusBar() {
+  const bar = document.getElementById('tv-status-bar');
+  if (bar) bar.classList.remove('visible');
+}
+
+function showTVToast(msg) {
+  const t = document.getElementById('tv-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function updateChannelInfo(ch) {
+  const nameEl = document.getElementById('tv-channel-name');
+  const catEl  = document.getElementById('tv-channel-category');
+  if (nameEl) nameEl.textContent = ch.name;
+  if (catEl)  catEl.textContent  = ch.category || '';
+}
+
+function updatePlayBtn() {
+  const icon = document.getElementById('tv-play-icon');
+  if (!icon) return;
+  const playing = _state.playing;
+  icon.innerHTML = playing
+    ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'   // pause
+    : '<polygon points="5,3 19,12 5,21"/>';  // play
+}
+
+function updateFavBtn() {
+  const icon = document.getElementById('tv-fav-icon');
+  if (!icon) return;
+  const fav = _state.selected && isFav(_state.selected);
+  icon.setAttribute('fill', fav ? '#f97316' : 'none');
+  icon.setAttribute('stroke', fav ? '#f97316' : 'currentColor');
+}
+
+function updateClock() {
+  const el = document.getElementById('tv-clock');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function updateDebug() {
+  const video = document.getElementById('tv-video');
+  let buf = 0;
+  if (video?.buffered?.length > 0) {
+    const cur = video.currentTime;
+    for (let i = 0; i < video.buffered.length; i++) {
+      if (video.buffered.start(i) <= cur && cur <= video.buffered.end(i)) {
+        buf = Math.max(0, video.buffered.end(i) - cur);
+        break;
+      }
+    }
+  }
+  const ch = _state.selected;
+  const s  = BUFFER_STAGES[currentBufferStageIndex];
+  const setEl = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  setEl('dbg-ch',    ch ? ch.name.slice(0, 18) : '—');
+  setEl('dbg-type',  currentStreamType.toUpperCase());
+  setEl('dbg-buf',   buf.toFixed(1) + 's');
+  setEl('dbg-stage', `${currentBufferStageIndex} (${s.seconds}s alvo)`);
+  setEl('dbg-rec',   sessionReconnects);
+
+  const bufInfo = document.getElementById('tv-buf-info');
+  if (bufInfo && _state.playing) {
+    bufInfo.textContent = `Buffer: ${buf.toFixed(1)}s | ${currentStreamType.toUpperCase()} | Stage ${currentBufferStageIndex}`;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// SIDEBAR
+// ──────────────────────────────────────────────────────────────
+let sidebarOpen = false;
+
+function openSidebar() {
+  const sb = document.getElementById('tv-sidebar');
+  if (sb) sb.classList.add('open');
+  sidebarOpen = true;
+  setTimeout(() => TVNav.focusEl('#sb-home'), 50);
+}
+
+function closeSidebar() {
+  const sb = document.getElementById('tv-sidebar');
+  if (sb) sb.classList.remove('open');
+  sidebarOpen = false;
+  setTimeout(() => TVNav.focusFirst(), 50);
+}
+
+// ──────────────────────────────────────────────────────────────
+// INICIALIZAÇÃO
+// ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+
+  // Relógio
+  updateClock();
+  setInterval(updateClock, 30000);
+
+  // Debug overlay (atualização periódica)
+  setInterval(updateDebug, 1000);
+
+  // Eventos dos botões do player
+  document.getElementById('tv-play-btn')?.addEventListener('click', () => {
+    const video = document.getElementById('tv-video');
+    if (!video) return;
+    if (video.paused) { video.play(); setState({ playing: true }); }
+    else              { video.pause(); setState({ playing: false }); }
+    updatePlayBtn();
+  });
+
+  document.getElementById('tv-reload-btn')?.addEventListener('click', () => {
+    currentBufferStageIndex = 0;
+    if (_state.selected?.url) playStream(_state.selected.url);
+  });
+
+  document.getElementById('tv-mute-btn')?.addEventListener('click', () => {
+    const video = document.getElementById('tv-video');
+    if (!video) return;
+    video.muted = !video.muted;
+    setState({ muted: video.muted });
+    // Atualiza ícone
+    const icon = document.getElementById('tv-mute-icon');
+    if (icon) {
+      icon.innerHTML = video.muted
+        ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>'
+        : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>';
+    }
+  });
+
+  document.getElementById('tv-fav-btn')?.addEventListener('click', () => {
+    if (_state.selected) toggleFav(_state.selected);
+  });
+
+  document.getElementById('tv-retry-btn')?.addEventListener('click', () => {
+    hideError();
+    if (_state.selected?.url) playStream(_state.selected.url);
+  });
+
+  // Onboarding: carregar lista
+  document.getElementById('tv-load-btn')?.addEventListener('click', () => {
+    const url = document.getElementById('tv-m3u-url')?.value?.trim();
+    if (url) loadPlaylist(url);
+    else showTVToast('Informe uma URL válida');
+  });
+
+  // Sidebar items
+  document.getElementById('sb-home')?.addEventListener('click', () => {
+    setState({ activeTab: 'Todos' });
+    renderTabs(); renderChannels();
+    closeSidebar();
+  });
+  document.getElementById('sb-favs')?.addEventListener('click', () => {
+    setState({ activeTab: 'Favoritos' });
+    renderTabs(); renderChannels();
+    closeSidebar();
+  });
+  document.getElementById('sb-reload-list')?.addEventListener('click', () => {
+    closeSidebar();
+    const url = localStorage.getItem('sint_m3u_url');
+    if (url) loadPlaylist(url);
+    else showTVToast('Nenhuma lista salva. Vá ao menu inicial.');
+  });
+  document.getElementById('sb-debug')?.addEventListener('click', () => {
+    const dbg = document.getElementById('tv-debug');
+    if (dbg) dbg.classList.toggle('hidden');
+    closeSidebar();
+  });
+
+  // Inicializa o motor D-pad (aguarda tv-nav.js carregar)
+  const initNav = () => {
+    if (typeof TVNav === 'undefined') { setTimeout(initNav, 100); return; }
+    TVNav.init({
+      onBack: () => {
+        if (sidebarOpen) { closeSidebar(); return; }
+        // Voltar: se está nos cards, sobe para abas
+        const cur = TVNav.getCurrent();
+        if (cur?.closest('#tv-channel-row')) {
+          TVNav.focusEl('.tv-tab.active') || TVNav.focusEl('.tv-tab');
+        } else if (cur?.closest('#tv-tabs')) {
+          // No topo: abre sidebar
+          openSidebar();
+        } else {
+          openSidebar();
+        }
+      },
+    });
+  };
+  initNav();
+
+  // Carrega lista salva automaticamente
+  // Lê 'sint_url' — compatível com o app web sintoniza.html
+  const savedUrl = localStorage.getItem('sint_url');
+  if (savedUrl) {
+    loadPlaylist(savedUrl);
+  } else {
+    // Mostra onboarding; se houver canais demo, carrega app mesmo assim
+    if (!IS_TV) {
+      // Modo desenvolvimento: mostra app com canais demo
+      showApp();
+      renderTabs();
+      renderChannels();
+    }
+  }
+
+  // Visibilidade da aba (suspender watchdog)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopWatchdog();
+    else if (_state.playing && _state.selected?.url) startWatchdog(_state.selected.url);
+  });
+});
+</script>
+
+</body>
+</html>
