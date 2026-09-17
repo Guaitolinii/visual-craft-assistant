@@ -1930,6 +1930,8 @@ async function playStream(url) {
         // O video fica pausado enquanto video.buffered enche até mpegBufTarget.
         // Exibimos o loader com progresso para o usuário saber que está carregando.
         let mpegStarted = false;
+        let lastBufVal = 0;
+        let plateauTicks = 0;
 
         const loaderEl = document.getElementById("player-loader");
         const loaderText = loaderEl ? loaderEl.querySelector('p') : null;
@@ -1943,14 +1945,30 @@ async function playStream(url) {
             currentBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
           }
 
+          // Rastreia se o buffer parou de crescer (platô: o servidor IPTV esgotou seu burst inicial)
+          if (currentBuf > 0 && Math.abs(currentBuf - lastBufVal) < 0.15) {
+            plateauTicks++;
+          } else {
+            plateauTicks = 0;
+            lastBufVal = currentBuf;
+          }
+
           // Atualiza texto de progresso no loader
           if (loaderText) {
             const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
             loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
           }
 
-          // Libera reprodução quando buffer-alvo for atingido ou readyState indicar completude
-          if (currentBuf >= mpegBufTarget) {
+          // CRITÉRIOS INTELIGENTES DE LIBERAÇÃO IMEDIATA:
+          // 1. Atingiu o buffer alvo completo (ex: 20s ou 25s)
+          // 2. Atingiu um colchão seguro excelente (>= 15s)
+          // 3. Atingiu colchão viável (>= 6s) e o burst do servidor estabilizou (platô de 1.5s = 5 checagens)
+          const targetReached = currentBuf >= mpegBufTarget;
+          const solidCushionReached = currentBuf >= 15.0;
+          const burstCeilingReached = currentBuf >= 6.0 && plateauTicks >= 5;
+
+          if (targetReached || solidCushionReached || burstCeilingReached) {
+            console.log(`[mpegts prebuffer] Liberando reprodução com ${currentBuf.toFixed(1)}s de buffer (${targetReached ? 'alvo atingido' : solidCushionReached ? 'colchão >= 15s' : 'teto de burst do servidor atingido'})`);
             _launchMpegPlayback();
           }
         };
@@ -1979,14 +1997,23 @@ async function playStream(url) {
 
         mpegPrebufferTimer = setInterval(tryStartMpegPlayback, 300);
 
-        // ─── Timeout de segurança: proporcional ao buffer-alvo (mínimo 35s) ───
-        const maxPrebufMs = Math.max(35000, (mpegBufTarget + 15) * 1000);
+        // ─── Timeout de segurança: no máximo 12s de espera para evitar telas congeladas ───
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
-            console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s. Liberando com buffer acumulado.`);
-            _launchMpegPlayback();
+            let curBuf = 0;
+            if (video.buffered && video.buffered.length > 0) {
+              curBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
+            }
+            if (curBuf >= 3.0) {
+              console.warn(`[mpegts prebuffer] Timeout atingido com ${curBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
+              _launchMpegPlayback();
+            } else {
+              console.warn('[mpegts prebuffer] Timeout de 12s sem buffer da fonte. Tentando restabelecer sinal...');
+              escalateBufferStage();
+              reloadCurrentChannel(true);
+            }
           }
-        }, maxPrebufMs);
+        }, 12000);
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
