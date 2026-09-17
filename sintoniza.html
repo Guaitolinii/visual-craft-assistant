@@ -1512,6 +1512,7 @@ function resetWatchdogCounters() {
 
 // ─── Watchdog Escalonado em 3 Níveis (4s / 7s / 11s) ───
 function startWatchdog(url) {
+  currentWatchdogUrl = url;
   stopWatchdog();
   resetWatchdogCounters();
 
@@ -1643,6 +1644,19 @@ function stopWatchdog() {
   resetWatchdogCounters();
   updateDebugOverlay();
 }
+
+// Background tabs throttle timers, which can make the 1s watchdog interval
+// fire unevenly and misread throttling as a freeze - triggering pointless
+// reconnects while nobody is watching. Suspend the watchdog while hidden and
+// resume with a clean slate when the tab becomes visible again.
+document.addEventListener("visibilitychange", () => {
+  const action = getVisibilityAction(document.visibilityState);
+  if (action === "SUSPEND_WATCHDOG") {
+    stopWatchdog();
+  } else if (action === "RESUME_WATCHDOG" && currentWatchdogUrl && _state.playing) {
+    startWatchdog(currentWatchdogUrl);
+  }
+});
 
 // Recarrega canal mantendo estado
 async function reloadCurrentChannel(isSilent = false) {
