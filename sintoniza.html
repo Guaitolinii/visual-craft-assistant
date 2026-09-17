@@ -989,6 +989,30 @@
 <!-- TOAST -->
 <div class="toast" id="toast" role="alert" aria-live="polite"></div>
 
+<script id="resilience-helpers">
+// ─── Resilience Helpers (pure, dependency-free) ───
+// Declared with `function`/`var` (not `const`/`let`) on purpose: as a classic
+// <script> tag these become real globals the script below can call directly,
+// AND the same property-on-global-object behavior is what lets the Node test
+// harness (tests/helpers/extractInlineScript.js + node:vm) read them back
+// after evaluating this block's source in a sandbox. Keep every function here
+// pure — no `document`, `window`, `navigator`, `fetch`, or timers inside this
+// block — so it stays trivially unit-testable.
+
+function pickInitialBufferStageIndex(opts) {
+  var connectionEffectiveType = opts && opts.connectionEffectiveType;
+  var stagesLength = opts && opts.stagesLength;
+  if (!stagesLength || stagesLength < 1) return 0;
+  var index = 0;
+  if (connectionEffectiveType === "slow-2g" || connectionEffectiveType === "2g") {
+    index = 2;
+  } else if (connectionEffectiveType === "3g") {
+    index = 1;
+  }
+  return Math.min(index, stagesLength - 1);
+}
+</script>
+
 <script>
 'use strict';
 
