@@ -349,11 +349,66 @@ let isReloading     = false;
 let currentStreamUrl = null;
 let currentStreamType = 'unknown';
 
-// ── Watchdog ────────────────────────────────────────────────
+// ── Watchdog & Rebuffer ─────────────────────────────────────
 let wdInterval = null;
 let wdFrozenSec = 0;
 let wdLastTime  = -1;
 let sessionReconnects = 0;
+let isTvMpegRebuffering = false;
+let tvMpegRebufferInterval = null;
+let tvMpegRebufferTimeout = null;
+
+function triggerTvMpegRebuffer(reason) {
+  if (isTvMpegRebuffering || isReloading || currentStreamType !== 'mpegts') return;
+  const video = document.getElementById('tv-video');
+  if (!video || !mpegtsPlayer) return;
+
+  isTvMpegRebuffering = true;
+  console.warn(`[TV MPEG Rebuffer] ${reason}`);
+  video.pause();
+
+  const stage = BUFFER_STAGES[currentBufferStageIndex];
+  const target = Math.max(8, Math.min(stage.mpegBufSec || 20, 15));
+  showStatusBar(`Reabastecendo buffer (${target}s)...`);
+
+  if (tvMpegRebufferInterval) clearInterval(tvMpegRebufferInterval);
+  if (tvMpegRebufferTimeout) clearTimeout(tvMpegRebufferTimeout);
+
+  tvMpegRebufferInterval = setInterval(() => {
+    let buf = 0;
+    const cur = video.currentTime || 0;
+    if (video.buffered && video.buffered.length > 0) {
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= cur && cur <= video.buffered.end(i)) {
+          buf = video.buffered.end(i) - cur;
+          break;
+        }
+      }
+    }
+    updateDebug();
+    if (buf >= target) {
+      clearInterval(tvMpegRebufferInterval);
+      tvMpegRebufferInterval = null;
+      if (tvMpegRebufferTimeout) { clearTimeout(tvMpegRebufferTimeout); tvMpegRebufferTimeout = null; }
+      isTvMpegRebuffering = false;
+      hideStatusBar();
+      video.play().then(() => {
+        showTVToast('Buffer estabilizado!');
+      }).catch(console.warn);
+    }
+  }, 250);
+
+  tvMpegRebufferTimeout = setTimeout(() => {
+    if (isTvMpegRebuffering) {
+      clearInterval(tvMpegRebufferInterval);
+      tvMpegRebufferInterval = null;
+      tvMpegRebufferTimeout = null;
+      isTvMpegRebuffering = false;
+      hideStatusBar();
+      reloadChannel(true);
+    }
+  }, 14000);
+}
 
 function startWatchdog(url) {
   stopWatchdog();
@@ -361,7 +416,7 @@ function startWatchdog(url) {
   wdLastTime  = -1;
   const video = document.getElementById('tv-video');
   wdInterval = setInterval(() => {
-    if (!video || document.hidden) return;
+    if (!video || document.hidden || isTvMpegRebuffering) return;
     if (video.paused || video.readyState < 2) return;
     const t = video.currentTime;
     if (t === wdLastTime) {
@@ -384,6 +439,11 @@ function startWatchdog(url) {
 function stopWatchdog() {
   if (wdInterval) clearInterval(wdInterval);
   wdInterval = null;
+  if (tvMpegRebufferInterval) clearInterval(tvMpegRebufferInterval);
+  tvMpegRebufferInterval = null;
+  if (tvMpegRebufferTimeout) clearTimeout(tvMpegRebufferTimeout);
+  tvMpegRebufferTimeout = null;
+  isTvMpegRebuffering = false;
 }
 
 function escalateBuffer() {
@@ -503,7 +563,9 @@ function playViaMpegTS(url, stage, video) {
     enableStashBuffer: true,
     stashInitialSize: 1024 * 1024,
     liveBufferLatencyChasing: false,
-    autoCleanupSourceBuffer: false,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 60,
+    autoCleanupMinBackwardDuration: 30,
     lazyLoad: false,
     deferLoadAfterSourceOpen: false,
   });
@@ -540,8 +602,9 @@ function playViaMpegTS(url, stage, video) {
     }).catch(console.warn);
   };
 
-  mpegPrebufTimer   = setInterval(tryPlay, 300);
-  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, 35000);
+  mpegPrebufTimer = setInterval(tryPlay, 300);
+  const maxWaitMs = Math.max(35000, (mpegBufTarget + 15) * 1000);
+  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, maxWaitMs);
 
   mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail) => {
     if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) reloadChannel(true);
@@ -873,6 +936,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tv-retry-btn')?.addEventListener('click', () => {
     hideError();
     if (_state.selected?.url) playStream(_state.selected.url);
+  });
+
+  // Reabastecimento automático de buffer em streams MPEG-TS
+  document.getElementById('tv-video')?.addEventListener('waiting', () => {
+    if (_state.playing && !isReloading && currentStreamType === 'mpegts') {
+      triggerTvMpegRebuffer('Buffer esgotado na TV');
+    }
   });
 
   // Onboarding: carregar lista
