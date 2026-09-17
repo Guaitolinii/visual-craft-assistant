@@ -1042,6 +1042,35 @@ function computeReconnectBackoffMs(attempt, opts) {
   var jitter = 0.5 + randomFn() * 0.5; // 50%-100% of the exponential value
   return Math.round(exp * jitter);
 }
+
+// HLS MEDIA_ERROR escalation ladder. Previously every fatal MEDIA_ERROR
+// called recoverMediaError() unconditionally, which can loop forever without
+// ever trying a different recovery strategy. hls.js's own recommended
+// pattern: 1st error -> recoverMediaError(); 2nd in a row -> swap the audio
+// codec and try again; 3rd -> give up and rebuild the player from scratch.
+function createMediaErrorEscalation(opts) {
+  var options = opts || {};
+  var windowMs = options.windowMs || 20000;
+  var consecutiveErrors = 0;
+  var lastErrorMs = null;
+
+  return {
+    record: function (nowMs) {
+      if (lastErrorMs !== null && (nowMs - lastErrorMs) > windowMs) {
+        consecutiveErrors = 0;
+      }
+      consecutiveErrors++;
+      lastErrorMs = nowMs;
+      if (consecutiveErrors === 1) return "RECOVER";
+      if (consecutiveErrors === 2) return "SWAP_AUDIO_CODEC";
+      return "FULL_REBUILD";
+    },
+    reset: function () {
+      consecutiveErrors = 0;
+      lastErrorMs = null;
+    },
+  };
+}
 </script>
 
 <script>

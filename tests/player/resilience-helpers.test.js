@@ -106,3 +106,30 @@ test("computeReconnectBackoffMs: uses sane defaults when opts is omitted", () =>
   const value = ctx.computeReconnectBackoffMs(0);
   assert.ok(value >= 500 && value <= 1000, `expected 500-1000, got ${value}`);
 });
+
+test("createMediaErrorEscalation: escalates RECOVER -> SWAP_AUDIO_CODEC -> FULL_REBUILD", () => {
+  const ctx = loadResilienceHelpers();
+  const escalation = ctx.createMediaErrorEscalation();
+  assert.equal(escalation.record(0), "RECOVER");
+  assert.equal(escalation.record(100), "SWAP_AUDIO_CODEC");
+  assert.equal(escalation.record(200), "FULL_REBUILD");
+  assert.equal(escalation.record(300), "FULL_REBUILD");
+});
+
+test("createMediaErrorEscalation: resets the ladder after a quiet window", () => {
+  const ctx = loadResilienceHelpers();
+  const escalation = ctx.createMediaErrorEscalation({ windowMs: 20000 });
+  assert.equal(escalation.record(0), "RECOVER");
+  assert.equal(escalation.record(5000), "SWAP_AUDIO_CODEC");
+  // 30s of healthy playback passes before the next error - ladder should reset
+  assert.equal(escalation.record(35000), "RECOVER");
+});
+
+test("createMediaErrorEscalation: reset() manually clears the ladder", () => {
+  const ctx = loadResilienceHelpers();
+  const escalation = ctx.createMediaErrorEscalation();
+  escalation.record(0);
+  escalation.record(100);
+  escalation.reset();
+  assert.equal(escalation.record(200), "RECOVER");
+});
