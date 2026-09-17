@@ -1368,6 +1368,10 @@ let sessionReconnectCount = 0;
 let isDebugOverlayVisible = false;
 let mpegPrebufferTimer = null;
 let mpegPrebufferTimeout = null;
+let hlsNetworkRetryAttempt = 0;
+let hlsNetworkRetryTimer = null;
+let mediaErrorEscalation = createMediaErrorEscalation();
+let currentWatchdogUrl = null;
 
 // ─── Auto-Calibração Progressiva de Buffers ───
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
@@ -1498,6 +1502,12 @@ function resetWatchdogCounters() {
   watchdogWaitingSeconds = 0;
   watchdogLastTime = 0;
   watchdogLastFrames = 0;
+  hlsNetworkRetryAttempt = 0;
+  if (hlsNetworkRetryTimer) {
+    clearTimeout(hlsNetworkRetryTimer);
+    hlsNetworkRetryTimer = null;
+  }
+  mediaErrorEscalation.reset();
 }
 
 // ─── Watchdog Escalonado em 3 Níveis (4s / 7s / 11s) ───
@@ -1684,6 +1694,7 @@ async function playStream(url) {
   stopWatchdog();
 
   // Limpa instâncias anteriores
+  mediaErrorEscalation.reset();
   if (hlsInstance) {
     try { hlsInstance.stopLoad(); hlsInstance.destroy(); } catch (e) {}
     hlsInstance = null;
@@ -1756,12 +1767,31 @@ async function playStream(url) {
         console.warn("[HLS Event Error]", data);
         if (data.fatal) {
           switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hlsInstance.startLoad();
+            case Hls.ErrorTypes.NETWORK_ERROR: {
+              // Backoff instead of hammering the origin with an immediate
+              // startLoad() on every fatal network error.
+              const backoffMs = computeReconnectBackoffMs(hlsNetworkRetryAttempt);
+              hlsNetworkRetryAttempt++;
+              sessionReconnectCount++;
+              updateDebugOverlay();
+              if (hlsNetworkRetryTimer) clearTimeout(hlsNetworkRetryTimer);
+              hlsNetworkRetryTimer = setTimeout(() => {
+                if (hlsInstance) hlsInstance.startLoad();
+              }, backoffMs);
               break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hlsInstance.recoverMediaError();
+            }
+            case Hls.ErrorTypes.MEDIA_ERROR: {
+              const action = mediaErrorEscalation.record(Date.now());
+              if (action === "RECOVER") {
+                hlsInstance.recoverMediaError();
+              } else if (action === "SWAP_AUDIO_CODEC") {
+                hlsInstance.swapAudioCodec();
+                hlsInstance.recoverMediaError();
+              } else if (!isReloadingStream) {
+                reloadCurrentChannel(true);
+              }
               break;
+            }
             default:
               if (!isReloadingStream) {
                 reloadCurrentChannel(true);
