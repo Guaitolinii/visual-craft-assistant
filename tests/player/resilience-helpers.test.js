@@ -139,3 +139,36 @@ test("getVisibilityAction: visible tab resumes the watchdog", () => {
   const ctx = loadResilienceHelpers();
   assert.equal(ctx.getVisibilityAction("visible"), "RESUME_WATCHDOG");
 });
+
+test("createPrebufferController: releases immediately upon reaching solid cushion (>= 15s)", () => {
+  const ctx = loadResilienceHelpers();
+  const controller = ctx.createPrebufferController({ targetBufSec: 25 });
+  assert.equal(controller.tick(0, 300).action, "WAITING");
+  assert.equal(controller.tick(10.0, 300).action, "WAITING");
+  const decision = controller.tick(18.7, 300);
+  assert.equal(decision.action, "LAUNCH");
+  assert.equal(decision.reason, "SOLID_CUSHION");
+});
+
+test("createPrebufferController: releases upon reaching burst plateau (>= 6s with 5 ticks stall)", () => {
+  const ctx = loadResilienceHelpers();
+  const controller = ctx.createPrebufferController({ targetBufSec: 25 });
+  controller.tick(8.0, 300);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(controller.tick(8.0, 300).action, "WAITING");
+  }
+  const decision = controller.tick(8.0, 300); // 5th tick with no delta
+  assert.equal(decision.action, "LAUNCH");
+  assert.equal(decision.reason, "BURST_CEILING_REACHED");
+});
+
+test("createPrebufferController: triggers reconnect on 12s dead stream", () => {
+  const ctx = loadResilienceHelpers();
+  const controller = ctx.createPrebufferController({ targetBufSec: 25, maxWaitMs: 12000 });
+  for (let t = 0; t < 11700; t += 300) {
+    assert.equal(controller.tick(0, 300).action, "WAITING");
+  }
+  const decision = controller.tick(0, 300);
+  assert.equal(decision.action, "RECONNECT");
+  assert.equal(decision.reason, "TIMEOUT_DEAD_SOURCE");
+});

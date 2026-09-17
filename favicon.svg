@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="sintGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <filter id="sintGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="0.8" flood-color="#ea580c" flood-opacity="0.7"/>
+    </filter>
+  </defs>
+  <!-- Fundo escuro com cantos arredondados -->
+  <rect width="32" height="32" rx="7" fill="#0b0f19"/>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.25" fill="none" stroke="url(#sintGrad)" stroke-width="1.2" stroke-opacity="0.6"/>
+  
+  <!-- Monitor da Smart TV ocupando toda a área útil -->
+  <rect x="4" y="5" width="24" height="17" rx="3.5" fill="#151d2f" stroke="url(#sintGrad)" stroke-width="2" filter="url(#sintGlow)"/>
+  
+  <!-- Triângulo de Play centralizado e vibrante -->
+  <polygon points="13,9.5 21,13.5 13,17.5" fill="url(#sintGrad)"/>
+  
+  <!-- Base e suporte do monitor -->
+  <path d="M10 26 H22 M16 22 V26" stroke="url(#sintGrad)" stroke-width="2" stroke-linecap="round"/>
+</svg>

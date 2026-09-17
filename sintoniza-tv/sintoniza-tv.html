@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=1920, height=1080" />
   <title>Sintoniza IPTV — Smart TV</title>
   <meta name="description" content="Sintoniza IPTV — versão Smart TV para LG webOS e Samsung Tizen." />
-  <!-- Favicon do app -->
+  <!-- Favicon do app: SVG vetorizado de alta nitidez -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
 
@@ -26,6 +27,11 @@
     /* Variáveis de ícone SVG embutidas (substitui Lucide CDN) */
     .icon { display:inline-flex; align-items:center; justify-content:center; }
     .icon svg { width:1em; height:1em; }
+    .tv-logo { display: flex; align-items: center; gap: 14px; }
+    .tv-logo-badge {
+      width: 44px; height: 44px; border-radius: 10px; object-fit: cover;
+      border: 1.5px solid rgba(249, 115, 22, 0.4); box-shadow: 0 0 12px rgba(249, 115, 22, 0.25);
+    }
   </style>
 </head>
 <body>
@@ -34,6 +40,7 @@
      ONBOARDING — Aparece quando não há lista M3U carregada
 ═══════════════════════════════════════════════════════════════ -->
 <div id="tv-onboarding">
+  <img src="icon.png" class="tv-logo-badge" style="width:72px;height:72px;margin-bottom:12px;" alt="Logo" />
   <h1><span>Sintoniza</span> IPTV</h1>
   <p>Informe a URL da sua lista M3U para começar a assistir</p>
   <div class="tv-onboarding-input-group">
@@ -42,14 +49,12 @@
       class="tv-input"
       type="url"
       placeholder="http://127.0.0.1:8088/lista.m3u"
-      autocomplete="off"
+      data-focusable
     />
-    <button id="tv-load-btn" class="tv-btn" data-focusable>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      Carregar
+    <button id="tv-load-btn" class="tv-btn tv-btn-primary" data-focusable>
+      Carregar Lista
     </button>
   </div>
-  <p style="font-size:18px;color:#5c5c78">Pressione OK no controle para selecionar o campo e usar o teclado da TV</p>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -59,7 +64,10 @@
 
   <!-- Header fixo com logo e relógio -->
   <div id="tv-header">
-    <div class="tv-logo">Sintoni<span>za</span></div>
+    <div class="tv-logo">
+      <img src="icon.png" class="tv-logo-badge" alt="Sintoniza Logo" />
+      Sintoni<span>za</span>
+    </div>
     <div id="tv-clock"></div>
   </div>
 
@@ -554,6 +562,63 @@ function playViaHLS(url, stage, video) {
   }
 }
 
+// Pure Prebuffer Controller para Smart TV
+function createPrebufferController(opts) {
+  var options = opts || {};
+  var targetBufSec = options.targetBufSec || 20;
+  var solidCushionSec = options.solidCushionSec || 15.0;
+  var burstCeilingMinSec = options.burstCeilingMinSec || 6.0;
+  var plateauThreshold = options.plateauThreshold || 5;
+  var maxWaitMs = options.maxWaitMs || 12000;
+
+  var lastBuf = 0;
+  var plateauTicks = 0;
+  var elapsedMs = 0;
+  var finished = false;
+
+  return {
+    tick: function(currentBufSec, deltaMs) {
+      if (finished) return { action: "ALREADY_FINISHED", progressPct: 100 };
+      elapsedMs += (deltaMs || 300);
+
+      if (currentBufSec > 0 && Math.abs(currentBufSec - lastBuf) < 0.15) {
+        plateauTicks++;
+      } else {
+        plateauTicks = 0;
+        lastBuf = currentBufSec;
+      }
+
+      var progressPct = Math.min(100, Math.round((currentBufSec / targetBufSec) * 100));
+
+      if (currentBufSec >= targetBufSec) {
+        finished = true;
+        return { action: "LAUNCH", reason: "TARGET_REACHED", progressPct: 100 };
+      }
+      if (currentBufSec >= solidCushionSec) {
+        finished = true;
+        return { action: "LAUNCH", reason: "SOLID_CUSHION", progressPct: progressPct };
+      }
+      if (currentBufSec >= burstCeilingMinSec && plateauTicks >= plateauThreshold) {
+        finished = true;
+        return { action: "LAUNCH", reason: "BURST_CEILING_REACHED", progressPct: progressPct };
+      }
+      if (elapsedMs >= maxWaitMs) {
+        finished = true;
+        if (currentBufSec >= 3.0) {
+          return { action: "LAUNCH", reason: "TIMEOUT_PARTIAL_BUFFER", progressPct: progressPct };
+        }
+        return { action: "RECONNECT", reason: "TIMEOUT_DEAD_SOURCE", progressPct: 0 };
+      }
+
+      return {
+        action: "WAITING",
+        reason: "Carregando buffer: " + currentBufSec.toFixed(1) + "s de " + targetBufSec + "s (" + progressPct + "%)",
+        progressPct: progressPct,
+      };
+    }
+  };
+}
+
 // ── mpegts.js (stream .ts direto) ────────────────────────────
 function playViaMpegTS(url, stage, video) {
   if (typeof mpegts === 'undefined' || !mpegts.isSupported()) {
@@ -577,8 +642,14 @@ function playViaMpegTS(url, stage, video) {
 
   const loaderText = document.getElementById('tv-loader-text');
   let started = false;
-  let lastBufVal = 0;
-  let plateauTicks = 0;
+
+  const controller = createPrebufferController({
+    targetBufSec: mpegBufTarget,
+    solidCushionSec: 15.0,
+    burstCeilingMinSec: 6.0,
+    plateauThreshold: 5,
+    maxWaitMs: 12000,
+  });
 
   const tryPlay = () => {
     if (started) return;
@@ -587,33 +658,23 @@ function playViaMpegTS(url, stage, video) {
       buf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
     }
 
-    // Rastreia se o buffer parou de crescer (platô: servidor IPTV esgotou o burst)
-    if (buf > 0 && Math.abs(buf - lastBufVal) < 0.15) {
-      plateauTicks++;
-    } else {
-      plateauTicks = 0;
-      lastBufVal = buf;
+    const decision = controller.tick(buf, 300);
+    if (loaderText && decision.reason && decision.action === 'WAITING') {
+      loaderText.textContent = decision.reason;
     }
 
-    if (loaderText) {
-      const pct = Math.min(100, Math.round((buf / mpegBufTarget) * 100));
-      loaderText.textContent = `Carregando buffer: ${buf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
-    }
-
-    const targetReached = buf >= mpegBufTarget;
-    const solidCushionReached = buf >= 15.0;
-    const burstCeilingReached = buf >= 6.0 && plateauTicks >= 5;
-
-    if (targetReached || solidCushionReached || burstCeilingReached) {
+    if (decision.action === 'LAUNCH') {
       launch();
+    } else if (decision.action === 'RECONNECT') {
+      if (mpegPrebufTimer) { clearInterval(mpegPrebufTimer); mpegPrebufTimer = null; }
+      reloadChannel(true);
     }
   };
 
   const launch = () => {
     if (started) return;
     started = true;
-    if (mpegPrebufTimer)   { clearInterval(mpegPrebufTimer);   mpegPrebufTimer   = null; }
-    if (mpegPrebufTimeout) { clearTimeout(mpegPrebufTimeout);  mpegPrebufTimeout = null; }
+    if (mpegPrebufTimer) { clearInterval(mpegPrebufTimer); mpegPrebufTimer = null; }
     if (loaderText) loaderText.textContent = 'Conectando ao canal...';
     video.play().then(() => {
       hideLoader();
@@ -624,16 +685,6 @@ function playViaMpegTS(url, stage, video) {
   };
 
   mpegPrebufTimer = setInterval(tryPlay, 300);
-  mpegPrebufTimeout = setTimeout(() => {
-    if (!started) {
-      let curBuf = 0;
-      if (video.buffered && video.buffered.length > 0) {
-        curBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
-      }
-      if (curBuf >= 3.0) launch();
-      else reloadChannel(true);
-    }
-  }, 12000);
 
   mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail) => {
     if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) reloadChannel(true);

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
-  <!-- Favicon do app -->
+  <!-- Favicon do app: SVG vetorizado de alto contraste que preenche toda a aba do navegador -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -60,7 +61,12 @@
     }
     .brand-mark {
       display: grid; width: 2.5rem; height: 2.5rem; place-items: center;
-      border-radius: .5rem; background: var(--foreground); color: var(--primary);
+      border-radius: .5rem; background: #0b0f19; color: var(--primary);
+      overflow: hidden; box-shadow: 0 0 10px rgba(249, 115, 22, 0.3);
+      border: 1px solid rgba(249, 115, 22, 0.4);
+    }
+    .brand-logo-img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
     }
     .brand-name { font-size: 1.125rem; font-weight: 600; line-height: 1.2; }
     .brand-sub  { font-size: .72rem; color: var(--muted-fg); }
@@ -685,7 +691,7 @@
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-header">
     <div class="brand-mark">
-      <i data-lucide="monitor-play" style="width:22px;height:22px"></i>
+      <img src="icon.png" class="brand-logo-img" alt="Sintoniza" />
     </div>
     <div>
       <p class="brand-name">Sintoniza</p>
@@ -1075,6 +1081,71 @@ function createMediaErrorEscalation(opts) {
 // watchdog's 1s interval fire unevenly, producing false "frozen" readings
 // and needless reconnection storms nobody is there to see. Suspend the
 // watchdog while hidden and resume (with fresh counters) when visible again.
+// Pure Prebuffer Controller for MPEG-TS streams.
+// Encapsulates buffer growth tracking, plateau/burst-ceiling detection,
+// and safety timeouts behind a clean decision contract without DOM side effects.
+function createPrebufferController(opts) {
+  var options = opts || {};
+  var targetBufSec = options.targetBufSec || 20;
+  var solidCushionSec = options.solidCushionSec || 15.0;
+  var burstCeilingMinSec = options.burstCeilingMinSec || 6.0;
+  var plateauThreshold = options.plateauThreshold || 5; // 5 ticks * 300ms = 1.5s
+  var maxWaitMs = options.maxWaitMs || 12000;
+
+  var lastBuf = 0;
+  var plateauTicks = 0;
+  var elapsedMs = 0;
+  var finished = false;
+
+  return {
+    tick: function (currentBufSec, deltaMs) {
+      if (finished) return { action: "ALREADY_FINISHED", progressPct: 100 };
+      var dMs = deltaMs || 300;
+      elapsedMs += dMs;
+
+      if (currentBufSec > 0 && Math.abs(currentBufSec - lastBuf) < 0.15) {
+        plateauTicks++;
+      } else {
+        plateauTicks = 0;
+        lastBuf = currentBufSec;
+      }
+
+      var progressPct = Math.min(100, Math.round((currentBufSec / targetBufSec) * 100));
+
+      if (currentBufSec >= targetBufSec) {
+        finished = true;
+        return { action: "LAUNCH", reason: "TARGET_REACHED", progressPct: 100 };
+      }
+      if (currentBufSec >= solidCushionSec) {
+        finished = true;
+        return { action: "LAUNCH", reason: "SOLID_CUSHION", progressPct: progressPct };
+      }
+      if (currentBufSec >= burstCeilingMinSec && plateauTicks >= plateauThreshold) {
+        finished = true;
+        return { action: "LAUNCH", reason: "BURST_CEILING_REACHED", progressPct: progressPct };
+      }
+      if (elapsedMs >= maxWaitMs) {
+        finished = true;
+        if (currentBufSec >= 3.0) {
+          return { action: "LAUNCH", reason: "TIMEOUT_PARTIAL_BUFFER", progressPct: progressPct };
+        }
+        return { action: "RECONNECT", reason: "TIMEOUT_DEAD_SOURCE", progressPct: 0 };
+      }
+
+      return {
+        action: "WAITING",
+        reason: "Carregando buffer: " + currentBufSec.toFixed(1) + "s de " + targetBufSec + "s (" + progressPct + "%)",
+        progressPct: progressPct,
+      };
+    },
+    reset: function () {
+      lastBuf = 0;
+      plateauTicks = 0;
+      elapsedMs = 0;
+      finished = false;
+    }
+  };
+}
 function getVisibilityAction(visibilityState) {
   return visibilityState === "hidden" ? "SUSPEND_WATCHDOG" : "RESUME_WATCHDOG";
 }
@@ -1930,46 +2001,39 @@ async function playStream(url) {
         // O video fica pausado enquanto video.buffered enche até mpegBufTarget.
         // Exibimos o loader com progresso para o usuário saber que está carregando.
         let mpegStarted = false;
-        let lastBufVal = 0;
-        let plateauTicks = 0;
-
         const loaderEl = document.getElementById("player-loader");
         const loaderText = loaderEl ? loaderEl.querySelector('p') : null;
+
+        const prebufferController = createPrebufferController({
+          targetBufSec: mpegBufTarget,
+          solidCushionSec: 15.0,
+          burstCeilingMinSec: 6.0,
+          plateauThreshold: 5,
+          maxWaitMs: 12000,
+        });
 
         const tryStartMpegPlayback = () => {
           if (mpegStarted) return;
 
           let currentBuf = 0;
           if (video.buffered && video.buffered.length > 0) {
-            // Pega o buffer mais à frente disponível
             currentBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
           }
 
-          // Rastreia se o buffer parou de crescer (platô: o servidor IPTV esgotou seu burst inicial)
-          if (currentBuf > 0 && Math.abs(currentBuf - lastBufVal) < 0.15) {
-            plateauTicks++;
-          } else {
-            plateauTicks = 0;
-            lastBufVal = currentBuf;
+          const decision = prebufferController.tick(currentBuf, 300);
+
+          if (loaderText && decision.reason && decision.action === "WAITING") {
+            loaderText.textContent = decision.reason;
           }
 
-          // Atualiza texto de progresso no loader
-          if (loaderText) {
-            const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
-            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
-          }
-
-          // CRITÉRIOS INTELIGENTES DE LIBERAÇÃO IMEDIATA:
-          // 1. Atingiu o buffer alvo completo (ex: 20s ou 25s)
-          // 2. Atingiu um colchão seguro excelente (>= 15s)
-          // 3. Atingiu colchão viável (>= 6s) e o burst do servidor estabilizou (platô de 1.5s = 5 checagens)
-          const targetReached = currentBuf >= mpegBufTarget;
-          const solidCushionReached = currentBuf >= 15.0;
-          const burstCeilingReached = currentBuf >= 6.0 && plateauTicks >= 5;
-
-          if (targetReached || solidCushionReached || burstCeilingReached) {
-            console.log(`[mpegts prebuffer] Liberando reprodução com ${currentBuf.toFixed(1)}s de buffer (${targetReached ? 'alvo atingido' : solidCushionReached ? 'colchão >= 15s' : 'teto de burst do servidor atingido'})`);
+          if (decision.action === "LAUNCH") {
+            console.log(`[mpegts prebuffer] Decisão: LAUNCH (${decision.reason})`);
             _launchMpegPlayback();
+          } else if (decision.action === "RECONNECT") {
+            console.warn(`[mpegts prebuffer] Decisão: RECONNECT (${decision.reason})`);
+            if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
+            escalateBufferStage();
+            reloadCurrentChannel(true);
           }
         };
 
@@ -1977,7 +2041,6 @@ async function playStream(url) {
           if (mpegStarted) return;
           mpegStarted = true;
           if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
-          if (mpegPrebufferTimeout) { clearTimeout(mpegPrebufferTimeout); mpegPrebufferTimeout = null; }
           if (loaderText) loaderText.textContent = 'Conectando ao canal...';
 
           video.play().then(() => {
