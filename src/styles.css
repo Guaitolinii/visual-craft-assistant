@@ -173,7 +173,9 @@
 @utility live-badge { display: inline-flex; border-radius: .25rem; background: var(--primary); padding: .3rem .5rem; color: var(--primary-foreground); font-size: .65rem; font-weight: 700; }
 @utility play-center { position: absolute; inset: 50% auto auto 50%; z-index: 3; width: 4.5rem; height: 4.5rem; transform: translate(-50%,-50%); border-radius: 999px; box-shadow: 0 0 0 10px oklch(1 0 0 / 8%); }
 @utility player-controls { display: flex; height: 4.25rem; align-items: center; gap: .35rem; padding: 0 1rem; background: oklch(0.1 0.012 65); }
-@utility live-line { height: 3px; min-width: 3rem; flex: 1; border-radius: 9px; background: oklch(0.3 0.02 65); }
+@utility live-line { height: 3px; min-width: 3rem; flex: 1; border-radius: 9px; background: oklch(0.3 0.02 65); overflow: hidden; position: relative; }
+@utility live-progress-bar { position: absolute; inset: 0; background: var(--primary); animation: live-pulse 2s ease-in-out infinite; }
+@utility live-progress-fill { position: absolute; inset-block: 0; left: 0; border-radius: 9px; background: var(--primary); transition: width 400ms ease; }
 @utility on-now { border: 1px solid var(--border); border-radius: .5rem; background: var(--card); padding: 1.25rem; }
 @utility now-list { margin-top: 1rem; }
 @utility now-row { display: flex; width: 100%; align-items: center; gap: .75rem; border-top: 1px solid var(--border); padding: .85rem 0; }
@@ -182,6 +184,18 @@
 @utility section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 1rem; }
 @utility view-toggle { display: flex; border-radius: .5rem; background: var(--secondary); padding: .2rem; }
 @utility channel-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+@utility channel-list { display: flex; flex-direction: column; gap: .5rem; }
+@utility channel-list-item { position: relative; display: flex; align-items: center; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); transition: 220ms cubic-bezier(.22,1,.36,1); overflow: hidden; }
+@utility list-item-main { display: flex; flex: 1; align-items: center; gap: 1rem; text-align: left; padding: .85rem 1rem; min-width: 0; }
+@utility list-item-info { flex: 1; min-width: 0; }
+@utility list-item-meta { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
+@utility list-live-badge { font-size: .6rem; font-weight: 700; color: var(--primary); }
+@utility list-category { font-size: .65rem; color: var(--muted-foreground); }
+@utility list-item-status { font-size: .78rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@utility list-progress-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; padding-right: .5rem; min-width: 5rem; }
+@utility list-progress { height: 3px; width: 100%; border-radius: 8px; background: var(--secondary); overflow: hidden; position: relative; }
+@utility list-progress-label { font-size: .65rem; color: var(--muted-foreground); }
+@utility favorite-button-list { flex-shrink: 0; margin-right: .5rem; border-radius: 999px; color: var(--muted-foreground); }
 @utility channel-card { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); transition: 220ms cubic-bezier(.22,1,.36,1); }
 @utility selected-card { border-color: var(--primary); box-shadow: 0 8px 26px oklch(0.45 0.08 75 / 12%); }
 @utility card-main { display: block; width: 100%; text-align: left; }
@@ -193,6 +207,22 @@
 @utility empty-state { display: grid; min-height: 16rem; place-items: center; align-content: center; gap: .5rem; border: 1px dashed var(--border); border-radius: .5rem; color: var(--muted-foreground); text-align: center; }
 @utility mobile-tabs { display: none; }
 @utility sidebar-scrim { position: fixed; inset: 0; z-index: 35; background: oklch(0.1 0.01 65 / 55%); }
+
+/* is-playing glow animation */
+.is-playing { animation: player-glow 3s ease-in-out infinite; }
+@keyframes player-glow {
+  0%, 100% { box-shadow: inset 0 0 0 0 oklch(0.65 0.1 75 / 0%); }
+  50% { box-shadow: inset 0 0 60px 0 oklch(0.65 0.1 75 / 10%); }
+}
+@keyframes live-pulse {
+  0% { opacity: 1; transform: scaleX(0); transform-origin: left; }
+  70% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+/* List view hover */
+.channel-list-item:hover { transform: translateX(3px); box-shadow: 0 4px 16px oklch(0.2 0.03 65 / 8%); }
+.channel-list-item .list-item-info h3 { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-progress span { position: absolute; inset-block: 0; left: 0; border-radius: 8px; background: var(--primary); }
 
 input { width: 100%; height: 3rem; background: transparent; outline: none; color: var(--foreground); }
 select { border: 1px solid oklch(1 0 0 / 12%); border-radius: .35rem; background: oklch(0.16 0.015 65); color: oklch(0.92 0.01 75); padding: .42rem .55rem; font-size: .75rem; }

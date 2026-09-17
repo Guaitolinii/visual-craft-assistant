@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, FileUp, Link2, Lock, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, CheckCircle2, FileUp, Link2, Lock, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/configuracoes")({
@@ -15,12 +15,64 @@ export const Route = createFileRoute("/configuracoes")({
   component: Configuracoes,
 });
 
+const LS_URL_KEY = "sintoniza_list_url";
+const LS_MODE_KEY = "sintoniza_list_mode";
+const LS_QUALITY_KEY = "sintoniza_quality";
+const LS_FIT_KEY = "sintoniza_fit";
+
 function Configuracoes() {
   const [mode, setMode] = useState<"url" | "arquivo">("url");
   const [url, setUrl] = useState("");
   const [fileName, setFileName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [quality, setQuality] = useState("Auto");
+  const [fit, setFit] = useState("Original");
+
+  /** Carregar preferências salvas ao montar */
+  useEffect(() => {
+    const savedMode = localStorage.getItem(LS_MODE_KEY) as "url" | "arquivo" | null;
+    const savedUrl = localStorage.getItem(LS_URL_KEY);
+    const savedQuality = localStorage.getItem(LS_QUALITY_KEY);
+    const savedFit = localStorage.getItem(LS_FIT_KEY);
+
+    if (savedMode) setMode(savedMode);
+    if (savedUrl) setUrl(savedUrl);
+    if (savedQuality) setQuality(savedQuality);
+    if (savedFit) setFit(savedFit);
+
+    // Se havia URL salva anteriormente, marcar como salvo
+    if (savedUrl && savedUrl.trim().length > 8) setSaved(true);
+  }, []);
+
   const ready = mode === "url" ? url.trim().length > 8 : fileName.length > 0;
+
+  const handleSave = () => {
+    if (mode === "url") {
+      localStorage.setItem(LS_URL_KEY, url);
+      localStorage.setItem(LS_MODE_KEY, "url");
+    } else {
+      localStorage.setItem(LS_MODE_KEY, "arquivo");
+    }
+    setSaved(true);
+  };
+
+  const handleClear = () => {
+    setUrl("");
+    setFileName("");
+    setSaved(false);
+    localStorage.removeItem(LS_URL_KEY);
+    localStorage.removeItem(LS_MODE_KEY);
+  };
+
+  const handleQualityChange = (value: string) => {
+    setQuality(value);
+    localStorage.setItem(LS_QUALITY_KEY, value);
+  };
+
+  const handleFitChange = (value: string) => {
+    setFit(value);
+    localStorage.setItem(LS_FIT_KEY, value);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -83,9 +135,13 @@ function Configuracoes() {
           )}
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button disabled={!ready} onClick={() => setSaved(true)}>Guardar lista</Button>
-            <Button variant="ghost" onClick={() => { setUrl(""); setFileName(""); setSaved(false); }}>Limpar</Button>
-            {saved && <span className="text-sm text-primary">Lista registrada nesta sessão.</span>}
+            <Button disabled={!ready} onClick={handleSave}>Guardar lista</Button>
+            <Button variant="ghost" onClick={handleClear}>Limpar</Button>
+            {saved && (
+              <span className="flex items-center gap-1.5 text-sm text-primary">
+                <CheckCircle2 size={15} /> Lista salva — permanece ao recarregar.
+              </span>
+            )}
           </div>
         </section>
 
@@ -110,18 +166,30 @@ function Configuracoes() {
 
         <section className="mt-6 rounded-lg border border-border bg-card p-5">
           <h2 className="text-base font-semibold">Preferências de reprodução</h2>
+          <p className="mt-1 text-sm text-muted-foreground">As preferências são salvas automaticamente.</p>
           <div className="mt-4 space-y-4">
-            {[
-              ["Qualidade inicial", ["Auto", "1080p", "720p"]],
-              ["Enquadramento padrão", ["Original", "Preencher", "Esticar"]],
-            ].map(([label, options]) => (
-              <label key={label as string} className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm font-medium">{label as string}</span>
-                <select className="rounded-md border border-border bg-background px-3 py-2 text-sm" aria-label={label as string}>
-                  {(options as string[]).map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </label>
-            ))}
+            <label className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-medium">Qualidade inicial</span>
+              <select
+                value={quality}
+                onChange={(event) => handleQualityChange(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                aria-label="Qualidade inicial"
+              >
+                {["Auto", "1080p", "720p"].map((opt) => <option key={opt}>{opt}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-medium">Enquadramento padrão</span>
+              <select
+                value={fit}
+                onChange={(event) => handleFitChange(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                aria-label="Enquadramento padrão"
+              >
+                {["Original", "Preencher", "Esticar"].map((opt) => <option key={opt}>{opt}</option>)}
+              </select>
+            </label>
           </div>
         </section>
       </main>

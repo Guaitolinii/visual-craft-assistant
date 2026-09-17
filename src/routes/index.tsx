@@ -4,7 +4,7 @@ import {
   Heart, Home, ListVideo, Maximize, Menu, MonitorPlay, Newspaper,
   Pause, Play, Search, Settings, Star, Tv, UserRound, Volume2, VolumeX, X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -37,6 +37,23 @@ const nav = [
   ["TV aberta", Tv], ["Notícias", Newspaper], ["Todos os canais", ListVideo], ["Recentes", Clock3],
 ] as const;
 
+/** Retorna saudação baseada no horário atual */
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Bom dia";
+  if (hour >= 12 && hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+/** Retorna data formatada em pt-BR: "QUARTA, 17 DE SETEMBRO" */
+function getFormattedDate(): string {
+  const now = new Date();
+  return now
+    .toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
+    .toUpperCase()
+    .replace(",", "");
+}
+
 function Index() {
   const [active, setActive] = useState("Início");
   const [query, setQuery] = useState("");
@@ -46,14 +63,36 @@ function Index() {
   const [muted, setMuted] = useState(false);
   const [fit, setFit] = useState<"Original" | "Preencher" | "Esticar">("Original");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [recents, setRecents] = useState<number[]>([]);
+  const [greeting] = useState(getGreeting);
+  const [formattedDate] = useState(getFormattedDate);
   const playerRef = useRef<HTMLDivElement>(null);
+
+  /** Rastreia canais recentes (últimos 5, sem repetição) */
+  const selectChannel = (channel: Channel) => {
+    setSelected(channel);
+    setPlaying(false);
+    setRecents((prev) => {
+      const filtered = prev.filter((id) => id !== channel.id);
+      return [channel.id, ...filtered].slice(0, 5);
+    });
+  };
 
   const visible = useMemo(() => channels.filter((channel) => {
     const matchesQuery = `${channel.name} ${channel.category} ${channel.status}`.toLowerCase().includes(query.toLowerCase());
-    const matchesSection = active === "Início" || active === "Todos os canais" || active === "Recentes" ||
-      (active === "Favoritos" ? favorites.includes(channel.id) : channel.category === active);
+    let matchesSection = false;
+    if (active === "Início" || active === "Todos os canais") {
+      matchesSection = true;
+    } else if (active === "Recentes") {
+      matchesSection = recents.includes(channel.id);
+    } else if (active === "Favoritos") {
+      matchesSection = favorites.includes(channel.id);
+    } else {
+      matchesSection = channel.category === active;
+    }
     return matchesQuery && matchesSection;
-  }), [active, favorites, query]);
+  }), [active, favorites, query, recents]);
 
   const toggleFavorite = (id: number) => setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const fullscreen = async () => { if (playerRef.current?.requestFullscreen) await playerRef.current.requestFullscreen(); };
@@ -68,7 +107,7 @@ function Index() {
         </div>
         <nav className="flex-1 p-4" aria-label="Navegação principal">
           <p className="nav-label">CATÁLOGO</p>
-          {nav.map(([label, Icon]) => <button key={label} className={`nav-item ${active === label ? "nav-active" : ""}`} onClick={() => { setActive(label); setMenuOpen(false); }}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{label === "Favoritos" && <span className="nav-count">{favorites.length}</span>}</button>)}
+          {nav.map(([label, Icon]) => <button key={label} className={`nav-item ${active === label ? "nav-active" : ""}`} onClick={() => { setActive(label); setMenuOpen(false); }}><Icon size={19} strokeWidth={1.8} /><span>{label}</span>{label === "Favoritos" && <span className="nav-count">{favorites.length}</span>}{label === "Recentes" && recents.length > 0 && <span className="nav-count">{recents.length}</span>}</button>)}
         </nav>
         <div className="border-t border-border p-4">
           <Link to="/configuracoes" className="nav-item"><Settings size={19} /><span>Configurações</span></Link>
@@ -86,7 +125,7 @@ function Index() {
 
         <div className="content-shell">
           <section className="welcome-row">
-            <div><p className="eyebrow">QUARTA, 16 DE SETEMBRO</p><h1>Boa noite, <span>Guaitolini.</span></h1><p className="mt-2 text-muted-foreground">O que você quer assistir agora?</p></div>
+            <div><p className="eyebrow">{formattedDate}</p><h1>{greeting}, <span>Guaitolini.</span></h1><p className="mt-2 text-muted-foreground">O que você quer assistir agora?</p></div>
             <div className="status-pill"><span className="status-dot" /> Catálogo atualizado</div>
           </section>
 
@@ -101,7 +140,19 @@ function Index() {
               <div className="player-controls">
                 <Button variant="ghost" size="icon" aria-label={playing ? "Pausar" : "Reproduzir"} onClick={() => setPlaying(!playing)}>{playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</Button>
                 <Button variant="ghost" size="icon" aria-label={muted ? "Ativar som" : "Silenciar"} onClick={() => setMuted(!muted)}>{muted ? <VolumeX size={20} /> : <Volume2 size={20} />}</Button>
-                <div className="live-line"><span /></div><span className="hidden text-xs font-medium text-primary sm:inline">AO VIVO</span>
+                {selected.live ? (
+                  <>
+                    <div className="live-line"><span className={playing ? "live-progress-bar" : ""} /></div>
+                    <span className="hidden text-xs font-medium text-primary sm:inline">AO VIVO</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="live-line">
+                      <span className="live-progress-fill" style={{ width: `${selected.progress ?? 0}%` }} />
+                    </div>
+                    <span className="hidden text-xs font-medium text-muted-foreground sm:inline">{selected.progress ?? 0}%</span>
+                  </>
+                )}
                 <select aria-label="Qualidade"><option>Auto</option><option>1080p</option><option>720p</option></select>
                 <select value={fit} onChange={(event) => setFit(event.target.value as typeof fit)} aria-label="Modo de enquadramento"><option>Original</option><option>Preencher</option><option>Esticar</option></select>
                 <Button variant="ghost" size="icon" aria-label="Tela cheia" onClick={fullscreen}><Maximize size={20} /></Button>
@@ -110,21 +161,63 @@ function Index() {
 
             <aside className="on-now">
               <div className="flex items-center justify-between"><div><p className="eyebrow">A SEGUIR</p><h2 className="mt-1 text-xl font-semibold">No ar agora</h2></div><Clapperboard className="text-primary" size={24} /></div>
-              <div className="now-list">{channels.slice(1, 5).map((channel) => <button key={channel.id} className="now-row" onClick={() => { setSelected(channel); setPlaying(false); }}><span className={`mini-logo ${channel.color}`}>{channel.initials}</span><span className="min-w-0 flex-1 text-left"><strong>{channel.name}</strong><small>{channel.status}</small></span><Play size={16} /></button>)}</div>
+              <div className="now-list">{channels.slice(1, 5).map((channel) => <button key={channel.id} className="now-row" onClick={() => { selectChannel(channel); window.scrollTo({ top: 0, behavior: "smooth" }); }}><span className={`mini-logo ${channel.color}`}>{channel.initials}</span><span className="min-w-0 flex-1 text-left"><strong>{channel.name}</strong><small>{channel.status}</small></span><Play size={16} /></button>)}</div>
             </aside>
           </section>
 
           <section className="catalog-section">
-            <div className="section-heading"><div><p className="eyebrow">EXPLORE</p><h2>{query ? `Resultados para “${query}”` : active}</h2></div><div className="view-toggle"><Button variant="secondary" size="icon" aria-label="Visualização em grade"><Grid2X2 size={18} /></Button><Button variant="ghost" size="icon" aria-label="Visualização em lista"><ListVideo size={19} /></Button></div></div>
-            {visible.length > 0 ? <div className="channel-grid">{visible.map((channel) => <article key={channel.id} className={`channel-card ${selected.id === channel.id ? "selected-card" : ""}`}>
-              <button className="card-main" onClick={() => { setSelected(channel); setPlaying(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} aria-label={`Assistir ${channel.name}`}>
-                <div className={`channel-logo ${channel.color}`}><span>{channel.initials}</span><div className="logo-ring" /></div>
-                <div className="card-tags"><span>{channel.live ? "● AO VIVO" : "FILME"}</span><span>{channel.category}</span></div>
-                <div><h3>{channel.name}</h3><p>{channel.status}</p></div>
-                {channel.progress && <div className="progress"><span style={{ width: `${channel.progress}%` }} /></div>}
-              </button>
-              <Button variant="ghost" size="icon" className="favorite-button" aria-label={favorites.includes(channel.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(channel.id)}><Heart size={19} fill={favorites.includes(channel.id) ? "currentColor" : "none"} /></Button>
-            </article>)}</div> : <div className="empty-state"><Search size={30} /><h3>Nenhum conteúdo encontrado</h3><p>Tente outro termo ou escolha uma categoria diferente.</p></div>}
+            <div className="section-heading">
+              <div><p className="eyebrow">EXPLORE</p><h2>{query ? `Resultados para "${query}"` : active}</h2></div>
+              <div className="view-toggle">
+                <Button variant={viewMode === "grid" ? "secondary" : "ghost"} size="icon" aria-label="Visualização em grade" onClick={() => setViewMode("grid")}><Grid2X2 size={18} /></Button>
+                <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="icon" aria-label="Visualização em lista" onClick={() => setViewMode("list")}><ListVideo size={19} /></Button>
+              </div>
+            </div>
+            {visible.length > 0 ? (
+              viewMode === "grid" ? (
+                <div className="channel-grid">
+                  {visible.map((channel) => <article key={channel.id} className={`channel-card ${selected.id === channel.id ? "selected-card" : ""}`}>
+                    <button className="card-main" onClick={() => { selectChannel(channel); window.scrollTo({ top: 0, behavior: "smooth" }); }} aria-label={`Assistir ${channel.name}`}>
+                      <div className={`channel-logo ${channel.color}`}><span>{channel.initials}</span><div className="logo-ring" /></div>
+                      <div className="card-tags"><span>{channel.live ? "● AO VIVO" : "FILME"}</span><span>{channel.category}</span></div>
+                      <div><h3>{channel.name}</h3><p>{channel.status}</p></div>
+                      {channel.progress && <div className="progress"><span style={{ width: `${channel.progress}%` }} /></div>}
+                    </button>
+                    <Button variant="ghost" size="icon" className="favorite-button" aria-label={favorites.includes(channel.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(channel.id)}><Heart size={19} fill={favorites.includes(channel.id) ? "currentColor" : "none"} /></Button>
+                  </article>)}
+                </div>
+              ) : (
+                <div className="channel-list">
+                  {visible.map((channel) => <article key={channel.id} className={`channel-list-item ${selected.id === channel.id ? "selected-card" : ""}`}>
+                    <button className="list-item-main" onClick={() => { selectChannel(channel); window.scrollTo({ top: 0, behavior: "smooth" }); }} aria-label={`Assistir ${channel.name}`}>
+                      <div className={`mini-logo ${channel.color}`}>{channel.initials}</div>
+                      <div className="list-item-info">
+                        <div className="list-item-meta"><span className="list-live-badge">{channel.live ? "● AO VIVO" : "FILME"}</span><span className="list-category">{channel.category}</span></div>
+                        <h3>{channel.name}</h3>
+                        <p className="list-item-status">{channel.status}</p>
+                      </div>
+                      {channel.progress && (
+                        <div className="list-progress-wrap">
+                          <div className="list-progress"><span style={{ width: `${channel.progress}%` }} /></div>
+                          <span className="list-progress-label">{channel.progress}%</span>
+                        </div>
+                      )}
+                    </button>
+                    <Button variant="ghost" size="icon" className="favorite-button-list" aria-label={favorites.includes(channel.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(channel.id)}><Heart size={18} fill={favorites.includes(channel.id) ? "currentColor" : "none"} /></Button>
+                  </article>)}
+                </div>
+              )
+            ) : (
+              <div className="empty-state">
+                {active === "Recentes" ? (
+                  <><Clock3 size={30} /><h3>Nenhum canal recente</h3><p>Selecione canais para que apareçam aqui.</p></>
+                ) : active === "Favoritos" ? (
+                  <><Heart size={30} /><h3>Nenhum favorito ainda</h3><p>Clique no coração de qualquer canal para salvar.</p></>
+                ) : (
+                  <><Search size={30} /><h3>Nenhum conteúdo encontrado</h3><p>Tente outro termo ou escolha uma categoria diferente.</p></>
+                )}
+              </div>
+            )}
           </section>
         </div>
       </main>
