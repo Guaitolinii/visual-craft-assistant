@@ -1797,8 +1797,7 @@ async function playStream(url) {
           enableWorker: true,
           enableStashBuffer: true,
           stashInitialSize: 1024 * 1024, // 1MB stash fixo — apenas suaviza jitter de rede, não é o buffer principal
-          liveBufferLatencyChasing: false, // Sem chasing: deixamos o buffer crescer livremente
-          autoCleanupSourceBuffer: false,  // Não descarta buffer acumulado prematuramente
+          ...MPEGTS_RESILIENCE_CONFIG,
           lazyLoad: false,
           deferLoadAfterSourceOpen: false
         });
