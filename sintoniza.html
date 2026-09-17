@@ -1135,8 +1135,13 @@ function setState(patch, silent) {
 
 function selectChannel(ch, autoPlay = true) {
   if (!ch) return;
-  // Reinicia no buffer base de 15 segundos ao entrar em qualquer canal
-  currentBufferStageIndex = 0;
+  // Escolhe o degrau inicial de buffer pela qualidade de conexão reportada
+  // pelo navegador (Network Information API) em vez de sempre começar no
+  // degrau mais raso e só escalar depois de já ter travado.
+  currentBufferStageIndex = pickInitialBufferStageIndex({
+    connectionEffectiveType: navigator.connection && navigator.connection.effectiveType,
+    stagesLength: BUFFER_STAGES.length,
+  });
   const recents = [ch.id, ..._state.recents.filter(id => id !== ch.id)].slice(0, 8);
   setState({ selected: ch, playing: false, recents });
   localStorage.setItem("sint_recents", JSON.stringify(recents));
@@ -1436,44 +1441,6 @@ async function detectStreamType(url) {
   } catch (e) {}
 
   return { type: url.includes('.ts') ? 'mpegts' : 'hls', url };
-}
-
-// ─── Pré-teste de 800ms (Channel Health Check) ───
-async function preflightChannelCheck(url) {
-  const startTime = performance.now();
-  let status = "good";
-  let latency = 0;
-  let recommendedStash = STASH_BUFFERS.NORMAL;
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 800);
-
-    await fetch(url, {
-      method: "GET",
-      headers: { "Range": "bytes=0-1024" },
-      signal: controller.signal,
-      cache: "no-store"
-    });
-    clearTimeout(timer);
-    latency = Math.round(performance.now() - startTime);
-
-    if (latency < 450) {
-      status = "excellent";
-      recommendedStash = STASH_BUFFERS.NORMAL;
-    } else {
-      status = "good";
-      recommendedStash = STASH_BUFFERS.NORMAL;
-    }
-  } catch (err) {
-    latency = Math.round(performance.now() - startTime);
-    // Demorou mais de 800ms ou deu erro de socket
-    status = "slow_or_unstable";
-    recommendedStash = STASH_BUFFERS.UNSTABLE; // abre com buffer reforçado de 2048KB
-    console.log(`[Preflight] Canal com resposta lenta (${latency}ms). Buffer inicial expandido para 2048KB.`);
-  }
-
-  return { status, latency, recommendedStash };
 }
 
 // ─── Telemetria / Stats for Nerds ───
