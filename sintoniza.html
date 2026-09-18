@@ -1377,13 +1377,13 @@ let currentWatchdogUrl = null;
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
 // mpegBufSec: buffer-alvo real do video.buffered para MPEG-TS (aguarda acumular antes de play)
 const BUFFER_STAGES = [
-  { seconds: 20, hlsMax: 15, hlsMaxMax: 30,  mpegBufSec: 20 },
   { seconds: 25, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 25 },
   { seconds: 35, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 35 },
-  { seconds: 50, hlsMax: 45, hlsMaxMax: 90,  mpegBufSec: 50 },
+  { seconds: 45, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 45 },
+  { seconds: 55, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 55 },
   { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 60 },
 ];
-let currentBufferStageIndex = 0; // Começa sempre no padrão 15s
+let currentBufferStageIndex = 0; // Começa sempre no padrão 25s
 
 function escalateBufferStage() {
   if (currentBufferStageIndex < BUFFER_STAGES.length - 1) {
@@ -1738,16 +1738,17 @@ async function playStream(url) {
   const playUrl = streamInfo.url;
   updateDebugOverlay();
 
-  // Timeout generoso de 12s para abertura
+  // Timeout de abertura: para HLS espera 15s; para MPEG-TS aguarda a conclusão do buffer (pelo menos 35s)
+  const timeoutMs = currentStreamType === "mpegts" ? Math.max(35000, (stage.mpegBufSec + 10) * 1000) : 15000;
   initialLoadTimeout = setTimeout(() => {
     const loader = document.getElementById("player-loader");
     if (loader && loader.classList.contains("active") && !isReloadingStream) {
-      console.warn("[Player] Abertura demorou mais de 12s. Reestabilizando...");
+      console.warn(`[Player] Conexão demorou mais de ${Math.round(timeoutMs / 1000)}s. Reestabilizando...`);
       showToast("Conexão demorando — restabelecendo sinal...");
       escalateBufferStage();
       reloadCurrentChannel(true);
     }
-  }, 12000);
+  }, timeoutMs);
 
   if (currentStreamType === "hls") {
     if (Hls.isSupported()) {
@@ -1881,6 +1882,7 @@ async function playStream(url) {
         const _launchMpegPlayback = () => {
           if (mpegStarted) return;
           mpegStarted = true;
+          if (initialLoadTimeout) { clearTimeout(initialLoadTimeout); initialLoadTimeout = null; }
           if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
           if (mpegPrebufferTimeout) { clearTimeout(mpegPrebufferTimeout); mpegPrebufferTimeout = null; }
           if (loaderText) loaderText.textContent = 'Conectando ao canal...';
@@ -1902,13 +1904,14 @@ async function playStream(url) {
 
         mpegPrebufferTimer = setInterval(tryStartMpegPlayback, 300);
 
-        // ─── Timeout de segurança: se após 35s ainda não acumulou, solta mesmo assim ───
+        // ─── Timeout de segurança: proporcional ao buffer (mínimo 35s) ───
+        const maxPrebufMs = Math.max(35000, (mpegBufTarget + 10) * 1000);
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
-            console.warn('[mpegts prebuffer] Timeout de 35s. Liberando com buffer parcial.');
+            console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s. Liberando com buffer parcial.`);
             _launchMpegPlayback();
           }
-        }, 35000);
+        }, maxPrebufMs);
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);

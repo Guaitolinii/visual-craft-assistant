@@ -334,11 +334,11 @@ function ensureEssentialFavs() {
 // BUFFER E PLAYER
 // ──────────────────────────────────────────────────────────────
 const BUFFER_STAGES = [
-  { seconds: 20, hlsMax: 15, hlsMaxMax: 30, mpegBufSec: 20 },
   { seconds: 25, hlsMax: 20, hlsMaxMax: 40, mpegBufSec: 25 },
   { seconds: 35, hlsMax: 30, hlsMaxMax: 60, mpegBufSec: 35 },
-  { seconds: 50, hlsMax: 45, hlsMaxMax: 90, mpegBufSec: 50 },
-  { seconds: 60, hlsMax: 60, hlsMaxMax:120, mpegBufSec: 60 },
+  { seconds: 45, hlsMax: 40, hlsMaxMax: 80, mpegBufSec: 45 },
+  { seconds: 55, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 55 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 60 },
 ];
 let currentBufferStageIndex = 0;
 let hlsInstance     = null;
@@ -541,7 +541,8 @@ function playViaMpegTS(url, stage, video) {
   };
 
   mpegPrebufTimer   = setInterval(tryPlay, 300);
-  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, 35000);
+  const maxPrebufMs = Math.max(35000, (mpegBufTarget + 10) * 1000);
+  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, maxPrebufMs);
 
   mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail) => {
     if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) reloadChannel(true);
