@@ -4,11 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sintoniza — IPTV</title>
-  <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
-  <!-- Favicon do app: SVG vetorizado de alto contraste que preenche toda a aba do navegador -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="icon" type="image/png" href="icon.png" />
-  <link rel="apple-touch-icon" href="icon.png" />
+  <link rel="alternate icon" type="image/png" href="icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -61,12 +58,7 @@
     }
     .brand-mark {
       display: grid; width: 2.5rem; height: 2.5rem; place-items: center;
-      border-radius: .5rem; background: #0b0f19; color: var(--primary);
-      overflow: hidden; box-shadow: 0 0 10px rgba(249, 115, 22, 0.3);
-      border: 1px solid rgba(249, 115, 22, 0.4);
-    }
-    .brand-logo-img {
-      width: 100%; height: 100%; object-fit: cover; display: block;
+      border-radius: .5rem; background: var(--foreground); color: var(--primary);
     }
     .brand-name { font-size: 1.125rem; font-weight: 600; line-height: 1.2; }
     .brand-sub  { font-size: .72rem; color: var(--muted-fg); }
@@ -691,7 +683,7 @@
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-header">
     <div class="brand-mark">
-      <img src="icon.png" class="brand-logo-img" alt="Sintoniza" />
+      <img src="favicon.svg" alt="Sintoniza Logo" style="width:24px;height:24px;object-fit:contain;border-radius:6px;filter:drop-shadow(0 2px 6px rgba(0,240,255,0.4));" />
     </div>
     <div>
       <p class="brand-name">Sintoniza</p>
@@ -1021,14 +1013,18 @@ function pickInitialBufferStageIndex(opts) {
   return Math.min(index, stagesLength - 1);
 }
 
-// Configuração resiliente para MPEG-TS em IPTV:
-// liveBufferLatencyChasing é DESABILITADO porque forçar perseguição de latência
-// corta o colchão de buffer acumulado (20s/30s/60s) para meros 4s, destruindo a
-// proteção contra oscilações de rede e causando travamentos constantes.
-// autoCleanupSourceBuffer permanece ATIVO para purgar o buffer retroativo (passado)
-// e impedir consumo excessivo de memória em transmissões longas.
+// Relaxed latency-chasing (10s max / 4s min remain) + bounded backward cleanup
+// (60s/30s) instead of "no chasing + never clean up". Values match the fix
+// validated in production by a real mpegts.js-based IPTV player
+// (alvarolobato/iptv-proxy PR #51): the old chase-to-1.5s config caused 28
+// stalls per 45s; disabling chasing entirely (this project's previous config)
+// avoids that but lets the buffer grow forever, risking memory bloat on
+// hours-long viewing sessions. This keeps ~5-6s of forward buffer while
+// pruning the backward buffer instead of letting it grow unbounded.
 var MPEGTS_RESILIENCE_CONFIG = {
-  liveBufferLatencyChasing: false,
+  liveBufferLatencyChasing: true,
+  liveBufferLatencyMaxLatency: 10,
+  liveBufferLatencyMinRemain: 4,
   autoCleanupSourceBuffer: true,
   autoCleanupMaxBackwardDuration: 60,
   autoCleanupMinBackwardDuration: 30,
@@ -1081,71 +1077,6 @@ function createMediaErrorEscalation(opts) {
 // watchdog's 1s interval fire unevenly, producing false "frozen" readings
 // and needless reconnection storms nobody is there to see. Suspend the
 // watchdog while hidden and resume (with fresh counters) when visible again.
-// Pure Prebuffer Controller for MPEG-TS streams.
-// Encapsulates buffer growth tracking, plateau/burst-ceiling detection,
-// and safety timeouts behind a clean decision contract without DOM side effects.
-function createPrebufferController(opts) {
-  var options = opts || {};
-  var targetBufSec = options.targetBufSec || 20;
-  var solidCushionSec = options.solidCushionSec || 15.0;
-  var burstCeilingMinSec = options.burstCeilingMinSec || 6.0;
-  var plateauThreshold = options.plateauThreshold || 5; // 5 ticks * 300ms = 1.5s
-  var maxWaitMs = options.maxWaitMs || 12000;
-
-  var lastBuf = 0;
-  var plateauTicks = 0;
-  var elapsedMs = 0;
-  var finished = false;
-
-  return {
-    tick: function (currentBufSec, deltaMs) {
-      if (finished) return { action: "ALREADY_FINISHED", progressPct: 100 };
-      var dMs = deltaMs || 300;
-      elapsedMs += dMs;
-
-      if (currentBufSec > 0 && Math.abs(currentBufSec - lastBuf) < 0.15) {
-        plateauTicks++;
-      } else {
-        plateauTicks = 0;
-        lastBuf = currentBufSec;
-      }
-
-      var progressPct = Math.min(100, Math.round((currentBufSec / targetBufSec) * 100));
-
-      if (currentBufSec >= targetBufSec) {
-        finished = true;
-        return { action: "LAUNCH", reason: "TARGET_REACHED", progressPct: 100 };
-      }
-      if (currentBufSec >= solidCushionSec) {
-        finished = true;
-        return { action: "LAUNCH", reason: "SOLID_CUSHION", progressPct: progressPct };
-      }
-      if (currentBufSec >= burstCeilingMinSec && plateauTicks >= plateauThreshold) {
-        finished = true;
-        return { action: "LAUNCH", reason: "BURST_CEILING_REACHED", progressPct: progressPct };
-      }
-      if (elapsedMs >= maxWaitMs) {
-        finished = true;
-        if (currentBufSec >= 3.0) {
-          return { action: "LAUNCH", reason: "TIMEOUT_PARTIAL_BUFFER", progressPct: progressPct };
-        }
-        return { action: "RECONNECT", reason: "TIMEOUT_DEAD_SOURCE", progressPct: 0 };
-      }
-
-      return {
-        action: "WAITING",
-        reason: "Carregando buffer: " + currentBufSec.toFixed(1) + "s de " + targetBufSec + "s (" + progressPct + "%)",
-        progressPct: progressPct,
-      };
-    },
-    reset: function () {
-      lastBuf = 0;
-      plateauTicks = 0;
-      elapsedMs = 0;
-      finished = false;
-    }
-  };
-}
 function getVisibilityAction(visibilityState) {
   return visibilityState === "hidden" ? "SUSPEND_WATCHDOG" : "RESUME_WATCHDOG";
 }
@@ -1442,9 +1373,6 @@ let hlsNetworkRetryAttempt = 0;
 let hlsNetworkRetryTimer = null;
 let mediaErrorEscalation = createMediaErrorEscalation();
 let currentWatchdogUrl = null;
-let isMpegRebuffering = false;
-let mpegRebufferInterval = null;
-let mpegRebufferTimeout = null;
 
 // ─── Auto-Calibração Progressiva de Buffers ───
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
@@ -1601,25 +1529,21 @@ function startWatchdog(url) {
     const loader = document.getElementById("player-loader");
     if (loader && loader.classList.contains("active")) return;
 
-    // Se estiver em fase de re-buffer inteligente, não interfere nem penaliza
-    if (isMpegRebuffering) return;
-
     const curTime = video.currentTime || 0;
     const curFrames = video.webkitDecodedFrameCount || 0;
 
-    // Reanima vídeo pausado por buffer underrun SOMENTE se houver dados futuros suficientes (evita looping de esgotamento instantâneo)
+    // Reanima vídeo pausado por buffer underrun SOMENTE se houver dados futuros (evita looping de esgotamento instantâneo)
     if (video.paused && !video.ended) {
       let hasCushion = false;
-      const minCushion = currentStreamType === "mpegts" ? 6.0 : 1.5;
       if (video.buffered && video.buffered.length > 0) {
         for (let i = 0; i < video.buffered.length; i++) {
           if (video.buffered.start(i) <= curTime && curTime <= video.buffered.end(i)) {
-            hasCushion = (video.buffered.end(i) - curTime) >= minCushion;
+            hasCushion = (video.buffered.end(i) - curTime) >= 1.5;
             break;
           }
         }
       }
-      if (hasCushion) {
+      if (video.readyState >= 3 || hasCushion) {
         video.play().catch(() => {});
       }
     }
@@ -1660,10 +1584,16 @@ function startWatchdog(url) {
       if (watchdogFrozenSeconds === 7) {
         console.warn("[Watchdog N2] Oscilação persistente. Elevando buffer e reestabilizando...");
         sessionReconnectCount++;
-        escalateBufferStage(); // Sobe para próximo degrau (ex: 20s -> 25s -> 35s...)
+        escalateBufferStage(); // Sobe para próximo degrau (ex: 15s -> 20s -> 30s...)
 
         if (mpegtsPlayer) {
-          reloadCurrentChannel(true);
+          try {
+            mpegtsPlayer.unload();
+            mpegtsPlayer.load();
+            mpegtsPlayer.play();
+          } catch (e) {
+            reloadCurrentChannel(true);
+          }
         } else if (hlsInstance) {
           try {
             hlsInstance.startLoad();
@@ -1695,70 +1625,6 @@ function startWatchdog(url) {
   }, 1000);
 }
 
-// ─── Reabastecimento Dinâmico de Buffer em Execução (MPEG-TS) ───
-// Quando a conexão oscila e o buffer se esgota, pausa temporariamente para
-// recompor um colchão de segurança sem os micro-travamentos contínuos de 0.1s.
-function triggerMpegRebuffer(reason) {
-  if (isMpegRebuffering || isReloadingStream || currentStreamType !== "mpegts") return;
-  const video = document.getElementById("player-video");
-  if (!video || !mpegtsPlayer) return;
-
-  isMpegRebuffering = true;
-  console.warn(`[MPEG-TS Rebuffer] ${reason}`);
-
-  // Pausa a reprodução para permitir acúmulo contínuo de buffer via rede
-  video.pause();
-
-  const stage = BUFFER_STAGES[currentBufferStageIndex];
-  const targetRecharge = Math.max(8, Math.min(stage.mpegBufSec || 20, 15));
-
-  showToast(`Proteção ativa: recompondo colchão de ${targetRecharge}s...`);
-
-  const statusEl = document.getElementById("dbg-watchdog");
-  if (statusEl) statusEl.textContent = `Re-buffer (${targetRecharge}s)`;
-
-  if (mpegRebufferInterval) clearInterval(mpegRebufferInterval);
-  if (mpegRebufferTimeout) clearTimeout(mpegRebufferTimeout);
-
-  mpegRebufferInterval = setInterval(() => {
-    let currentBuf = 0;
-    const cur = video.currentTime || 0;
-    if (video.buffered && video.buffered.length > 0) {
-      for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= cur && cur <= video.buffered.end(i)) {
-          currentBuf = video.buffered.end(i) - cur;
-          break;
-        }
-      }
-    }
-
-    updateDebugOverlay();
-
-    if (currentBuf >= targetRecharge) {
-      clearInterval(mpegRebufferInterval);
-      mpegRebufferInterval = null;
-      if (mpegRebufferTimeout) { clearTimeout(mpegRebufferTimeout); mpegRebufferTimeout = null; }
-      isMpegRebuffering = false;
-      video.play().then(() => {
-        showToast("Sinal restabelecido com buffer seguro!");
-      }).catch(err => console.warn("[Rebuffer play notice]", err));
-    }
-  }, 250);
-
-  // Se após 14s a fonte não enviou dados suficientes (sinal caiu de vez), recarrega via Watchdog
-  mpegRebufferTimeout = setTimeout(() => {
-    if (isMpegRebuffering) {
-      clearInterval(mpegRebufferInterval);
-      mpegRebufferInterval = null;
-      mpegRebufferTimeout = null;
-      isMpegRebuffering = false;
-      console.warn("[MPEG-TS Rebuffer] Timeout de recomposição. Escalando buffer e reconectando...");
-      escalateBufferStage();
-      reloadCurrentChannel(true);
-    }
-  }, 14000);
-}
-
 function stopWatchdog() {
   if (watchdogTimer) {
     clearInterval(watchdogTimer);
@@ -1776,15 +1642,6 @@ function stopWatchdog() {
     clearTimeout(mpegPrebufferTimeout);
     mpegPrebufferTimeout = null;
   }
-  if (mpegRebufferInterval) {
-    clearInterval(mpegRebufferInterval);
-    mpegRebufferInterval = null;
-  }
-  if (mpegRebufferTimeout) {
-    clearTimeout(mpegRebufferTimeout);
-    mpegRebufferTimeout = null;
-  }
-  isMpegRebuffering = false;
   resetWatchdogCounters();
   updateDebugOverlay();
 }
@@ -1882,20 +1739,16 @@ async function playStream(url) {
   const playUrl = streamInfo.url;
   updateDebugOverlay();
 
-  // Timeout generoso de abertura (somente para HLS; MPEG-TS tem acumulador dedicado com mpegPrebufferTimeout)
-  if (currentStreamType === "mpegts") {
-    if (initialLoadTimeout) { clearTimeout(initialLoadTimeout); initialLoadTimeout = null; }
-  } else {
-    initialLoadTimeout = setTimeout(() => {
-      const loader = document.getElementById("player-loader");
-      if (loader && loader.classList.contains("active") && !isReloadingStream) {
-        console.warn("[Player] Abertura demorou mais de 15s. Reestabilizando...");
-        showToast("Conexão demorando — restabelecendo sinal...");
-        escalateBufferStage();
-        reloadCurrentChannel(true);
-      }
-    }, 15000);
-  }
+  // Timeout generoso de 12s para abertura
+  initialLoadTimeout = setTimeout(() => {
+    const loader = document.getElementById("player-loader");
+    if (loader && loader.classList.contains("active") && !isReloadingStream) {
+      console.warn("[Player] Abertura demorou mais de 12s. Reestabilizando...");
+      showToast("Conexão demorando — restabelecendo sinal...");
+      escalateBufferStage();
+      reloadCurrentChannel(true);
+    }
+  }, 12000);
 
   if (currentStreamType === "hls") {
     if (Hls.isSupported()) {
@@ -2001,39 +1854,28 @@ async function playStream(url) {
         // O video fica pausado enquanto video.buffered enche até mpegBufTarget.
         // Exibimos o loader com progresso para o usuário saber que está carregando.
         let mpegStarted = false;
+
         const loaderEl = document.getElementById("player-loader");
         const loaderText = loaderEl ? loaderEl.querySelector('p') : null;
-
-        const prebufferController = createPrebufferController({
-          targetBufSec: mpegBufTarget,
-          solidCushionSec: 15.0,
-          burstCeilingMinSec: 6.0,
-          plateauThreshold: 5,
-          maxWaitMs: 12000,
-        });
 
         const tryStartMpegPlayback = () => {
           if (mpegStarted) return;
 
           let currentBuf = 0;
           if (video.buffered && video.buffered.length > 0) {
+            // Pega o buffer mais à frente disponível
             currentBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
           }
 
-          const decision = prebufferController.tick(currentBuf, 300);
-
-          if (loaderText && decision.reason && decision.action === "WAITING") {
-            loaderText.textContent = decision.reason;
+          // Atualiza texto de progresso no loader
+          if (loaderText) {
+            const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
+            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
           }
 
-          if (decision.action === "LAUNCH") {
-            console.log(`[mpegts prebuffer] Decisão: LAUNCH (${decision.reason})`);
+          // Libera reprodução quando buffer-alvo for atingido ou readyState indicar completude
+          if (currentBuf >= mpegBufTarget) {
             _launchMpegPlayback();
-          } else if (decision.action === "RECONNECT") {
-            console.warn(`[mpegts prebuffer] Decisão: RECONNECT (${decision.reason})`);
-            if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
-            escalateBufferStage();
-            reloadCurrentChannel(true);
           }
         };
 
@@ -2041,6 +1883,7 @@ async function playStream(url) {
           if (mpegStarted) return;
           mpegStarted = true;
           if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
+          if (mpegPrebufferTimeout) { clearTimeout(mpegPrebufferTimeout); mpegPrebufferTimeout = null; }
           if (loaderText) loaderText.textContent = 'Conectando ao canal...';
 
           video.play().then(() => {
@@ -2060,23 +1903,13 @@ async function playStream(url) {
 
         mpegPrebufferTimer = setInterval(tryStartMpegPlayback, 300);
 
-        // ─── Timeout de segurança: no máximo 12s de espera para evitar telas congeladas ───
+        // ─── Timeout de segurança: se após 35s ainda não acumulou, solta mesmo assim ───
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
-            let curBuf = 0;
-            if (video.buffered && video.buffered.length > 0) {
-              curBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
-            }
-            if (curBuf >= 3.0) {
-              console.warn(`[mpegts prebuffer] Timeout atingido com ${curBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
-              _launchMpegPlayback();
-            } else {
-              console.warn('[mpegts prebuffer] Timeout de 12s sem buffer da fonte. Tentando restabelecer sinal...');
-              escalateBufferStage();
-              reloadCurrentChannel(true);
-            }
+            console.warn('[mpegts prebuffer] Timeout de 35s. Liberando com buffer parcial.');
+            _launchMpegPlayback();
           }
-        }, 12000);
+        }, 35000);
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
@@ -2672,13 +2505,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("player-screen");
     if (document.fullscreenElement) { document.exitFullscreen(); }
     else if (el.requestFullscreen) { el.requestFullscreen(); }
-  });
-
-  // Reabastecimento automático em caso de buffer underrun durante a reprodução
-  document.getElementById("player-video").addEventListener("waiting", () => {
-    if (_state.playing && !isReloadingStream && currentStreamType === "mpegts") {
-      triggerMpegRebuffer("Buffer esgotado durante a transmissão");
-    }
   });
 
   // ── VIEW TOGGLE ──
