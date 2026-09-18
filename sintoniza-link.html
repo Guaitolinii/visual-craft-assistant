@@ -949,6 +949,25 @@
         </p>
       </div>
 
+      <div class="settings-card">
+        <label class="url-label">
+          <span>Proxy de stream (opcional)</span>
+          <div class="url-input-wrap">
+            <i data-lucide="shield-check" style="width:18px;height:18px;color:var(--muted-fg)"></i>
+            <input type="url" id="proxy-url" placeholder="https://seu-proxy.workers.dev" aria-label="URL do proxy de stream" />
+          </div>
+          <p class="url-hint">Se essa página estiver em HTTPS (como agora) e seus canais forem em HTTP puro, o navegador bloqueia a conexão direta ("conteúdo misto"). Preencha aqui o endereço de um proxy HTTPS (ex: um Cloudflare Worker) para contornar isso. Deixe em branco se não precisar.</p>
+        </label>
+        <div class="settings-actions">
+          <button class="btn-primary" id="save-proxy-btn">Salvar proxy</button>
+          <button class="btn-ghost" id="clear-proxy-btn">Limpar</button>
+          <span class="save-indicator" id="proxy-save-indicator" style="display:none">
+            <i data-lucide="check-circle-2" style="width:15px;height:15px"></i>
+            <span id="proxy-save-indicator-text">Proxy salvo.</span>
+          </span>
+        </div>
+      </div>
+
       <div class="info-grid">
         <div class="info-card">
           <i data-lucide="zap" style="width:20px;height:20px;color:var(--primary)"></i>
@@ -1526,6 +1545,21 @@ function mpegtsSoftRestartOrReload(label) {
   reloadCurrentChannel(true);
 }
 
+// ─── Proxy para streams HTTP puro (conteúdo misto) ───
+// Uma página HTTPS (GitHub Pages, etc.) é proibida pelo navegador de buscar
+// conteúdo de um endereço HTTP puro ("mixed content") - não tem workaround
+// em JS, é bloqueado antes mesmo do pedido sair. Se houver um proxy HTTPS
+// configurado em Configurações (ex: um Cloudflare Worker), reescreve a URL
+// pra passar por ele. Sem proxy configurado, ou se a própria página não
+// estiver em HTTPS (file://, localhost), a URL original é usada sem mudança.
+function proxyIfInsecure(url) {
+  if (!url || !url.startsWith("http://")) return url;
+  if (window.location.protocol !== "https:") return url;
+  const proxyBase = localStorage.getItem(LS.PROXY);
+  if (!proxyBase) return url;
+  return `${proxyBase.replace(/\/$/, "")}/stream?url=${encodeURIComponent(url)}`;
+}
+
 // ─── Detecção Inteligente de Stream & Dual-Stack HLS Probe ───
 // Em listas IPTV (Xtream Codes/XUI), links .ts quase sempre têm espelho .m3u8 no mesmo servidor.
 // O HLS baixa blocos em paralelo e mantém o buffer de 15s-60s sem nunca esgotar.
@@ -1926,7 +1960,7 @@ async function playStream(url) {
   // Detecta formato inteligente & probe HLS
   const streamInfo = await detectStreamType(url);
   currentStreamType = streamInfo.type;
-  const playUrl = streamInfo.url;
+  const playUrl = proxyIfInsecure(streamInfo.url);
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
@@ -2564,17 +2598,20 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy" };
 
 function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
   const vol  = localStorage.getItem(LS.VOL)  || "1";
+  const proxy = localStorage.getItem(LS.PROXY) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
   document.getElementById("pref-vol").value  = vol;
+  document.getElementById("proxy-url").value = proxy;
+  document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   setSettingsMode(mode);
 
   const saved = url.trim().length > 8;
@@ -2884,6 +2921,21 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       showToast("Não foi possível copiar automaticamente. Copie manualmente: " + shareUrl);
     }
+  });
+
+  document.getElementById("save-proxy-btn").addEventListener("click", () => {
+    const proxy = document.getElementById("proxy-url").value.trim();
+    if (!proxy) { showToast("Cole o endereço do proxy antes de salvar."); return; }
+    localStorage.setItem(LS.PROXY, proxy);
+    document.getElementById("proxy-save-indicator").style.display = "flex";
+    showToast("Proxy salvo. Os canais HTTP agora passam por ele.");
+  });
+
+  document.getElementById("clear-proxy-btn").addEventListener("click", () => {
+    document.getElementById("proxy-url").value = "";
+    document.getElementById("proxy-save-indicator").style.display = "none";
+    localStorage.removeItem(LS.PROXY);
+    showToast("Proxy removido.");
   });
 
   document.getElementById("pref-fit").addEventListener("change", e => {

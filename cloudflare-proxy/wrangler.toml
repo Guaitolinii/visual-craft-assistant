@@ -1,0 +1,6 @@
+name = "sintoniza-stream-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-09-18"
+
+[observability]
+enabled = true
