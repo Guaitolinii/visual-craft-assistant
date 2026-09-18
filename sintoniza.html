@@ -1109,6 +1109,30 @@ function computeMaxPrebufferMs(connectionEffectiveType) {
   }
   return 6000;
 }
+
+// Caps automatic reconnect attempts so a genuinely dead channel eventually
+// surfaces a clear error instead of silently retrying forever. Mirrors the
+// "N reconnects within a window = considered dead" pattern used by
+// production HLS/IPTV players. Only automatic (silent) reloads should ever
+// call recordAttempt() - a manual user-initiated retry always gets a fresh
+// attempt via reset().
+function createReconnectCircuitBreaker(opts) {
+  var options = opts || {};
+  var maxAttempts = options.maxAttempts || 5;
+  var windowMs = options.windowMs || 5 * 60 * 1000;
+  var attempts = [];
+
+  return {
+    recordAttempt: function (nowMs) {
+      attempts = attempts.filter(function (t) { return (nowMs - t) < windowMs; });
+      attempts.push(nowMs);
+      return attempts.length > maxAttempts ? "GIVE_UP" : "RETRY";
+    },
+    reset: function () {
+      attempts = [];
+    },
+  };
+}
 </script>
 
 <script>
@@ -1412,21 +1436,23 @@ let hlsNetworkRetryAttempt = 0;
 let hlsNetworkRetryTimer = null;
 let mediaErrorEscalation = createMediaErrorEscalation();
 let currentWatchdogUrl = null;
+let reconnectCircuitBreaker = createReconnectCircuitBreaker();
 let lastMpegBufferedEnd = -1;
 let mpegBufferStallCount = 0;
 let lastMpegBgReconnectTime = 0;
 
 // ─── Auto-Calibração Progressiva de Buffers ───
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
-// mpegBufSec: buffer-alvo real em segundo plano para MPEG-TS (pelo menos 20s)
+// mpegBufSec: buffer-alvo real em segundo plano para MPEG-TS (pelo menos 25s -
+// abaixo disso os canais MPEG-TS travam)
 const BUFFER_STAGES = [
-  { seconds: 20, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 20 },
-  { seconds: 30, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 25 },
-  { seconds: 40, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 30 },
-  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 35 },
-  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 40 },
+  { seconds: 20, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 25 },
+  { seconds: 30, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 30 },
+  { seconds: 40, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 40 },
+  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 50 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 60 },
 ];
-let currentBufferStageIndex = 0; // Começa sempre no padrão 20s
+let currentBufferStageIndex = 0; // Começa sempre no padrão 25s (MPEG-TS) / 20s (HLS)
 
 function escalateBufferStage() {
   if (currentBufferStageIndex < BUFFER_STAGES.length - 1) {
@@ -1502,7 +1528,7 @@ function updateDebugOverlay() {
   document.getElementById("dbg-channel").textContent = ch ? ch.name.slice(0, 18) : "-";
   document.getElementById("dbg-type").textContent = currentStreamType.toUpperCase();
   document.getElementById("dbg-stash").textContent = currentStreamType === "mpegts"
-    ? `${stage.mpegBufSec || 20}s (MPEG buf-alvo)`
+    ? `${stage.mpegBufSec || 25}s (MPEG buf-alvo)`
     : `${stage.hlsMax}s (HLS max)`;
   document.getElementById("dbg-reconnects").textContent = sessionReconnectCount;
 
@@ -1608,8 +1634,8 @@ function startWatchdog(url) {
         _state.selected.quality_score = Math.min(100, (_state.selected.quality_score || 80) + 1);
       }
 
-      // ─── Monitor de Buffer em Background (MPEG-TS): Carregamento até 25s ───
-      // Garante que o stream continue carregando pelo menos 25s em segundo plano.
+      // ─── Monitor de Buffer em Background (MPEG-TS): Carregamento até o alvo do degrau atual ───
+      // Garante que o stream continue carregando pelo menos o alvo do degrau atual em segundo plano.
       // Se a ingestão de background parar e o buffer começar a cair, reinicia o transporte
       // SILENCIOSAMENTE, SEM TRAVAR A TELA (o vídeo continua rodando no buffer existente).
       if (mpegtsPlayer && currentStreamType === "mpegts" && video.buffered && video.buffered.length > 0) {
@@ -1620,9 +1646,12 @@ function startWatchdog(url) {
           }
         }
         const currentEnd = video.buffered.end(video.buffered.length - 1);
+        // Lê do degrau atual (não um literal fixo) para acompanhar
+        // escalateBufferStage() quando o watchdog eleva o alvo.
+        const mpegTargetSec = BUFFER_STAGES[currentBufferStageIndex].mpegBufSec || 25;
 
-        // Se o buffer estiver abaixo do alvo de 25s e não estiver avançando
-        if (forwardCushion < 25.0) {
+        // Se o buffer estiver abaixo do alvo atual e não estiver avançando
+        if (forwardCushion < mpegTargetSec) {
           if (Math.abs(currentEnd - lastMpegBufferedEnd) < 0.1) {
             mpegBufferStallCount++;
             // Se o background parou por mais de 4s e o buffer caiu abaixo de 10s:
@@ -1757,6 +1786,23 @@ async function reloadCurrentChannel(isSilent = false) {
   const ch = _state.selected;
   if (!ch || !ch.url) return;
   if (isReloadingStream) return;
+
+  if (isSilent) {
+    // Só reloads automáticos (silenciosos) contam para o breaker - um toque
+    // manual em "Recarregar canal" ou "Tentar novamente" sempre ganha uma
+    // tentativa nova e reseta o contador logo abaixo.
+    const verdict = reconnectCircuitBreaker.recordAttempt(Date.now());
+    if (verdict === "GIVE_UP") {
+      console.warn(`[Circuit Breaker] Muitas reconexões automáticas para "${ch.name}". Parando e pedindo ação manual.`);
+      stopWatchdog();
+      setState({ playing: false });
+      showPlayerError(`Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
+      return;
+    }
+  } else {
+    reconnectCircuitBreaker.reset();
+  }
+
   isReloadingStream = true;
 
   const reloadBtn = document.getElementById("reload-stream-btn");
@@ -1803,6 +1849,7 @@ async function playStream(url) {
 
   // Limpa instâncias anteriores
   mediaErrorEscalation.reset();
+  reconnectCircuitBreaker.reset();
   if (hlsInstance) {
     try { hlsInstance.stopLoad(); hlsInstance.destroy(); } catch (e) {}
     hlsInstance = null;
@@ -1928,8 +1975,13 @@ async function playStream(url) {
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
     if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
       try {
-        const mpegBufTarget = 25; // Alvo de buffer: 25s
-        const stash25s = 25 * 1024 * 1024; // Stash calibrado para 25s (~25MB para streams MPEG-TS em HD)
+        // Lê do degrau atual de BUFFER_STAGES (mínimo 25s) em vez de um valor
+        // fixo, para que escalateBufferStage() realmente eleve o alvo do
+        // MPEG-TS quando o watchdog detectar instabilidade repetida - antes
+        // o toast dizia "buffer expandido" mas o MPEG-TS nunca de fato usava
+        // esse valor maior.
+        const mpegBufTarget = stage.mpegBufSec || 25;
+        const mpegStashBytes = mpegBufTarget * 1024 * 1024; // ~1MB por segundo-alvo para streams em HD
 
         mpegtsPlayer = mpegts.createPlayer({
           type: 'm2ts',
@@ -1938,7 +1990,7 @@ async function playStream(url) {
         }, {
           enableWorker: true,
           enableStashBuffer: true,
-          stashInitialSize: stash25s, // Stash de 25s
+          stashInitialSize: mpegStashBytes, // Stash calibrado para o mesmo alvo de buffer
           ...MPEGTS_RESILIENCE_CONFIG,
           // Override deliberado: o prebuffer ágil (plateau de 4s + expansão em
           // background até 25s+) precisa que o buffer cresça livremente. Chasing
@@ -1997,7 +2049,7 @@ async function playStream(url) {
             if (Math.abs(currentBuf - lastBuf) < 0.2) {
               plateauCount++;
               if (plateauCount >= 4) { // ~1.2s estabilizado
-                console.info(`[mpegts prebuffer] Colchão inicial de ${currentBuf.toFixed(1)}s pronto. Iniciando reprodução e expandindo até 25s em background.`);
+                console.info(`[mpegts prebuffer] Colchão inicial de ${currentBuf.toFixed(1)}s pronto. Iniciando reprodução e expandindo até ${mpegBufTarget}s em background.`);
                 _launchMpegPlayback();
                 return;
               }
@@ -2044,30 +2096,58 @@ async function playStream(url) {
           }
         }, maxPrebufMs);
 
-        mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
-          console.warn('[mpegts error event]', errorType, errorDetail);
-          if (errorType === mpegts.ErrorTypes.NETWORK_ERROR && !isReloadingStream) {
-            let hasBuf = false;
-            if (video && video.buffered && video.buffered.length > 0) {
-              const cur = video.currentTime || 0;
-              for (let i = 0; i < video.buffered.length; i++) {
-                if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
-                  hasBuf = true;
-                  break;
-                }
-              }
-            }
-            if (hasBuf) {
-              console.warn('[mpegts network error] Vídeo com buffer seguro. Reconectando em segundo plano sem travar a tela...');
-              try {
-                mpegtsPlayer.unload();
-                mpegtsPlayer.load();
-                mpegtsPlayer.play();
-              } catch (e) {}
-            } else {
-              reloadCurrentChannel(true);
+        const hasMpegtsForwardCushion = () => {
+          if (!video || !video.buffered || video.buffered.length === 0) return false;
+          const cur = video.currentTime || 0;
+          for (let i = 0; i < video.buffered.length; i++) {
+            if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
+              return true;
             }
           }
+          return false;
+        };
+
+        const mpegtsSoftRestartOrReload = (label) => {
+          if (isReloadingStream) return;
+          if (hasMpegtsForwardCushion()) {
+            console.warn(`[mpegts ${label}] Vídeo com buffer seguro. Reconectando em segundo plano sem travar a tela...`);
+            try {
+              mpegtsPlayer.unload();
+              mpegtsPlayer.load();
+              mpegtsPlayer.play();
+            } catch (e) {}
+          } else {
+            reloadCurrentChannel(true);
+          }
+        };
+
+        mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+          console.warn('[mpegts error event]', errorType, errorDetail);
+          if (isReloadingStream) return;
+
+          // MEDIA_ERROR (formato/codec/demux, ex: o bug conhecido de sync_byte
+          // corrompido travando o demuxer) recebe a mesma recuperação suave que
+          // NETWORK_ERROR: reiniciar o transporte já resolve ambos os casos.
+          // OTHER_ERROR é raro/não classificado - vai direto para recarga completa.
+          const isRecoverableType = errorType === mpegts.ErrorTypes.NETWORK_ERROR
+            || errorType === mpegts.ErrorTypes.MEDIA_ERROR;
+          if (!isRecoverableType) {
+            reloadCurrentChannel(true);
+            return;
+          }
+          mpegtsSoftRestartOrReload('error event');
+        });
+
+        // A origem pode encerrar a conexão "normalmente" (sem erro de rede) -
+        // reciclagem de conexão, timeout, restart do servidor. Nesse caso o
+        // mpegts.js NUNCA dispara ERROR, só LOADING_COMPLETE - confirmado em
+        // teste real: o evento chega com ~10s de buffer ainda sobrando. Sem
+        // este handler, a ingestão para silenciosamente e o player só percebe
+        // quando o buffer já esgota e a tela trava de verdade (a causa raiz
+        // confirmada do "buffer mostra 10s e vai pra 0 do nada").
+        mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
+          console.warn('[mpegts loading complete] Origem encerrou a conexão sem erro.');
+          mpegtsSoftRestartOrReload('loading complete');
         });
       } catch (err) {
         console.error('[mpegts setup exception]', err);

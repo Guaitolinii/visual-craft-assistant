@@ -160,3 +160,47 @@ test("computeMaxPrebufferMs: keeps the original 6s timeout on fast/unknown conne
   assert.equal(ctx.computeMaxPrebufferMs("4g"), 6000);
   assert.equal(ctx.computeMaxPrebufferMs(undefined), 6000);
 });
+
+test("createReconnectCircuitBreaker: allows retries up to maxAttempts within the window", () => {
+  const ctx = loadResilienceHelpers();
+  const breaker = ctx.createReconnectCircuitBreaker({ maxAttempts: 3, windowMs: 60000 });
+  assert.equal(breaker.recordAttempt(0), "RETRY");
+  assert.equal(breaker.recordAttempt(1000), "RETRY");
+  assert.equal(breaker.recordAttempt(2000), "RETRY");
+});
+
+test("createReconnectCircuitBreaker: gives up after exceeding maxAttempts within the window", () => {
+  const ctx = loadResilienceHelpers();
+  const breaker = ctx.createReconnectCircuitBreaker({ maxAttempts: 3, windowMs: 60000 });
+  breaker.recordAttempt(0);
+  breaker.recordAttempt(1000);
+  breaker.recordAttempt(2000);
+  assert.equal(breaker.recordAttempt(3000), "GIVE_UP");
+});
+
+test("createReconnectCircuitBreaker: attempts outside the window don't count against the limit", () => {
+  const ctx = loadResilienceHelpers();
+  const breaker = ctx.createReconnectCircuitBreaker({ maxAttempts: 2, windowMs: 5000 });
+  assert.equal(breaker.recordAttempt(0), "RETRY");
+  assert.equal(breaker.recordAttempt(1000), "RETRY");
+  // 10s later - both earlier attempts have aged out of the 5s window
+  assert.equal(breaker.recordAttempt(10000), "RETRY");
+});
+
+test("createReconnectCircuitBreaker: reset() clears attempt history", () => {
+  const ctx = loadResilienceHelpers();
+  const breaker = ctx.createReconnectCircuitBreaker({ maxAttempts: 1, windowMs: 60000 });
+  breaker.recordAttempt(0);
+  assert.equal(breaker.recordAttempt(1000), "GIVE_UP");
+  breaker.reset();
+  assert.equal(breaker.recordAttempt(2000), "RETRY");
+});
+
+test("createReconnectCircuitBreaker: uses sane defaults when opts is omitted", () => {
+  const ctx = loadResilienceHelpers();
+  const breaker = ctx.createReconnectCircuitBreaker();
+  for (let i = 0; i < 5; i++) {
+    assert.equal(breaker.recordAttempt(i * 1000), "RETRY");
+  }
+  assert.equal(breaker.recordAttempt(5000), "GIVE_UP");
+});
