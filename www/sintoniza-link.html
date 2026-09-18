@@ -2164,7 +2164,6 @@ async function playStream(url) {
             if (reloadBtn) reloadBtn.disabled = false;
             enableLiveBar();
             startWatchdog(url);
-            requestScreenWakeLock();
           }).catch(err => {
             console.warn('[mpegts play notice]', err);
           });
@@ -2238,7 +2237,6 @@ function tryDirectPlay(url, video) {
 }
 
 function stopStream() {
-  releaseScreenWakeLock();
   stopWatchdog();
   const video = document.getElementById("player-video");
   if (hlsInstance) {
@@ -2299,27 +2297,6 @@ function showPlayerError(msg) {
 function hidePlayerError() {
   document.getElementById("player-error").classList.remove("active");
 }
-let screenWakeLock = null;
-
-// Mantém a tela acesa enquanto um canal toca - sem isso o celular/TV apaga
-// a tela no meio da transmissão. Feature-detectado: em navegadores/WebViews
-// sem suporte (Wake Lock API é recente em iOS), simplesmente não faz nada.
-async function requestScreenWakeLock() {
-  if (!("wakeLock" in navigator)) return;
-  try {
-    screenWakeLock = await navigator.wakeLock.request("screen");
-  } catch (e) {
-    console.warn("[wakeLock] Não foi possível manter a tela acesa:", e.message);
-  }
-}
-
-function releaseScreenWakeLock() {
-  if (screenWakeLock) {
-    screenWakeLock.release().catch(() => {});
-    screenWakeLock = null;
-  }
-}
-
 function enableLiveBar() {
   document.getElementById("live-bar").style.display = "block";
   document.getElementById("live-label").textContent = "AO VIVO";

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://sintoniza.app"
+        version="1.0.0">
+
+  <tizen:application
+    id="SintonizaIPTV.app"
+    package="SintonizaIPTV"
+    required_version="4.0"
+  />
+
+  <!-- Ponto de entrada -->
+  <content src="sintoniza-tv.html"/>
+
+  <!-- Permissões necessárias -->
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/avplay"/>
+  <tizen:privilege name="http://tizen.org/privilege/filesystem.read"/>
+
+  <!-- Origens permitidas (CORS) -->
+  <access origin="*" subdomains="true"/>
+
+  <!-- Metadados -->
+  <name>Sintoniza IPTV</name>
+  <icon src="icon.png"/>
+  <description>Reprodutor IPTV com suporte a HLS e MPEG-TS para Smart TV Samsung.</description>
+
+  <!-- Recursos de tela -->
+  <feature name="http://tizen.org/feature/screen.size.all"/>
+
+  <!-- Samsung TV: perfil de Smart TV -->
+  <tizen:profile name="tv"/>
+
+</widget>

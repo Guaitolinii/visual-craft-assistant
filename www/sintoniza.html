@@ -2,9 +2,17 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
+  <meta name="theme-color" content="#121212" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Sintoniza" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -936,34 +944,9 @@
         <div class="settings-actions">
           <button class="btn-primary" id="save-btn" disabled>Carregar lista</button>
           <button class="btn-ghost" id="clear-btn">Limpar</button>
-          <button class="btn-ghost" id="copy-link-btn" style="display:none">
-            <i data-lucide="link-2" style="width:15px;height:15px"></i> Copiar link para outros aparelhos
-          </button>
           <span class="save-indicator" id="save-indicator" style="display:none">
             <i data-lucide="check-circle-2" style="width:15px;height:15px"></i>
             <span id="save-indicator-text">Lista salva.</span>
-          </span>
-        </div>
-        <p class="url-hint" id="copy-link-hint" style="display:none;margin-top:.5rem">
-          Abra esse mesmo link em qualquer TV, celular ou PC para carregar esta lista automaticamente, sem colar a URL de novo.
-        </p>
-      </div>
-
-      <div class="settings-card">
-        <label class="url-label">
-          <span>Proxy de stream (opcional)</span>
-          <div class="url-input-wrap">
-            <i data-lucide="shield-check" style="width:18px;height:18px;color:var(--muted-fg)"></i>
-            <input type="url" id="proxy-url" placeholder="https://seu-proxy.workers.dev" aria-label="URL do proxy de stream" />
-          </div>
-          <p class="url-hint">Se essa página estiver em HTTPS (como agora) e seus canais forem em HTTP puro, o navegador bloqueia a conexão direta ("conteúdo misto"). Preencha aqui o endereço de um proxy HTTPS (ex: um Cloudflare Worker) para contornar isso. Deixe em branco se não precisar.</p>
-        </label>
-        <div class="settings-actions">
-          <button class="btn-primary" id="save-proxy-btn">Salvar proxy</button>
-          <button class="btn-ghost" id="clear-proxy-btn">Limpar</button>
-          <span class="save-indicator" id="proxy-save-indicator" style="display:none">
-            <i data-lucide="check-circle-2" style="width:15px;height:15px"></i>
-            <span id="proxy-save-indicator-text">Proxy salvo.</span>
           </span>
         </div>
       </div>
@@ -1545,21 +1528,6 @@ function mpegtsSoftRestartOrReload(label) {
   reloadCurrentChannel(true);
 }
 
-// ─── Proxy para streams HTTP puro (conteúdo misto) ───
-// Uma página HTTPS (GitHub Pages, etc.) é proibida pelo navegador de buscar
-// conteúdo de um endereço HTTP puro ("mixed content") - não tem workaround
-// em JS, é bloqueado antes mesmo do pedido sair. Se houver um proxy HTTPS
-// configurado em Configurações (ex: um Cloudflare Worker), reescreve a URL
-// pra passar por ele. Sem proxy configurado, ou se a própria página não
-// estiver em HTTPS (file://, localhost), a URL original é usada sem mudança.
-function proxyIfInsecure(url) {
-  if (!url || !url.startsWith("http://")) return url;
-  if (window.location.protocol !== "https:") return url;
-  const proxyBase = localStorage.getItem(LS.PROXY);
-  if (!proxyBase) return url;
-  return `${proxyBase.replace(/\/$/, "")}/stream?url=${encodeURIComponent(url)}`;
-}
-
 // ─── Detecção Inteligente de Stream & Dual-Stack HLS Probe ───
 // Em listas IPTV (Xtream Codes/XUI), links .ts quase sempre têm espelho .m3u8 no mesmo servidor.
 // O HLS baixa blocos em paralelo e mantém o buffer de 15s-60s sem nunca esgotar.
@@ -1960,7 +1928,7 @@ async function playStream(url) {
   // Detecta formato inteligente & probe HLS
   const streamInfo = await detectStreamType(url);
   currentStreamType = streamInfo.type;
-  const playUrl = proxyIfInsecure(streamInfo.url);
+  const playUrl = streamInfo.url;
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
@@ -2164,7 +2132,6 @@ async function playStream(url) {
             if (reloadBtn) reloadBtn.disabled = false;
             enableLiveBar();
             startWatchdog(url);
-            requestScreenWakeLock();
           }).catch(err => {
             console.warn('[mpegts play notice]', err);
           });
@@ -2238,7 +2205,6 @@ function tryDirectPlay(url, video) {
 }
 
 function stopStream() {
-  releaseScreenWakeLock();
   stopWatchdog();
   const video = document.getElementById("player-video");
   if (hlsInstance) {
@@ -2299,27 +2265,6 @@ function showPlayerError(msg) {
 function hidePlayerError() {
   document.getElementById("player-error").classList.remove("active");
 }
-let screenWakeLock = null;
-
-// Mantém a tela acesa enquanto um canal toca - sem isso o celular/TV apaga
-// a tela no meio da transmissão. Feature-detectado: em navegadores/WebViews
-// sem suporte (Wake Lock API é recente em iOS), simplesmente não faz nada.
-async function requestScreenWakeLock() {
-  if (!("wakeLock" in navigator)) return;
-  try {
-    screenWakeLock = await navigator.wakeLock.request("screen");
-  } catch (e) {
-    console.warn("[wakeLock] Não foi possível manter a tela acesa:", e.message);
-  }
-}
-
-function releaseScreenWakeLock() {
-  if (screenWakeLock) {
-    screenWakeLock.release().catch(() => {});
-    screenWakeLock = null;
-  }
-}
-
 function enableLiveBar() {
   document.getElementById("live-bar").style.display = "block";
   document.getElementById("live-label").textContent = "AO VIVO";
@@ -2621,30 +2566,22 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol" };
 
 function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
   const vol  = localStorage.getItem(LS.VOL)  || "1";
-  const proxy = localStorage.getItem(LS.PROXY) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
   document.getElementById("pref-vol").value  = vol;
-  document.getElementById("proxy-url").value = proxy;
-  document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   setSettingsMode(mode);
 
   const saved = url.trim().length > 8;
   document.getElementById("save-indicator").style.display = saved ? "flex" : "none";
   if (saved) document.getElementById("save-indicator-text").textContent = `Lista salva (${url.split('/').pop()})`;
-  // Link compartilhável só faz sentido no modo URL (um arquivo local não tem
-  // endereço pra embutir no link).
-  const showCopyLink = saved && mode !== "arquivo";
-  document.getElementById("copy-link-btn").style.display = showCopyLink ? "" : "none";
-  document.getElementById("copy-link-hint").style.display = showCopyLink ? "" : "none";
   updateSaveBtn();
   lucide.createIcons();
 }
@@ -2711,24 +2648,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Volume salvo
   const savedVol = parseFloat(localStorage.getItem(LS.VOL) || "1");
   applyVolume(savedVol);
-
-  // ─── Link compartilhável: ?lista=<url> ───
-  // Abrir este arquivo com ?lista=<url-da-playlist> (codificada) carrega essa
-  // lista automaticamente e a salva neste dispositivo também - basta salvar/
-  // compartilhar UM link para a lista funcionar em qualquer aparelho, sem
-  // precisar colar a URL manualmente em Configurações em cada um.
-  const listParam = new URLSearchParams(window.location.search).get("lista");
-  if (listParam) {
-    try {
-      const parsed = new URL(listParam);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        localStorage.setItem(LS.URL, parsed.href);
-        localStorage.setItem(LS.MODE, "url");
-      }
-    } catch (e) {
-      console.warn("[link] Parâmetro ?lista= inválido, ignorando:", listParam);
-    }
-  }
 
   // Carrega playlist salva automaticamente
   const savedUrl = localStorage.getItem(LS.URL);
@@ -2922,8 +2841,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("file-input").value = "";
     document.getElementById("file-name").textContent = "Escolher arquivo .m3u";
     document.getElementById("save-indicator").style.display = "none";
-    document.getElementById("copy-link-btn").style.display = "none";
-    document.getElementById("copy-link-hint").style.display = "none";
     localStorage.removeItem(LS.URL);
     localStorage.removeItem(LS.MODE);
     setState({ channels: null, categories: [], selected: DEMO_CHANNELS[0] });
@@ -2932,33 +2849,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderCategoryNav();
     updateSaveBtn();
     document.getElementById("playlist-plan").textContent = "Nenhuma lista carregada";
-  });
-
-  document.getElementById("copy-link-btn").addEventListener("click", async () => {
-    const url = localStorage.getItem(LS.URL);
-    if (!url) return;
-    const shareUrl = `${window.location.origin}${window.location.pathname}?lista=${encodeURIComponent(url)}`;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      showToast("Link copiado! Abra-o em qualquer TV, celular ou PC.");
-    } catch (e) {
-      showToast("Não foi possível copiar automaticamente. Copie manualmente: " + shareUrl);
-    }
-  });
-
-  document.getElementById("save-proxy-btn").addEventListener("click", () => {
-    const proxy = document.getElementById("proxy-url").value.trim();
-    if (!proxy) { showToast("Cole o endereço do proxy antes de salvar."); return; }
-    localStorage.setItem(LS.PROXY, proxy);
-    document.getElementById("proxy-save-indicator").style.display = "flex";
-    showToast("Proxy salvo. Os canais HTTP agora passam por ele.");
-  });
-
-  document.getElementById("clear-proxy-btn").addEventListener("click", () => {
-    document.getElementById("proxy-url").value = "";
-    document.getElementById("proxy-save-indicator").style.display = "none";
-    localStorage.removeItem(LS.PROXY);
-    showToast("Proxy removido.");
   });
 
   document.getElementById("pref-fit").addEventListener("change", e => {

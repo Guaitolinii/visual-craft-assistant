@@ -1,0 +1,23 @@
+{
+  "name": "Sintoniza TV — IPTV Player",
+  "short_name": "Sintoniza",
+  "description": "Reprodutor IPTV moderno para carregar listas M3U e assistir canais ao vivo.",
+  "start_url": "./sintoniza.html",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
