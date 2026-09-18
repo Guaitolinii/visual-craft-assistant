@@ -2035,8 +2035,8 @@ async function playStream(url) {
 
         mpegPrebufferTimer = setInterval(tryStartMpegPlayback, 300);
 
-        // ─── Timeout de segurança rápido: 6 segundos para liberar a reprodução ───
-        const maxPrebufMs = 6000;
+        // ─── Timeout de segurança: escala com a qualidade de conexão reportada ───
+        const maxPrebufMs = computeMaxPrebufferMs(navigator.connection && navigator.connection.effectiveType);
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
             console.info(`[mpegts prebuffer] Timeout de 6s atingido com ${lastBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
