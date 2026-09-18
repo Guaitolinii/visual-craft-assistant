@@ -1,5 +1,8 @@
 name: Publicar players estáticos no GitHub Pages
 
+# Reexecutado após ativar Settings > Pages > Source = "GitHub Actions"
+# (a primeira tentativa falhou em "Configurar Pages" porque o repositório
+# ainda estava privado / Pages ainda não tinha sido ativado).
 on:
   push:
     branches: [main]
