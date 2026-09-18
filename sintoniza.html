@@ -1923,10 +1923,13 @@ async function playStream(url) {
           enableStashBuffer: true,
           stashInitialSize: stash20s, // Stash de 20s
           ...MPEGTS_RESILIENCE_CONFIG,
-          liveBufferLatencyChasing: false, // Permite que o buffer cresça até 20s+ em segundo plano sem descarte
-          autoCleanupSourceBuffer: true,
-          autoCleanupMaxBackwardDuration: 60,
-          autoCleanupMinBackwardDuration: 30,
+          // Override deliberado: o prebuffer ágil (plateau de 4s + expansão em
+          // background até 20s+) precisa que o buffer cresça livremente. Chasing
+          // ligado (MPEGTS_RESILIENCE_CONFIG.liveBufferLatencyChasing) forçaria o
+          // player a descartar/avançar para caber em ~10s, brigando com essa
+          // expansão. autoCleanupSourceBuffer/Max/Min já vêm corretos do config
+          // acima (60s/30s) — não repetir aqui.
+          liveBufferLatencyChasing: false,
           lazyLoad: false,
           deferLoadAfterSourceOpen: false
         });
