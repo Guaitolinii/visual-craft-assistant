@@ -41,7 +41,7 @@ jobs:
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar Android
-        run: npx cap sync android --verbose
+        run: npx cap sync android
 
       - name: Compilar APK debug
         working-directory: android
@@ -75,7 +75,7 @@ jobs:
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar iOS
-        run: npx cap sync ios --verbose
+        run: npx cap sync ios
 
       - name: Instalar CocoaPods
         working-directory: ios/App
