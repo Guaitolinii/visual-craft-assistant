@@ -41,17 +41,7 @@ jobs:
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar Android
-        run: |
-          set +e
-          npx cap sync android --verbose > /tmp/cap-sync.log 2>&1
-          code=$?
-          {
-            echo "## cap sync android (exit $code)"
-            echo '```'
-            tail -c 6000 /tmp/cap-sync.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $code
+        run: npx cap sync android --verbose
 
       - name: Compilar APK debug
         working-directory: android
@@ -85,17 +75,7 @@ jobs:
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar iOS
-        run: |
-          set +e
-          npx cap sync ios --verbose > /tmp/cap-sync.log 2>&1
-          code=$?
-          {
-            echo "## cap sync ios (exit $code)"
-            echo '```'
-            tail -c 6000 /tmp/cap-sync.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $code
+        run: npx cap sync ios --verbose
 
       - name: Instalar CocoaPods
         working-directory: ios/App
