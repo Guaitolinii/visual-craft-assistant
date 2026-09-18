@@ -1400,11 +1400,11 @@ let currentWatchdogUrl = null;
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
 // mpegBufSec: buffer-alvo real do video.buffered para MPEG-TS (aguarda acumular antes de play)
 const BUFFER_STAGES = [
-  { seconds: 25, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 25 },
-  { seconds: 35, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 35 },
-  { seconds: 45, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 45 },
-  { seconds: 55, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 55 },
-  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 60 },
+  { seconds: 20, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 5 },
+  { seconds: 30, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 7 },
+  { seconds: 40, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 10 },
+  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 12 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 15 },
 ];
 let currentBufferStageIndex = 0; // Começa sempre no padrão 25s
 
@@ -1866,7 +1866,7 @@ async function playStream(url) {
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
     if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
       try {
-        const mpegBufTarget = stage.mpegBufSec || 25; // Buffer-alvo em segundos (padrão 25s)
+        const mpegBufTarget = stage.mpegBufSec || 5; // Colchão inicial ágil (5s) para entrada rápida e suave
 
         mpegtsPlayer = mpegts.createPlayer({
           type: 'm2ts',
@@ -1875,19 +1875,19 @@ async function playStream(url) {
         }, {
           enableWorker: true,
           enableStashBuffer: true,
-          stashInitialSize: 1024 * 1024, // 1MB stash fixo — apenas suaviza jitter de rede, não é o buffer principal
+          stashInitialSize: 1024 * 1024, // 1MB stash fixo — suaviza jitter de rede sem limitar crescimento
           ...MPEGTS_RESILIENCE_CONFIG,
-          liveBufferLatencyChasing: false, // CRÍTICO: Desabilita latency-chasing no MPEG-TS para manter os 25s de buffer acumulados intactos
+          liveBufferLatencyChasing: false, // CRÍTICO: Não perseguir baixa latência para permitir que o buffer cresça em segundo plano
           lazyLoad: false,
           deferLoadAfterSourceOpen: false
         });
 
         mpegtsPlayer.attachMediaElement(video);
-        mpegtsPlayer.load(); // Começa a baixar sem reproduzir
+        mpegtsPlayer.load(); // Começa a baixar
 
-        // ─── FASE 1: Acumulação ───
-        // O video fica pausado enquanto video.buffered enche até mpegBufTarget.
-        // Exibimos o loader com progresso para o usuário saber que está carregando.
+        // ─── FASE 1: Acumulação Ágil ───
+        // Acumula colchão inicial ágil (5s) e libera a reprodução rapidamente.
+        // O restante do buffer expande em segundo plano de forma contínua enquanto o canal toca.
         let mpegStarted = false;
         let lastBuf = -1;
         let plateauCount = 0;
@@ -1914,16 +1914,20 @@ async function playStream(url) {
           // Atualiza texto de progresso no loader
           if (loaderText) {
             const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
-            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
+            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s (${pct}%)`;
           }
 
-          // Plateau detection: se o buffer já atingiu um colchão seguro (>= 15s) e estabilizou
-          // (o burst inicial do servidor IPTV enviou todo o cache), liberamos a reprodução
-          if (currentBuf >= 15.0) {
+          // Se atingiu o alvo inicial de 5s OU acumulou pelo menos 3s e estabilizou
+          if (currentBuf >= mpegBufTarget) {
+            _launchMpegPlayback();
+            return;
+          }
+
+          if (currentBuf >= 3.0) {
             if (Math.abs(currentBuf - lastBuf) < 0.2) {
               plateauCount++;
-              if (plateauCount >= 8) { // ~2.4s estabilizado
-                console.info(`[mpegts prebuffer] Burst estabilizado em ${currentBuf.toFixed(1)}s (>= 15s). Liberando reprodução.`);
+              if (plateauCount >= 4) { // ~1.2s estabilizado
+                console.info(`[mpegts prebuffer] Burst inicial estabilizado em ${currentBuf.toFixed(1)}s. Liberando reprodução.`);
                 _launchMpegPlayback();
                 return;
               }
@@ -1934,11 +1938,6 @@ async function playStream(url) {
             plateauCount = 0;
           }
           lastBuf = currentBuf;
-
-          // Libera reprodução quando buffer-alvo for atingido
-          if (currentBuf >= mpegBufTarget) {
-            _launchMpegPlayback();
-          }
         };
 
         const _launchMpegPlayback = () => {
@@ -1966,18 +1965,12 @@ async function playStream(url) {
 
         mpegPrebufferTimer = setInterval(tryStartMpegPlayback, 300);
 
-        // ─── Timeout de segurança: proporcional ao buffer (mínimo 35s) ───
-        const maxPrebufMs = Math.max(35000, (mpegBufTarget + 10) * 1000);
+        // ─── Timeout de segurança rápido: 6 segundos para liberar a reprodução ───
+        const maxPrebufMs = 6000;
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
-            if (lastBuf >= 2.0) {
-              console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s com ${lastBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
-              _launchMpegPlayback();
-            } else {
-              console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s sem dados. Elevando degrau e restabelecendo...`);
-              escalateBufferStage();
-              reloadCurrentChannel(true);
-            }
+            console.info(`[mpegts prebuffer] Timeout de 6s atingido com ${lastBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
+            _launchMpegPlayback();
           }
         }, maxPrebufMs);
 
