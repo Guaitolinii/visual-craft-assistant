@@ -143,3 +143,20 @@ test("getVisibilityAction: visible tab resumes the watchdog", () => {
   const ctx = loadResilienceHelpers();
   assert.equal(ctx.getVisibilityAction("visible"), "RESUME_WATCHDOG");
 });
+
+test("computeMaxPrebufferMs: gives slow connections more patience before releasing partial buffer", () => {
+  const ctx = loadResilienceHelpers();
+  assert.equal(ctx.computeMaxPrebufferMs("slow-2g"), 15000);
+  assert.equal(ctx.computeMaxPrebufferMs("2g"), 15000);
+});
+
+test("computeMaxPrebufferMs: gives 3g a middle-ground timeout", () => {
+  const ctx = loadResilienceHelpers();
+  assert.equal(ctx.computeMaxPrebufferMs("3g"), 10000);
+});
+
+test("computeMaxPrebufferMs: keeps the original 6s timeout on fast/unknown connections", () => {
+  const ctx = loadResilienceHelpers();
+  assert.equal(ctx.computeMaxPrebufferMs("4g"), 6000);
+  assert.equal(ctx.computeMaxPrebufferMs(undefined), 6000);
+});

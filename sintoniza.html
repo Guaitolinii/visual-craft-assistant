@@ -1092,6 +1092,23 @@ function createMediaErrorEscalation(opts) {
 function getVisibilityAction(visibilityState) {
   return visibilityState === "hidden" ? "SUSPEND_WATCHDOG" : "RESUME_WATCHDOG";
 }
+
+// Releasing playback with only a few seconds of accumulated buffer is fine
+// on a fast line (the background fill-to-20s continues right after), but on
+// a slow line it just trades a clean wait for a guaranteed stall-and-recover
+// cycle a few seconds later. Give slower connections more patience before
+// giving up and releasing with whatever partial buffer they managed to
+// accumulate. Mirrors the same Network Information API signal already used
+// by pickInitialBufferStageIndex.
+function computeMaxPrebufferMs(connectionEffectiveType) {
+  if (connectionEffectiveType === "slow-2g" || connectionEffectiveType === "2g") {
+    return 15000;
+  }
+  if (connectionEffectiveType === "3g") {
+    return 10000;
+  }
+  return 6000;
+}
 </script>
 
 <script>
