@@ -6,7 +6,8 @@ DerivedData
 xcuserdata
 
 # Cordova plugins for Capacitor
-capacitor-cordova-ios-plugins
+# NAO ignorado de proposito - ver android/.gitignore para o motivo.
+# capacitor-cordova-ios-plugins
 
 # Generated Config files
 App/App/capacitor.config.json

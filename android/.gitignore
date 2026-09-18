@@ -90,7 +90,12 @@ lint/tmp/
 *.hprof
 
 # Cordova plugins for Capacitor
-capacitor-cordova-android-plugins
+# NAO ignorado de propósito: `cap sync` deveria recriar essa pasta do zero
+# num checkout limpo, mas isso falhou no GitHub Actions (funciona local,
+# onde a pasta ja existe fisicamente - so falha quando precisa ser criada
+# do zero). Committar a versao que sabemos que funciona evita depender
+# dessa regeneracao.
+# capacitor-cordova-android-plugins
 
 # Copied web assets
 app/src/main/assets/public
