@@ -384,6 +384,21 @@ html, body {
   border-radius: 3px;
 }
 
+.tag-hls {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(124, 92, 252, 0.15);
+  border: 1px solid rgba(124, 92, 252, 0.4);
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+
 /* ─── Foco Visual D-pad ─────────────────────────────────────────────────── */
 /* Este é o elemento mais importante para UX de TV */
 [data-focusable].tv-focus,

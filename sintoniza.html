@@ -494,6 +494,19 @@
       transition: color 160ms;
     }
     .fav-btn-list.fav-active { color: oklch(0.65 0.22 15); }
+    .tag-hls {
+      display: inline-flex;
+      align-items: center;
+      font-size: .62rem;
+      font-weight: 700;
+      color: var(--primary);
+      background: color-mix(in oklab, var(--primary) 12%, transparent);
+      border: 1px solid color-mix(in oklab, var(--primary) 30%, transparent);
+      padding: 1px 5px;
+      border-radius: 4px;
+      letter-spacing: .04em;
+      line-height: 1.2;
+    }
 
     /* EMPTY */
     .empty-state {
@@ -1289,6 +1302,16 @@ function parseM3U(text) {
   return channels;
 }
 
+function isChannelHls(ch) {
+  if (!ch) return false;
+  if (ch.stream_type === "hls") return true;
+  if (ch.url) {
+    const u = ch.url.toLowerCase();
+    return u.includes(".m3u8") || u.includes("/hls/") || u.includes("protocol=hls") || u.includes("format=m3u8");
+  }
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CARREGAMENTO DE PLAYLIST
 // ═══════════════════════════════════════════════════════════════
@@ -1574,8 +1597,17 @@ function startWatchdog(url) {
         if (hlsInstance) {
           try { hlsInstance.recoverMediaError(); } catch (e) {}
         }
-        if (video) {
-          try { video.currentTime += 0.15; } catch (e) {}
+        if (video && video.buffered && video.buffered.length > 0) {
+          let hasForwardCushion = false;
+          for (let i = 0; i < video.buffered.length; i++) {
+            if (video.buffered.start(i) <= curTime && video.buffered.end(i) > curTime + 0.5) {
+              hasForwardCushion = true;
+              break;
+            }
+          }
+          if (hasForwardCushion) {
+            try { video.currentTime += 0.15; } catch (e) {}
+          }
         }
       }
 
@@ -1738,17 +1770,19 @@ async function playStream(url) {
   const playUrl = streamInfo.url;
   updateDebugOverlay();
 
-  // Timeout de abertura: para HLS espera 15s; para MPEG-TS aguarda a conclusão do buffer (pelo menos 35s)
-  const timeoutMs = currentStreamType === "mpegts" ? Math.max(35000, (stage.mpegBufSec + 10) * 1000) : 15000;
-  initialLoadTimeout = setTimeout(() => {
-    const loader = document.getElementById("player-loader");
-    if (loader && loader.classList.contains("active") && !isReloadingStream) {
-      console.warn(`[Player] Conexão demorou mais de ${Math.round(timeoutMs / 1000)}s. Reestabilizando...`);
-      showToast("Conexão demorando — restabelecendo sinal...");
-      escalateBufferStage();
-      reloadCurrentChannel(true);
-    }
-  }, timeoutMs);
+  // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
+  if (currentStreamType !== "mpegts") {
+    const timeoutMs = 15000;
+    initialLoadTimeout = setTimeout(() => {
+      const loader = document.getElementById("player-loader");
+      if (loader && loader.classList.contains("active") && !isReloadingStream) {
+        console.warn(`[Player] Conexão demorou mais de ${Math.round(timeoutMs / 1000)}s. Reestabilizando...`);
+        showToast("Conexão demorando — restabelecendo sinal...");
+        escalateBufferStage();
+        reloadCurrentChannel(true);
+      }
+    }, timeoutMs);
+  }
 
   if (currentStreamType === "hls") {
     if (Hls.isSupported()) {
@@ -1832,7 +1866,7 @@ async function playStream(url) {
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
     if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
       try {
-        const mpegBufTarget = stage.mpegBufSec || 20; // Buffer-alvo em segundos (padrão 20s)
+        const mpegBufTarget = stage.mpegBufSec || 25; // Buffer-alvo em segundos (padrão 25s)
 
         mpegtsPlayer = mpegts.createPlayer({
           type: 'm2ts',
@@ -1843,6 +1877,7 @@ async function playStream(url) {
           enableStashBuffer: true,
           stashInitialSize: 1024 * 1024, // 1MB stash fixo — apenas suaviza jitter de rede, não é o buffer principal
           ...MPEGTS_RESILIENCE_CONFIG,
+          liveBufferLatencyChasing: false, // CRÍTICO: Desabilita latency-chasing no MPEG-TS para manter os 25s de buffer acumulados intactos
           lazyLoad: false,
           deferLoadAfterSourceOpen: false
         });
@@ -1854,6 +1889,8 @@ async function playStream(url) {
         // O video fica pausado enquanto video.buffered enche até mpegBufTarget.
         // Exibimos o loader com progresso para o usuário saber que está carregando.
         let mpegStarted = false;
+        let lastBuf = -1;
+        let plateauCount = 0;
 
         const loaderEl = document.getElementById("player-loader");
         const loaderText = loaderEl ? loaderEl.querySelector('p') : null;
@@ -1863,8 +1900,15 @@ async function playStream(url) {
 
           let currentBuf = 0;
           if (video.buffered && video.buffered.length > 0) {
-            // Pega o buffer mais à frente disponível
-            currentBuf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
+            const curTime = video.currentTime || 0;
+            for (let i = 0; i < video.buffered.length; i++) {
+              if (video.buffered.start(i) <= curTime && video.buffered.end(i) >= curTime) {
+                currentBuf = Math.max(currentBuf, video.buffered.end(i) - curTime);
+              }
+            }
+            if (currentBuf === 0) {
+              currentBuf = Math.max(0, video.buffered.end(video.buffered.length - 1) - (video.buffered.start(0) || 0));
+            }
           }
 
           // Atualiza texto de progresso no loader
@@ -1873,7 +1917,25 @@ async function playStream(url) {
             loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
           }
 
-          // Libera reprodução quando buffer-alvo for atingido ou readyState indicar completude
+          // Plateau detection: se o buffer já atingiu um colchão seguro (>= 15s) e estabilizou
+          // (o burst inicial do servidor IPTV enviou todo o cache), liberamos a reprodução
+          if (currentBuf >= 15.0) {
+            if (Math.abs(currentBuf - lastBuf) < 0.2) {
+              plateauCount++;
+              if (plateauCount >= 8) { // ~2.4s estabilizado
+                console.info(`[mpegts prebuffer] Burst estabilizado em ${currentBuf.toFixed(1)}s (>= 15s). Liberando reprodução.`);
+                _launchMpegPlayback();
+                return;
+              }
+            } else {
+              plateauCount = 0;
+            }
+          } else {
+            plateauCount = 0;
+          }
+          lastBuf = currentBuf;
+
+          // Libera reprodução quando buffer-alvo for atingido
           if (currentBuf >= mpegBufTarget) {
             _launchMpegPlayback();
           }
@@ -1908,15 +1970,33 @@ async function playStream(url) {
         const maxPrebufMs = Math.max(35000, (mpegBufTarget + 10) * 1000);
         mpegPrebufferTimeout = setTimeout(() => {
           if (!mpegStarted) {
-            console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s. Liberando com buffer parcial.`);
-            _launchMpegPlayback();
+            if (lastBuf >= 2.0) {
+              console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s com ${lastBuf.toFixed(1)}s de buffer. Liberando reprodução.`);
+              _launchMpegPlayback();
+            } else {
+              console.warn(`[mpegts prebuffer] Timeout de ${Math.round(maxPrebufMs / 1000)}s sem dados. Elevando degrau e restabelecendo...`);
+              escalateBufferStage();
+              reloadCurrentChannel(true);
+            }
           }
         }, maxPrebufMs);
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
           if (errorType === mpegts.ErrorTypes.NETWORK_ERROR && !isReloadingStream) {
-            reloadCurrentChannel(true);
+            let hasBuf = false;
+            if (video && video.buffered && video.buffered.length > 0) {
+              const cur = video.currentTime || 0;
+              for (let i = 0; i < video.buffered.length; i++) {
+                if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
+                  hasBuf = true;
+                  break;
+                }
+              }
+            }
+            if (!hasBuf) {
+              reloadCurrentChannel(true);
+            }
           }
         });
       } catch (err) {
@@ -2100,6 +2180,7 @@ function renderOnNow() {
         <div class="mini-logo ${ch.color}">${logoHtml}</div>
         <div class="now-row-info">
           <strong>${ch.name}</strong>
+          ${isChannelHls(ch) ? `<div style="margin-top:.15rem"><span class="tag-hls">HLS</span></div>` : ""}
           <small>${isCur ? "● Em reprodução" : ch.category}</small>
         </div>
         <i data-lucide="${actionIcon}" class="now-row-play ${isCur ? 'active-icon' : ''}" style="width:16px;height:16px"></i>
@@ -2237,6 +2318,7 @@ function cardHTML(ch) {
         <div class="channel-logo ${ch.color}">${logoImgOrInitials(ch)}<div class="logo-ring"></div></div>
         <div class="card-tags"><span>● AO VIVO</span><span>${ch.category}</span></div>
         <h3>${ch.name}</h3>
+        ${isChannelHls(ch) ? `<div style="padding:0 .75rem;margin-top:.25rem"><span class="tag-hls">HLS</span></div>` : ""}
         <p>${ch.category}</p>
       </button>
       <button class="fav-btn ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
@@ -2263,6 +2345,7 @@ function listHTML(ch) {
             <span class="list-category">${ch.category}</span>
           </div>
           <h3>${ch.name}</h3>
+          ${isChannelHls(ch) ? `<div style="margin-top:.2rem"><span class="tag-hls">HLS</span></div>` : ""}
           <p>${ch.category}</p>
         </div>
       </button>

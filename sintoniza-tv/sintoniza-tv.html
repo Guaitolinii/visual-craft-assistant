@@ -394,6 +394,16 @@ function escalateBuffer() {
   }
 }
 
+function isChannelHls(ch) {
+  if (!ch) return false;
+  if (ch.stream_type === 'hls') return true;
+  if (ch.url) {
+    const u = ch.url.toLowerCase();
+    return u.includes('.m3u8') || u.includes('/hls/') || u.includes('protocol=hls') || u.includes('format=m3u8');
+  }
+  return false;
+}
+
 // ── Detecção de tipo de stream ────────────────────────────────
 async function detectStreamType(url) {
   if (!url) return { type: 'unknown', url };
@@ -497,7 +507,7 @@ function playViaMpegTS(url, stage, video) {
     showError('MPEG-TS não suportado nesta TV.');
     return;
   }
-  const mpegBufTarget = stage.mpegBufSec || 20;
+  const mpegBufTarget = stage.mpegBufSec || 25;
   mpegtsPlayer = mpegts.createPlayer({ type: 'm2ts', isLive: true, url }, {
     enableWorker: true,
     enableStashBuffer: true,
@@ -512,17 +522,43 @@ function playViaMpegTS(url, stage, video) {
 
   const loaderText = document.getElementById('tv-loader-text');
   let started = false;
+  let lastBuf = -1;
+  let plateauCount = 0;
 
   const tryPlay = () => {
     if (started) return;
     let buf = 0;
     if (video.buffered && video.buffered.length > 0) {
-      buf = video.buffered.end(video.buffered.length - 1) - (video.currentTime || 0);
+      const cur = video.currentTime || 0;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= cur && video.buffered.end(i) >= cur) {
+          buf = Math.max(buf, video.buffered.end(i) - cur);
+        }
+      }
+      if (buf === 0) {
+        buf = Math.max(0, video.buffered.end(video.buffered.length - 1) - (video.buffered.start(0) || 0));
+      }
     }
     if (loaderText) {
       const pct = Math.min(100, Math.round((buf / mpegBufTarget) * 100));
       loaderText.textContent = `Carregando buffer: ${buf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
     }
+
+    if (buf >= 15.0) {
+      if (Math.abs(buf - lastBuf) < 0.2) {
+        plateauCount++;
+        if (plateauCount >= 8) {
+          launch();
+          return;
+        }
+      } else {
+        plateauCount = 0;
+      }
+    } else {
+      plateauCount = 0;
+    }
+    lastBuf = buf;
+
     if (buf >= mpegBufTarget) launch();
   };
 
@@ -542,10 +578,31 @@ function playViaMpegTS(url, stage, video) {
 
   mpegPrebufTimer   = setInterval(tryPlay, 300);
   const maxPrebufMs = Math.max(35000, (mpegBufTarget + 10) * 1000);
-  mpegPrebufTimeout = setTimeout(() => { if (!started) launch(); }, maxPrebufMs);
+  mpegPrebufTimeout = setTimeout(() => {
+    if (!started) {
+      if (lastBuf >= 2.0) {
+        launch();
+      } else {
+        escalateBuffer();
+        reloadChannel(true);
+      }
+    }
+  }, maxPrebufMs);
 
   mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail) => {
-    if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) reloadChannel(true);
+    if (type === mpegts.ErrorTypes.NETWORK_ERROR && !isReloading) {
+      let hasBuf = false;
+      if (video && video.buffered && video.buffered.length > 0) {
+        const cur = video.currentTime || 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
+            hasBuf = true;
+            break;
+          }
+        }
+      }
+      if (!hasBuf) reloadChannel(true);
+    }
   });
 }
 
@@ -672,6 +729,7 @@ function renderChannels() {
         ${ch.live ? '<div class="tv-card-live">LIVE</div>' : ''}
         ${logoHtml}
         <div class="tv-channel-label" title="${ch.name}">${ch.name}</div>
+        ${isChannelHls(ch) ? '<div style="margin-top:2px"><span class="tag-hls">HLS</span></div>' : ''}
       </div>`;
   }).join('');
 
@@ -753,7 +811,9 @@ function showTVToast(msg) {
 function updateChannelInfo(ch) {
   const nameEl = document.getElementById('tv-channel-name');
   const catEl  = document.getElementById('tv-channel-category');
-  if (nameEl) nameEl.textContent = ch.name;
+  if (nameEl) {
+    nameEl.innerHTML = ch.name + (isChannelHls(ch) ? ' <span class="tag-hls" style="vertical-align:middle;margin-left:6px">HLS</span>' : '');
+  }
   if (catEl)  catEl.textContent  = ch.category || '';
 }
 
