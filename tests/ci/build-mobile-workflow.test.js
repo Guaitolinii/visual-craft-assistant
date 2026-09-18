@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,5 +69,60 @@ test("build-mobile.yml only passes flags that npx cap sync actually supports", (
           `It fails immediately with "error: unknown option '${flag}'"`,
       );
     }
+  }
+});
+
+test("android/gradlew is tracked in git with the executable bit set", () => {
+  const output = execSync("git ls-files -s android/gradlew", { cwd: ROOT, encoding: "utf8" });
+  assert.ok(output.trim().length > 0, "android/gradlew is not tracked in git");
+
+  const mode = output.split(" ")[0];
+  assert.equal(
+    mode,
+    "100755",
+    `android/gradlew has git file mode ${mode}, expected 100755 (executable). ` +
+      `Ubuntu CI runners fail "./gradlew assembleDebug" with "Permission denied" (exit 126) ` +
+      `when the executable bit is missing. Fix with: git update-index --chmod=+x android/gradlew`,
+  );
+});
+
+function xcodebuildTargetInWorkflow() {
+  const yaml = readFileSync(WORKFLOW_PATH, "utf8");
+  const workspaceMatch = /-workspace\s+(\S+)/.exec(yaml);
+  const projectMatch = /-project\s+(\S+)/.exec(yaml);
+  assert.ok(
+    workspaceMatch || projectMatch,
+    "no -workspace or -project flag found for xcodebuild in build-mobile.yml",
+  );
+  return workspaceMatch
+    ? { flag: "-workspace", value: workspaceMatch[1] }
+    : { flag: "-project", value: projectMatch[1] };
+}
+
+test("build-mobile.yml's xcodebuild target actually exists in the repo", () => {
+  const { flag, value } = xcodebuildTargetInWorkflow();
+  const targetPath = path.join(ROOT, "ios", "App", value);
+
+  assert.ok(
+    existsSync(targetPath),
+    `xcodebuild is invoked with "${flag} ${value}", but ios/App/${value} doesn't exist in the repo. ` +
+      `xcodebuild fails immediately with "unable to find utility" / "does not exist" if the target is missing.`,
+  );
+});
+
+test("build-mobile.yml doesn't run pod install unless ios/App has a Podfile", () => {
+  const yaml = readFileSync(WORKFLOW_PATH, "utf8");
+  const runsPodInstall = /\bpod install\b/.test(yaml);
+  const hasPodfile = existsSync(path.join(ROOT, "ios", "App", "Podfile"));
+
+  if (runsPodInstall) {
+    assert.ok(
+      hasPodfile,
+      `build-mobile.yml runs "pod install", but there's no ios/App/Podfile in the repo. ` +
+        `CocoaPods fails immediately with "[!] No 'Podfile' found in the project directory." ` +
+        `This project uses Capacitor's Swift Package Manager integration instead ` +
+        `(ios/App/CapApp-SPM/Package.swift) - remove the CocoaPods step and build against ` +
+        `-project App.xcodeproj, whose SPM dependencies xcodebuild resolves automatically.`,
+    );
   }
 });

@@ -77,15 +77,11 @@ jobs:
       - name: Sincronizar iOS
         run: npx cap sync ios
 
-      - name: Instalar CocoaPods
-        working-directory: ios/App
-        run: pod install
-
       - name: Arquivar sem assinatura de código
         working-directory: ios/App
         run: |
           xcodebuild archive \
-            -workspace App.xcworkspace \
+            -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath build/App.xcarchive \
