@@ -30,8 +30,28 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Preparar www/ e sincronizar Android
-        run: npm run mobile:sync -- android
+      - name: Diagnóstico do ambiente
+        run: |
+          echo "## Diagnóstico (android)" >> "$GITHUB_STEP_SUMMARY"
+          echo "node: $(node --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm: $(npm --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preparar www/
+        run: node scripts/prepare-mobile.js
+
+      - name: Sincronizar Android
+        run: |
+          set +e
+          npx cap sync android --verbose > /tmp/cap-sync.log 2>&1
+          code=$?
+          {
+            echo "## cap sync android (exit $code)"
+            echo '```'
+            tail -c 6000 /tmp/cap-sync.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
 
       - name: Compilar APK debug
         working-directory: android
@@ -54,8 +74,28 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Preparar www/ e sincronizar iOS
-        run: npm run mobile:sync -- ios
+      - name: Diagnóstico do ambiente
+        run: |
+          echo "## Diagnóstico (ios)" >> "$GITHUB_STEP_SUMMARY"
+          echo "node: $(node --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm: $(npm --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preparar www/
+        run: node scripts/prepare-mobile.js
+
+      - name: Sincronizar iOS
+        run: |
+          set +e
+          npx cap sync ios --verbose > /tmp/cap-sync.log 2>&1
+          code=$?
+          {
+            echo "## cap sync ios (exit $code)"
+            echo '```'
+            tail -c 6000 /tmp/cap-sync.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
 
       - name: Instalar CocoaPods
         working-directory: ios/App
