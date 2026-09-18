@@ -1094,7 +1094,7 @@ function getVisibilityAction(visibilityState) {
 }
 
 // Releasing playback with only a few seconds of accumulated buffer is fine
-// on a fast line (the background fill-to-20s continues right after), but on
+// on a fast line (the background fill-to-25s continues right after), but on
 // a slow line it just trades a clean wait for a guaranteed stall-and-recover
 // cycle a few seconds later. Give slower connections more patience before
 // giving up and releasing with whatever partial buffer they managed to
@@ -1608,8 +1608,8 @@ function startWatchdog(url) {
         _state.selected.quality_score = Math.min(100, (_state.selected.quality_score || 80) + 1);
       }
 
-      // ─── Monitor de Buffer em Background (MPEG-TS): Carregamento até 20s ───
-      // Garante que o stream continue carregando pelo menos 20s em segundo plano.
+      // ─── Monitor de Buffer em Background (MPEG-TS): Carregamento até 25s ───
+      // Garante que o stream continue carregando pelo menos 25s em segundo plano.
       // Se a ingestão de background parar e o buffer começar a cair, reinicia o transporte
       // SILENCIOSAMENTE, SEM TRAVAR A TELA (o vídeo continua rodando no buffer existente).
       if (mpegtsPlayer && currentStreamType === "mpegts" && video.buffered && video.buffered.length > 0) {
@@ -1621,8 +1621,8 @@ function startWatchdog(url) {
         }
         const currentEnd = video.buffered.end(video.buffered.length - 1);
 
-        // Se o buffer estiver abaixo do alvo de 20s e não estiver avançando
-        if (forwardCushion < 20.0) {
+        // Se o buffer estiver abaixo do alvo de 25s e não estiver avançando
+        if (forwardCushion < 25.0) {
           if (Math.abs(currentEnd - lastMpegBufferedEnd) < 0.1) {
             mpegBufferStallCount++;
             // Se o background parou por mais de 4s e o buffer caiu abaixo de 10s:
@@ -1923,13 +1923,13 @@ async function playStream(url) {
       tryDirectPlay(playUrl, video);
     }
   } else {
-    // ─── MPEG-TS: Acúmulo de Buffer Real de 20s (mesma lógica do HLS) ───
+    // ─── MPEG-TS: Acúmulo de Buffer Real de 25s (mesma lógica do HLS) ───
     // mpegts.js alimenta o MSE continuamente. O buffer real (video.buffered) cresce
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
     if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
       try {
-        const mpegBufTarget = 20; // Alvo de buffer: 20s
-        const stash20s = 20 * 1024 * 1024; // Stash calibrado para 20s (~20MB para streams MPEG-TS em HD)
+        const mpegBufTarget = 25; // Alvo de buffer: 25s
+        const stash25s = 25 * 1024 * 1024; // Stash calibrado para 25s (~25MB para streams MPEG-TS em HD)
 
         mpegtsPlayer = mpegts.createPlayer({
           type: 'm2ts',
@@ -1938,10 +1938,10 @@ async function playStream(url) {
         }, {
           enableWorker: true,
           enableStashBuffer: true,
-          stashInitialSize: stash20s, // Stash de 20s
+          stashInitialSize: stash25s, // Stash de 25s
           ...MPEGTS_RESILIENCE_CONFIG,
           // Override deliberado: o prebuffer ágil (plateau de 4s + expansão em
-          // background até 20s+) precisa que o buffer cresça livremente. Chasing
+          // background até 25s+) precisa que o buffer cresça livremente. Chasing
           // ligado (MPEGTS_RESILIENCE_CONFIG.liveBufferLatencyChasing) forçaria o
           // player a descartar/avançar para caber em ~10s, brigando com essa
           // expansão. autoCleanupSourceBuffer/Max/Min já vêm corretos do config
@@ -1955,7 +1955,7 @@ async function playStream(url) {
         mpegtsPlayer.load(); // Começa a baixar
 
         // ─── FASE 1: Acumulação Ágil ───
-        // Inicia com colchão inicial ágil (4-5s) e expande continuamente até 20s em segundo plano.
+        // Inicia com colchão inicial ágil (4-5s) e expande continuamente até 25s em segundo plano.
         let mpegStarted = false;
         let lastBuf = -1;
         let plateauCount = 0;
@@ -1985,19 +1985,19 @@ async function playStream(url) {
             loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
           }
 
-          // Se atingiu o alvo completo de 20s, inicia
+          // Se atingiu o alvo completo de 25s, inicia
           if (currentBuf >= mpegBufTarget) {
             _launchMpegPlayback();
             return;
           }
 
           // Inicia com colchão inicial ágil (>= 4s estabilizado) para não prender o usuário na tela
-          // e continua carregando até os 20s em segundo plano enquanto toca
+          // e continua carregando até os 25s em segundo plano enquanto toca
           if (currentBuf >= 4.0) {
             if (Math.abs(currentBuf - lastBuf) < 0.2) {
               plateauCount++;
               if (plateauCount >= 4) { // ~1.2s estabilizado
-                console.info(`[mpegts prebuffer] Colchão inicial de ${currentBuf.toFixed(1)}s pronto. Iniciando reprodução e expandindo até 20s em background.`);
+                console.info(`[mpegts prebuffer] Colchão inicial de ${currentBuf.toFixed(1)}s pronto. Iniciando reprodução e expandindo até 25s em background.`);
                 _launchMpegPlayback();
                 return;
               }
