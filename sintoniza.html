@@ -1395,18 +1395,21 @@ let hlsNetworkRetryAttempt = 0;
 let hlsNetworkRetryTimer = null;
 let mediaErrorEscalation = createMediaErrorEscalation();
 let currentWatchdogUrl = null;
+let lastMpegBufferedEnd = -1;
+let mpegBufferStallCount = 0;
+let lastMpegBgReconnectTime = 0;
 
 // ─── Auto-Calibração Progressiva de Buffers ───
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
-// mpegBufSec: buffer-alvo real do video.buffered para MPEG-TS (aguarda acumular antes de play)
+// mpegBufSec: buffer-alvo real em segundo plano para MPEG-TS (pelo menos 20s)
 const BUFFER_STAGES = [
-  { seconds: 20, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 5 },
-  { seconds: 30, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 7 },
-  { seconds: 40, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 10 },
-  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 12 },
-  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 15 },
+  { seconds: 20, hlsMax: 20, hlsMaxMax: 40,  mpegBufSec: 20 },
+  { seconds: 30, hlsMax: 30, hlsMaxMax: 60,  mpegBufSec: 25 },
+  { seconds: 40, hlsMax: 40, hlsMaxMax: 80,  mpegBufSec: 30 },
+  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 35 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 40 },
 ];
-let currentBufferStageIndex = 0; // Começa sempre no padrão 25s
+let currentBufferStageIndex = 0; // Começa sempre no padrão 20s
 
 function escalateBufferStage() {
   if (currentBufferStageIndex < BUFFER_STAGES.length - 1) {
@@ -1525,6 +1528,9 @@ function resetWatchdogCounters() {
   watchdogWaitingSeconds = 0;
   watchdogLastTime = 0;
   watchdogLastFrames = 0;
+  lastMpegBufferedEnd = -1;
+  mpegBufferStallCount = 0;
+  lastMpegBgReconnectTime = 0;
   hlsNetworkRetryAttempt = 0;
   if (hlsNetworkRetryTimer) {
     clearTimeout(hlsNetworkRetryTimer);
@@ -1583,6 +1589,45 @@ function startWatchdog(url) {
       // Quality Manager: canal estável por tempo contínuo recupera score
       if (_state.selected && (_state.selected.quality_score || 100) < 100) {
         _state.selected.quality_score = Math.min(100, (_state.selected.quality_score || 80) + 1);
+      }
+
+      // ─── Monitor de Buffer em Background (MPEG-TS): Carregamento até 20s ───
+      // Garante que o stream continue carregando pelo menos 20s em segundo plano.
+      // Se a ingestão de background parar e o buffer começar a cair, reinicia o transporte
+      // SILENCIOSAMENTE, SEM TRAVAR A TELA (o vídeo continua rodando no buffer existente).
+      if (mpegtsPlayer && currentStreamType === "mpegts" && video.buffered && video.buffered.length > 0) {
+        let forwardCushion = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= curTime && video.buffered.end(i) >= curTime) {
+            forwardCushion = Math.max(forwardCushion, video.buffered.end(i) - curTime);
+          }
+        }
+        const currentEnd = video.buffered.end(video.buffered.length - 1);
+
+        // Se o buffer estiver abaixo do alvo de 20s e não estiver avançando
+        if (forwardCushion < 20.0) {
+          if (Math.abs(currentEnd - lastMpegBufferedEnd) < 0.1) {
+            mpegBufferStallCount++;
+            // Se o background parou por mais de 4s e o buffer caiu abaixo de 10s:
+            if (mpegBufferStallCount >= 4 && forwardCushion < 10.0 && (Date.now() - lastMpegBgReconnectTime > 8000)) {
+              lastMpegBgReconnectTime = Date.now();
+              mpegBufferStallCount = 0;
+              console.warn(`[MPEG-TS Background Watcher] Ingestão parou com ${forwardCushion.toFixed(1)}s restantes. Reiniciando transporte em segundo plano sem congelar a tela...`);
+              try {
+                mpegtsPlayer.unload();
+                mpegtsPlayer.load();
+                mpegtsPlayer.play();
+              } catch (e) {
+                console.warn('[MPEG-TS Background Watcher] Falha no reload suave:', e);
+              }
+            }
+          } else {
+            mpegBufferStallCount = 0;
+          }
+        } else {
+          mpegBufferStallCount = 0;
+        }
+        lastMpegBufferedEnd = currentEnd;
       }
     } else {
       // Paralisado no mesmo quadro
@@ -1866,7 +1911,8 @@ async function playStream(url) {
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
     if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
       try {
-        const mpegBufTarget = stage.mpegBufSec || 5; // Colchão inicial ágil (5s) para entrada rápida e suave
+        const mpegBufTarget = 20; // Alvo de buffer: 20s
+        const stash20s = 20 * 1024 * 1024; // Stash calibrado para 20s (~20MB para streams MPEG-TS em HD)
 
         mpegtsPlayer = mpegts.createPlayer({
           type: 'm2ts',
@@ -1875,9 +1921,12 @@ async function playStream(url) {
         }, {
           enableWorker: true,
           enableStashBuffer: true,
-          stashInitialSize: 1024 * 1024, // 1MB stash fixo — suaviza jitter de rede sem limitar crescimento
+          stashInitialSize: stash20s, // Stash de 20s
           ...MPEGTS_RESILIENCE_CONFIG,
-          liveBufferLatencyChasing: false, // CRÍTICO: Não perseguir baixa latência para permitir que o buffer cresça em segundo plano
+          liveBufferLatencyChasing: false, // Permite que o buffer cresça até 20s+ em segundo plano sem descarte
+          autoCleanupSourceBuffer: true,
+          autoCleanupMaxBackwardDuration: 60,
+          autoCleanupMinBackwardDuration: 30,
           lazyLoad: false,
           deferLoadAfterSourceOpen: false
         });
@@ -1886,8 +1935,7 @@ async function playStream(url) {
         mpegtsPlayer.load(); // Começa a baixar
 
         // ─── FASE 1: Acumulação Ágil ───
-        // Acumula colchão inicial ágil (5s) e libera a reprodução rapidamente.
-        // O restante do buffer expande em segundo plano de forma contínua enquanto o canal toca.
+        // Inicia com colchão inicial ágil (4-5s) e expande continuamente até 20s em segundo plano.
         let mpegStarted = false;
         let lastBuf = -1;
         let plateauCount = 0;
@@ -1914,20 +1962,22 @@ async function playStream(url) {
           // Atualiza texto de progresso no loader
           if (loaderText) {
             const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
-            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s (${pct}%)`;
+            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
           }
 
-          // Se atingiu o alvo inicial de 5s OU acumulou pelo menos 3s e estabilizou
+          // Se atingiu o alvo completo de 20s, inicia
           if (currentBuf >= mpegBufTarget) {
             _launchMpegPlayback();
             return;
           }
 
-          if (currentBuf >= 3.0) {
+          // Inicia com colchão inicial ágil (>= 4s estabilizado) para não prender o usuário na tela
+          // e continua carregando até os 20s em segundo plano enquanto toca
+          if (currentBuf >= 4.0) {
             if (Math.abs(currentBuf - lastBuf) < 0.2) {
               plateauCount++;
               if (plateauCount >= 4) { // ~1.2s estabilizado
-                console.info(`[mpegts prebuffer] Burst inicial estabilizado em ${currentBuf.toFixed(1)}s. Liberando reprodução.`);
+                console.info(`[mpegts prebuffer] Colchão inicial de ${currentBuf.toFixed(1)}s pronto. Iniciando reprodução e expandindo até 20s em background.`);
                 _launchMpegPlayback();
                 return;
               }
@@ -1987,7 +2037,14 @@ async function playStream(url) {
                 }
               }
             }
-            if (!hasBuf) {
+            if (hasBuf) {
+              console.warn('[mpegts network error] Vídeo com buffer seguro. Reconectando em segundo plano sem travar a tela...');
+              try {
+                mpegtsPlayer.unload();
+                mpegtsPlayer.load();
+                mpegtsPlayer.play();
+              } catch (e) {}
+            } else {
               reloadCurrentChannel(true);
             }
           }

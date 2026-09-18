@@ -334,11 +334,11 @@ function ensureEssentialFavs() {
 // BUFFER E PLAYER
 // ──────────────────────────────────────────────────────────────
 const BUFFER_STAGES = [
-  { seconds: 20, hlsMax: 20, hlsMaxMax: 40, mpegBufSec: 5 },
-  { seconds: 30, hlsMax: 30, hlsMaxMax: 60, mpegBufSec: 7 },
-  { seconds: 40, hlsMax: 40, hlsMaxMax: 80, mpegBufSec: 10 },
-  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 12 },
-  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 15 },
+  { seconds: 20, hlsMax: 20, hlsMaxMax: 40, mpegBufSec: 20 },
+  { seconds: 30, hlsMax: 30, hlsMaxMax: 60, mpegBufSec: 25 },
+  { seconds: 40, hlsMax: 40, hlsMaxMax: 80, mpegBufSec: 30 },
+  { seconds: 50, hlsMax: 50, hlsMaxMax: 100, mpegBufSec: 35 },
+  { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 40 },
 ];
 let currentBufferStageIndex = 0;
 let hlsInstance     = null;
@@ -348,6 +348,9 @@ let mpegPrebufTimeout = null;
 let isReloading     = false;
 let currentStreamUrl = null;
 let currentStreamType = 'unknown';
+let lastMpegBufferedEnd = -1;
+let mpegBufferStallCount = 0;
+let lastMpegBgReconnectTime = 0;
 
 // ── Watchdog ────────────────────────────────────────────────
 let wdInterval = null;
@@ -359,6 +362,9 @@ function startWatchdog(url) {
   stopWatchdog();
   wdFrozenSec = 0;
   wdLastTime  = -1;
+  lastMpegBufferedEnd = -1;
+  mpegBufferStallCount = 0;
+  lastMpegBgReconnectTime = 0;
   const video = document.getElementById('tv-video');
   wdInterval = setInterval(() => {
     if (!video || document.hidden) return;
@@ -375,6 +381,37 @@ function startWatchdog(url) {
     } else {
       wdFrozenSec = 0;
       hideStatusBar();
+
+      // Monitor de ingestão de background MPEG-TS (expansão até 20s sem travar tela)
+      if (mpegtsPlayer && currentStreamType === 'mpegts' && video.buffered && video.buffered.length > 0) {
+        let forwardCushion = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= t && video.buffered.end(i) >= t) {
+            forwardCushion = Math.max(forwardCushion, video.buffered.end(i) - t);
+          }
+        }
+        const currentEnd = video.buffered.end(video.buffered.length - 1);
+        if (forwardCushion < 20.0) {
+          if (Math.abs(currentEnd - lastMpegBufferedEnd) < 0.1) {
+            mpegBufferStallCount++;
+            if (mpegBufferStallCount >= 4 && forwardCushion < 10.0 && (Date.now() - lastMpegBgReconnectTime > 8000)) {
+              lastMpegBgReconnectTime = Date.now();
+              mpegBufferStallCount = 0;
+              console.warn('[TV MPEG-TS Watcher] Ingestão parou com ' + forwardCushion.toFixed(1) + 's. Reiniciando transporte sem travar tela...');
+              try {
+                mpegtsPlayer.unload();
+                mpegtsPlayer.load();
+                mpegtsPlayer.play();
+              } catch (e) {}
+            }
+          } else {
+            mpegBufferStallCount = 0;
+          }
+        } else {
+          mpegBufferStallCount = 0;
+        }
+        lastMpegBufferedEnd = currentEnd;
+      }
     }
     wdLastTime = t;
     updateDebug();
@@ -507,13 +544,16 @@ function playViaMpegTS(url, stage, video) {
     showError('MPEG-TS não suportado nesta TV.');
     return;
   }
-  const mpegBufTarget = stage.mpegBufSec || 5;
+  const mpegBufTarget = 20; // Alvo de buffer: 20s
+  const stash20s = 20 * 1024 * 1024; // Stash de 20MB (~20s de stream em HD)
   mpegtsPlayer = mpegts.createPlayer({ type: 'm2ts', isLive: true, url }, {
     enableWorker: true,
     enableStashBuffer: true,
-    stashInitialSize: 1024 * 1024,
+    stashInitialSize: stash20s,
     liveBufferLatencyChasing: false,
-    autoCleanupSourceBuffer: false,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 60,
+    autoCleanupMinBackwardDuration: 30,
     lazyLoad: false,
     deferLoadAfterSourceOpen: false,
   });
@@ -541,7 +581,7 @@ function playViaMpegTS(url, stage, video) {
     }
     if (loaderText) {
       const pct = Math.min(100, Math.round((buf / mpegBufTarget) * 100));
-      loaderText.textContent = `Carregando buffer: ${buf.toFixed(1)}s (${pct}%)`;
+      loaderText.textContent = `Carregando buffer: ${buf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
     }
 
     if (buf >= mpegBufTarget) {
@@ -549,7 +589,7 @@ function playViaMpegTS(url, stage, video) {
       return;
     }
 
-    if (buf >= 3.0) {
+    if (buf >= 4.0) {
       if (Math.abs(buf - lastBuf) < 0.2) {
         plateauCount++;
         if (plateauCount >= 4) {
@@ -599,7 +639,16 @@ function playViaMpegTS(url, stage, video) {
           }
         }
       }
-      if (!hasBuf) reloadChannel(true);
+      if (hasBuf) {
+        console.warn('[TV mpegts network error] Vídeo com buffer seguro. Reconectando background silenciosamente...');
+        try {
+          mpegtsPlayer.unload();
+          mpegtsPlayer.load();
+          mpegtsPlayer.play();
+        } catch (e) {}
+      } else {
+        reloadChannel(true);
+      }
     }
   });
 }
