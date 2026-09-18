@@ -1464,6 +1464,62 @@ function escalateBufferStage() {
   }
 }
 
+function mpegtsHasForwardCushion(video) {
+  if (!video || !video.buffered || video.buffered.length === 0) return false;
+  const cur = video.currentTime || 0;
+  for (let i = 0; i < video.buffered.length; i++) {
+    if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// unload()+load()+play() do mpegts.js descarta o SourceBuffer inteiro, então
+// video.currentTime fica "órfão" apontando pra um instante sem dados no
+// stream novo até algo o mover. O nudge reativo do watchdog (N1: +0.15s) é
+// pequeno demais pra cobrir esse salto - a tela fica visivelmente travada
+// por vários segundos até N2/N3 forçarem uma reconstrução completa. Sondamos
+// o buffer novo e realinhamos assim que ele chega, em vez de esperar.
+function alignMpegtsPlaybackToFreshBuffer(video) {
+  let attempts = 0;
+  const poll = setInterval(() => {
+    attempts++;
+    if (video.buffered && video.buffered.length > 0) {
+      const start = video.buffered.start(0);
+      const end = video.buffered.end(video.buffered.length - 1);
+      if (video.currentTime < start || video.currentTime > end) {
+        try { video.currentTime = start + 0.1; } catch (e) {}
+      }
+      clearInterval(poll);
+    } else if (attempts >= 20) { // ~4s de tentativas (200ms x 20)
+      clearInterval(poll);
+    }
+  }, 200);
+}
+
+// Ponto único de reconexão suave do MPEG-TS: com colchão de buffer à frente,
+// tenta reiniciar o transporte sem tirar o usuário da tela e realinha o
+// playback ao buffer novo; sem colchão (ou se o restart suave falhar),
+// recarrega o canal por completo.
+function mpegtsSoftRestartOrReload(label) {
+  if (isReloadingStream) return;
+  const video = document.getElementById("player-video");
+  if (mpegtsPlayer && mpegtsHasForwardCushion(video)) {
+    console.warn(`[mpegts ${label}] Vídeo com buffer seguro. Reconectando em segundo plano sem travar a tela...`);
+    try {
+      mpegtsPlayer.unload();
+      mpegtsPlayer.load();
+      mpegtsPlayer.play();
+      if (video) alignMpegtsPlaybackToFreshBuffer(video);
+      return;
+    } catch (e) {
+      console.warn(`[mpegts ${label}] Falha no reload suave:`, e);
+    }
+  }
+  reloadCurrentChannel(true);
+}
+
 // ─── Detecção Inteligente de Stream & Dual-Stack HLS Probe ───
 // Em listas IPTV (Xtream Codes/XUI), links .ts quase sempre têm espelho .m3u8 no mesmo servidor.
 // O HLS baixa blocos em paralelo e mantém o buffer de 15s-60s sem nunca esgotar.
@@ -1658,14 +1714,8 @@ function startWatchdog(url) {
             if (mpegBufferStallCount >= 4 && forwardCushion < 10.0 && (Date.now() - lastMpegBgReconnectTime > 8000)) {
               lastMpegBgReconnectTime = Date.now();
               mpegBufferStallCount = 0;
-              console.warn(`[MPEG-TS Background Watcher] Ingestão parou com ${forwardCushion.toFixed(1)}s restantes. Reiniciando transporte em segundo plano sem congelar a tela...`);
-              try {
-                mpegtsPlayer.unload();
-                mpegtsPlayer.load();
-                mpegtsPlayer.play();
-              } catch (e) {
-                console.warn('[MPEG-TS Background Watcher] Falha no reload suave:', e);
-              }
+              console.warn(`[MPEG-TS Background Watcher] Ingestão parou com ${forwardCushion.toFixed(1)}s restantes.`);
+              mpegtsSoftRestartOrReload('background watcher');
             }
           } else {
             mpegBufferStallCount = 0;
@@ -1709,13 +1759,7 @@ function startWatchdog(url) {
         escalateBufferStage(); // Sobe para próximo degrau (ex: 15s -> 20s -> 30s...)
 
         if (mpegtsPlayer) {
-          try {
-            mpegtsPlayer.unload();
-            mpegtsPlayer.load();
-            mpegtsPlayer.play();
-          } catch (e) {
-            reloadCurrentChannel(true);
-          }
+          mpegtsSoftRestartOrReload('watchdog N2');
         } else if (hlsInstance) {
           try {
             hlsInstance.startLoad();
@@ -2095,31 +2139,6 @@ async function playStream(url) {
             _launchMpegPlayback();
           }
         }, maxPrebufMs);
-
-        const hasMpegtsForwardCushion = () => {
-          if (!video || !video.buffered || video.buffered.length === 0) return false;
-          const cur = video.currentTime || 0;
-          for (let i = 0; i < video.buffered.length; i++) {
-            if (video.buffered.start(i) <= cur && (video.buffered.end(i) - cur) > 2) {
-              return true;
-            }
-          }
-          return false;
-        };
-
-        const mpegtsSoftRestartOrReload = (label) => {
-          if (isReloadingStream) return;
-          if (hasMpegtsForwardCushion()) {
-            console.warn(`[mpegts ${label}] Vídeo com buffer seguro. Reconectando em segundo plano sem travar a tela...`);
-            try {
-              mpegtsPlayer.unload();
-              mpegtsPlayer.load();
-              mpegtsPlayer.play();
-            } catch (e) {}
-          } else {
-            reloadCurrentChannel(true);
-          }
-        };
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
