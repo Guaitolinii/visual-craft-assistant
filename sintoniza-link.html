@@ -326,6 +326,39 @@
       animation: spin 700ms linear infinite;
       color: var(--primary) !important;
     }
+
+    /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
+       para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
+       de uma WKWebView no iOS, dispara o aviso do sistema "capacitor://
+       localhost is in full screen. Swipe down to exit", que não faz
+       sentido pra quem está usando um app instalado. No navegador comum
+       (GitHub Pages) o comportamento não muda - continua usando a
+       Fullscreen API de verdade. */
+    #player-screen.pseudo-fullscreen {
+      position: fixed; inset: 0; z-index: 9999; background: #000;
+    }
+    #player-screen.pseudo-fullscreen #player-video {
+      width: 100%; height: 100%; object-fit: contain;
+    }
+    #player-screen.pseudo-fullscreen.rotated #player-video {
+      position: absolute; top: 50%; left: 50%;
+      width: 100vh; height: 100vw;
+      transform: translate(-50%, -50%) rotate(90deg);
+    }
+    .fs-overlay-controls {
+      position: fixed; inset: 0 0 auto 0; z-index: 10000;
+      display: none; justify-content: flex-end; gap: .6rem;
+      padding: 1rem; opacity: 0; pointer-events: none;
+      transition: opacity 220ms;
+    }
+    #player-screen.pseudo-fullscreen .fs-overlay-controls { display: flex; }
+    .fs-overlay-controls.visible { opacity: 1; pointer-events: auto; }
+    .fs-overlay-btn {
+      width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none;
+      display: flex; align-items: center; justify-content: center;
+      background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
+      backdrop-filter: blur(8px);
+    }
     .live-line {
       height: 3px; flex: 1; min-width: 3rem; border-radius: 9px;
       background: oklch(0.3 0.02 65); overflow: hidden; position: relative;
@@ -823,6 +856,15 @@
         <!-- PLAYER -->
         <div class="player-stage" id="player-stage">
           <div class="player-screen" id="player-screen">
+            <!-- Controles de tela cheia "de mentira" (só usados dentro do app nativo) -->
+            <div class="fs-overlay-controls" id="fs-overlay-controls">
+              <button class="fs-overlay-btn" id="fs-rotate-btn" aria-label="Girar para retrato">
+                <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
+              </button>
+              <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
+                <i data-lucide="minimize" style="width:20px;height:20px"></i>
+              </button>
+            </div>
             <!-- Art (visível antes de reproduzir) -->
             <div class="player-art" id="player-art">
               <div class="signal-lines"></div>
@@ -2656,6 +2698,49 @@ function applyVolume(v) {
   lucide.createIcons();
 }
 
+// ─── Tela cheia ───
+// Dentro do app nativo (Capacitor), a Fullscreen API real do navegador
+// dispara um aviso do próprio sistema no iOS ("capacitor://localhost is in
+// full screen. Swipe down to exit") que não faz sentido pra quem já está
+// usando um app instalado - então lá usamos uma "tela cheia de mentira" via
+// CSS (position:fixed cobrindo a viewport) em vez de requestFullscreen().
+// No navegador comum (GitHub Pages) nada muda - continua a Fullscreen API.
+function isNativeApp() {
+  return window.Capacitor?.isNativePlatform?.() === true
+    || location.protocol === "capacitor:"
+    || (location.protocol === "http:" && location.hostname === "localhost");
+}
+
+let fsControlsHideTimer = null;
+function showFsControls() {
+  const controls = document.getElementById("fs-overlay-controls");
+  controls.classList.add("visible");
+  clearTimeout(fsControlsHideTimer);
+  fsControlsHideTimer = setTimeout(() => controls.classList.remove("visible"), 5000);
+}
+
+function enterPseudoFullscreen() {
+  document.getElementById("player-screen").classList.add("pseudo-fullscreen");
+  showFsControls();
+}
+
+function exitPseudoFullscreen() {
+  document.getElementById("player-screen").classList.remove("pseudo-fullscreen", "rotated");
+  clearTimeout(fsControlsHideTimer);
+  document.getElementById("fs-overlay-controls").classList.remove("visible");
+}
+
+function toggleFullscreen() {
+  const el = document.getElementById("player-screen");
+  if (isNativeApp()) {
+    if (el.classList.contains("pseudo-fullscreen")) exitPseudoFullscreen();
+    else enterPseudoFullscreen();
+    return;
+  }
+  if (document.fullscreenElement) { document.exitFullscreen(); }
+  else if (el.requestFullscreen) { el.requestFullscreen(); }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // RENDER — PLAYER INFO
 // ═══════════════════════════════════════════════════════════════
@@ -3214,17 +3299,25 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(LS.FIT, v);
   });
 
-  document.getElementById("fullscreen-btn").addEventListener("click", () => {
-    const el = document.getElementById("player-screen");
-    if (document.fullscreenElement) { document.exitFullscreen(); }
-    else if (el.requestFullscreen) { el.requestFullscreen(); }
-  });
+  document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
 
   // Duplo clique no vídeo = fullscreen
-  document.getElementById("player-video").addEventListener("dblclick", () => {
-    const el = document.getElementById("player-screen");
-    if (document.fullscreenElement) { document.exitFullscreen(); }
-    else if (el.requestFullscreen) { el.requestFullscreen(); }
+  document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
+
+  // Tocar na tela em modo tela-cheia-de-mentira reexibe os controles
+  document.getElementById("player-screen").addEventListener("click", () => {
+    if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
+      showFsControls();
+    }
+  });
+  document.getElementById("fs-exit-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    exitPseudoFullscreen();
+  });
+  document.getElementById("fs-rotate-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    document.getElementById("player-screen").classList.toggle("rotated");
+    showFsControls();
   });
 
   // ── VIEW TOGGLE ──
