@@ -508,6 +508,46 @@
       line-height: 1.2;
     }
 
+    /* EPG — botão "grade" nos cards/linhas que têm correspondência, e o
+       popover flutuante compartilhado (fixed, fora do overflow:hidden dos
+       cards) que mostra o próximo programa ao clicar. */
+    .epg-btn {
+      display: inline-flex; align-items: center; gap: .25rem;
+      border: none; border-radius: 999px;
+      background: color-mix(in oklab, var(--primary) 14%, var(--card));
+      color: var(--primary); font-size: .62rem; font-weight: 700;
+      padding: .3rem .55rem; letter-spacing: .02em; flex-shrink: 0;
+      transition: background 160ms, transform 160ms;
+    }
+    .epg-btn:hover { background: color-mix(in oklab, var(--primary) 26%, var(--card)); }
+    .epg-btn:active { transform: scale(.96); }
+    .epg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    .channel-card .epg-btn {
+      position: absolute; right: .6rem; bottom: .65rem; z-index: 1;
+    }
+    .channel-card p.has-epg-btn { padding-right: 4.75rem; }
+
+    .epg-popover {
+      position: fixed; z-index: 100; width: 15rem; max-width: calc(100vw - 1.5rem);
+      background: var(--card); border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: .4rem; padding: .65rem .8rem;
+      box-shadow: 0 16px 32px oklch(0.2 0.03 65 / 18%);
+      opacity: 0; transform: translateY(4px); pointer-events: none;
+      transition: opacity 160ms, transform 160ms;
+    }
+    .epg-popover.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .epg-popover-eyebrow {
+      font-size: .6rem; font-weight: 700; letter-spacing: .06em;
+      color: var(--primary); text-transform: uppercase;
+    }
+    .epg-popover-title { font-size: .85rem; font-weight: 600; margin-top: .2rem; line-height: 1.3; }
+    .epg-popover-time  { font-size: .68rem; color: var(--muted-fg); margin-top: .3rem; }
+    @media (prefers-reduced-motion: reduce) {
+      .epg-popover { transition: opacity 1ms linear; }
+    }
+
     /* EMPTY */
     .empty-state {
       display: grid; min-height: 14rem; place-items: center; align-content: center;
@@ -1046,6 +1086,13 @@
 <!-- TOAST -->
 <div class="toast" id="toast" role="alert" aria-live="polite"></div>
 
+<!-- EPG: popover flutuante compartilhado (posicionado via JS ao clicar em .epg-btn) -->
+<div class="epg-popover" id="epg-popover" role="dialog" aria-hidden="true">
+  <div class="epg-popover-eyebrow">A seguir</div>
+  <div class="epg-popover-title" id="epg-popover-title"></div>
+  <div class="epg-popover-time" id="epg-popover-time"></div>
+</div>
+
 <script id="resilience-helpers">
 // ─── Resilience Helpers (pure, dependency-free) ───
 // Declared with `function`/`var` (not `const`/`let`) on purpose: as a classic
@@ -1187,15 +1234,48 @@ function createReconnectCircuitBreaker(opts) {
 // (no DOMParser) with `function`/`var` only, same reasoning and same test
 // harness as the resilience-helpers block above - see its comment.
 
+function decodeXmlEntities(str) {
+  if (!str) return "";
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, code) { return String.fromCharCode(Number(code)); })
+    .replace(/&#x([0-9a-fA-F]+);/g, function (_, code) { return String.fromCharCode(parseInt(code, 16)); })
+    .replace(/&amp;/g, "&");
+}
+
 function normalizeChannelName(name) {
   if (!name) return "";
   return name
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\+/g, " plus ")
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\b(fhd|uhd|4k|hd|sd)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// Provedores de TV paga brasileiros costumam nomear o canal "principal" de
+// forma diferente do que a lista M3U chama - ex: o canal com o sinal
+// principal do Premiere é "Premiere Clubes" na grade, mas a lista chama de
+// "Premiere 1" ou só "Premiere". Aplicado só na busca (resolveEpgProgrammes),
+// nunca na indexação, então um provedor sem esses apelidos não é afetado.
+var CHANNEL_ALIASES = {
+  "premiere 1": "premiere clubes",
+  "premiere": "premiere clubes",
+  "sony movies": "sony channel",
+  "canal sony": "sony channel",
+};
+
+function resolveEpgProgrammes(index, normalizedName) {
+  if (index[normalizedName]) return index[normalizedName];
+  var alias = CHANNEL_ALIASES[normalizedName];
+  if (alias && index[alias]) return index[alias];
+  return null;
 }
 
 function extractXmltvChannels(xmlText) {
@@ -1207,7 +1287,7 @@ function extractXmltvChannels(xmlText) {
     if (!id) continue;
     var nameMatch = /<display-name>([^<]*)<\/display-name>/.exec(m[2]);
     if (!nameMatch) continue;
-    channels.push({ id: id, displayName: nameMatch[1] });
+    channels.push({ id: id, displayName: decodeXmlEntities(nameMatch[1]) });
   }
   return channels;
 }
@@ -1222,7 +1302,7 @@ function extractXmltvProgrammes(xmlText) {
       channelId: m[3],
       start: Number(m[1]) * 1000,
       stop: Number(m[2]) * 1000,
-      title: titleMatch ? titleMatch[1] : "",
+      title: titleMatch ? decodeXmlEntities(titleMatch[1]) : "",
     });
   }
   return programmes;
@@ -1287,6 +1367,16 @@ function getCurrentAndNextProgramme(programmes, nowMs) {
 function isEpgCacheStale(fetchedAtMs, nowMs, ttlMs) {
   if (!fetchedAtMs) return true;
   return (nowMs - fetchedAtMs) >= ttlMs;
+}
+
+function formatProgrammeTimeRange(startMs, stopMs) {
+  function fmt(ms) {
+    var d = new Date(ms);
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return hh + ":" + mm;
+  }
+  return fmt(startMs) + "–" + fmt(stopMs);
 }
 </script>
 
@@ -1651,10 +1741,48 @@ async function refreshEpgIfStale() {
 
 function getNowPlayingTitle(ch) {
   if (!ch || !ch.name) return "";
-  const programmes = epgIndexByName[normalizeChannelName(ch.name)];
+  const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
   if (!programmes || !programmes.length) return "";
   const { current } = getCurrentAndNextProgramme(programmes, Date.now());
   return current ? current.title : "";
+}
+
+function hasEpgSchedule(ch) {
+  if (!ch || !ch.name) return false;
+  const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
+  return !!(programmes && programmes.length);
+}
+
+function showEpgPopoverFor(anchorEl, ch) {
+  const popover = document.getElementById("epg-popover");
+  const programmes = ch && ch.name ? resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name)) : null;
+  if (!programmes || !programmes.length) return;
+
+  const { next } = getCurrentAndNextProgramme(programmes, Date.now());
+  if (!next) {
+    showToast("Sem próxima programação disponível para este canal.");
+    return;
+  }
+
+  document.getElementById("epg-popover-title").textContent = next.title || "Sem título";
+  document.getElementById("epg-popover-time").textContent = formatProgrammeTimeRange(next.start, next.stop);
+
+  const rect = anchorEl.getBoundingClientRect();
+  const popoverWidth = 240; // deve bater com o CSS (.epg-popover width)
+  let left = rect.right - popoverWidth;
+  left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
+  popover.style.left = `${left}px`;
+  popover.style.top = `${rect.bottom + 8}px`;
+  popover.classList.add("visible");
+  popover.setAttribute("aria-hidden", "false");
+  popover._anchor = anchorEl;
+}
+
+function hideEpgPopover() {
+  const popover = document.getElementById("epg-popover");
+  popover.classList.remove("visible");
+  popover.setAttribute("aria-hidden", "true");
+  popover._anchor = null;
 }
 
 // ─── Auto-Calibração Progressiva de Buffers ───
@@ -2721,6 +2849,15 @@ function renderCatalog() {
   container.querySelectorAll("[data-fav-id]").forEach(el => {
     el.addEventListener("click", e => { e.stopPropagation(); toggleFav(+el.dataset.favId); });
   });
+  container.querySelectorAll("[data-epg-id]").forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const ch = getChannels().find(c => c.id === +el.dataset.epgId);
+      const popover = document.getElementById("epg-popover");
+      if (popover._anchor === el) { hideEpgPopover(); return; }
+      showEpgPopoverFor(el, ch);
+    });
+  });
   lucide.createIcons();
 }
 
@@ -2737,6 +2874,7 @@ function cardHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
   const nowPlaying = getNowPlayingTitle(ch);
+  const hasSchedule = hasEpgSchedule(ch);
   return `
     <article class="channel-card ${sel}">
       <button class="card-main" data-channel-id="${ch.id}" aria-label="Assistir ${ch.name}">
@@ -2744,8 +2882,12 @@ function cardHTML(ch) {
         <div class="card-tags"><span>● AO VIVO</span><span>${ch.category}</span></div>
         <h3>${ch.name}</h3>
         ${isChannelHls(ch) ? `<div style="padding:0 .75rem;margin-top:.25rem"><span class="tag-hls">HLS</span></div>` : ""}
-        <p>${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
+        <p class="${hasSchedule ? "has-epg-btn" : ""}">${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
       </button>
+      ${hasSchedule ? `
+      <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
+        <i data-lucide="calendar-clock" style="width:12px;height:12px"></i> A seguir
+      </button>` : ""}
       <button class="fav-btn ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
         <i data-lucide="heart" style="width:18px;height:18px${fav?";fill:currentColor":""}"></i>
       </button>
@@ -2756,6 +2898,7 @@ function listHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
   const nowPlaying = getNowPlayingTitle(ch);
+  const hasSchedule = hasEpgSchedule(ch);
   const logoHtml = ch.logo
     ? `<img src="${ch.logo}" alt="${ch.name}" style="width:100%;height:100%;object-fit:contain;padding:.25rem"
          onerror="this.style.display='none';this.nextElementSibling.style.display=''">
@@ -2775,6 +2918,10 @@ function listHTML(ch) {
           <p>${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
         </div>
       </button>
+      ${hasSchedule ? `
+      <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
+        <i data-lucide="calendar-clock" style="width:12px;height:12px"></i> A seguir
+      </button>` : ""}
       <button class="fav-btn-list ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
         <i data-lucide="heart" style="width:18px;height:18px${fav?";fill:currentColor":""}"></i>
       </button>
@@ -2970,6 +3117,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("mob-menu").addEventListener("click", openSidebar);
   document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
   document.getElementById("sidebar-scrim").addEventListener("click", closeSidebar);
+
+  // ── EPG: fecha o popover "a seguir" ao clicar fora, rolar ou apertar Esc ──
+  document.addEventListener("click", e => {
+    const popover = document.getElementById("epg-popover");
+    if (!popover.classList.contains("visible")) return;
+    if (e.target.closest("#epg-popover") || e.target.closest("[data-epg-id]")) return;
+    hideEpgPopover();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") hideEpgPopover();
+  });
+  document.getElementById("channel-container").addEventListener("scroll", hideEpgPopover);
+  window.addEventListener("scroll", hideEpgPopover, true);
 
   // ── SEARCH ──
   const searchInput = document.getElementById("search-input");

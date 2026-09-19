@@ -39,6 +39,16 @@ const SAMPLE_XMLTV = `<?xml version="1.0" encoding="utf-8" ?><!DOCTYPE tv SYSTEM
 	</programme>
 </tv>`;
 
+test("decodeXmlEntities: decodes the standard XML entities and numeric references", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.decodeXmlEntities("Discovery H&amp;H"), "Discovery H&H");
+  assert.equal(ctx.decodeXmlEntities("Tom &amp; Jerry"), "Tom & Jerry");
+  assert.equal(ctx.decodeXmlEntities("&lt;tag&gt; &quot;quoted&quot; &apos;s&apos;"), `<tag> "quoted" 's'`);
+  assert.equal(ctx.decodeXmlEntities("&#65;&#x42;"), "AB");
+  assert.equal(ctx.decodeXmlEntities("no entities here"), "no entities here");
+  assert.equal(ctx.decodeXmlEntities(""), "");
+});
+
 test("normalizeChannelName: lowercases, strips accents and quality suffixes", () => {
   const ctx = loadEpgHelpers();
   assert.equal(ctx.normalizeChannelName("Canal Rural"), "canal rural");
@@ -47,6 +57,34 @@ test("normalizeChannelName: lowercases, strips accents and quality suffixes", ()
   assert.equal(ctx.normalizeChannelName("Canção Nova"), "cancao nova");
   assert.equal(ctx.normalizeChannelName(""), "");
   assert.equal(ctx.normalizeChannelName(null), "");
+});
+
+test("normalizeChannelName: translates & and + into words instead of dropping them", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.normalizeChannelName("Discovery H&H"), "discovery h and h");
+  assert.equal(ctx.normalizeChannelName("A&E"), "a and e");
+  assert.equal(ctx.normalizeChannelName("Paramount+"), "paramount plus");
+});
+
+test("resolveEpgProgrammes: falls back to the canonical alias when the exact name is missing", () => {
+  const ctx = loadEpgHelpers();
+  const index = { "premiere clubes": [{ start: 1, stop: 2, title: "Jogo" }] };
+  assert.equal(ctx.resolveEpgProgrammes(index, "premiere 1"), index["premiere clubes"]);
+  assert.equal(ctx.resolveEpgProgrammes(index, "premiere"), index["premiere clubes"]);
+});
+
+test("resolveEpgProgrammes: prefers an exact match over the alias", () => {
+  const ctx = loadEpgHelpers();
+  const index = {
+    "premiere clubes": [{ start: 1, stop: 2, title: "Jogo A" }],
+    "premiere 1": [{ start: 3, stop: 4, title: "Jogo B" }],
+  };
+  assert.equal(ctx.resolveEpgProgrammes(index, "premiere 1"), index["premiere 1"]);
+});
+
+test("resolveEpgProgrammes: returns null when neither the name nor its alias exist", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.resolveEpgProgrammes({}, "canal rural"), null);
 });
 
 test("extractXmltvChannels: skips channels with an empty id", () => {
@@ -109,6 +147,20 @@ test("getCurrentAndNextProgramme: returns nulls for an empty schedule", () => {
   const result = ctx.getCurrentAndNextProgramme([], Date.now());
   assert.equal(result.current, null);
   assert.equal(result.next, null);
+});
+
+test("formatProgrammeTimeRange: formats start-stop as local HH:MM-HH:MM", () => {
+  const ctx = loadEpgHelpers();
+  const start = new Date(2026, 8, 13, 21, 15, 0).getTime();
+  const stop = new Date(2026, 8, 13, 21, 22, 0).getTime();
+  assert.equal(ctx.formatProgrammeTimeRange(start, stop), "21:15–21:22");
+});
+
+test("formatProgrammeTimeRange: pads single-digit hours and minutes", () => {
+  const ctx = loadEpgHelpers();
+  const start = new Date(2026, 8, 13, 5, 5, 0).getTime();
+  const stop = new Date(2026, 8, 13, 5, 9, 0).getTime();
+  assert.equal(ctx.formatProgrammeTimeRange(start, stop), "05:05–05:09");
 });
 
 test("isEpgCacheStale: true once the TTL has elapsed, false while still fresh", () => {

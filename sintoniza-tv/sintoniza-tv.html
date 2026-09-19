@@ -179,15 +179,48 @@
 // (no DOMParser) with `function`/`var` only, same reasoning and same test
 // harness as the resilience-helpers block above - see its comment.
 
+function decodeXmlEntities(str) {
+  if (!str) return "";
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, code) { return String.fromCharCode(Number(code)); })
+    .replace(/&#x([0-9a-fA-F]+);/g, function (_, code) { return String.fromCharCode(parseInt(code, 16)); })
+    .replace(/&amp;/g, "&");
+}
+
 function normalizeChannelName(name) {
   if (!name) return "";
   return name
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\+/g, " plus ")
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\b(fhd|uhd|4k|hd|sd)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// Provedores de TV paga brasileiros costumam nomear o canal "principal" de
+// forma diferente do que a lista M3U chama - ex: o canal com o sinal
+// principal do Premiere é "Premiere Clubes" na grade, mas a lista chama de
+// "Premiere 1" ou só "Premiere". Aplicado só na busca (resolveEpgProgrammes),
+// nunca na indexação, então um provedor sem esses apelidos não é afetado.
+var CHANNEL_ALIASES = {
+  "premiere 1": "premiere clubes",
+  "premiere": "premiere clubes",
+  "sony movies": "sony channel",
+  "canal sony": "sony channel",
+};
+
+function resolveEpgProgrammes(index, normalizedName) {
+  if (index[normalizedName]) return index[normalizedName];
+  var alias = CHANNEL_ALIASES[normalizedName];
+  if (alias && index[alias]) return index[alias];
+  return null;
 }
 
 function extractXmltvChannels(xmlText) {
@@ -199,7 +232,7 @@ function extractXmltvChannels(xmlText) {
     if (!id) continue;
     var nameMatch = /<display-name>([^<]*)<\/display-name>/.exec(m[2]);
     if (!nameMatch) continue;
-    channels.push({ id: id, displayName: nameMatch[1] });
+    channels.push({ id: id, displayName: decodeXmlEntities(nameMatch[1]) });
   }
   return channels;
 }
@@ -214,7 +247,7 @@ function extractXmltvProgrammes(xmlText) {
       channelId: m[3],
       start: Number(m[1]) * 1000,
       stop: Number(m[2]) * 1000,
-      title: titleMatch ? titleMatch[1] : "",
+      title: titleMatch ? decodeXmlEntities(titleMatch[1]) : "",
     });
   }
   return programmes;
@@ -279,6 +312,16 @@ function getCurrentAndNextProgramme(programmes, nowMs) {
 function isEpgCacheStale(fetchedAtMs, nowMs, ttlMs) {
   if (!fetchedAtMs) return true;
   return (nowMs - fetchedAtMs) >= ttlMs;
+}
+
+function formatProgrammeTimeRange(startMs, stopMs) {
+  function fmt(ms) {
+    var d = new Date(ms);
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return hh + ":" + mm;
+  }
+  return fmt(startMs) + "–" + fmt(stopMs);
 }
 </script>
 
@@ -682,7 +725,7 @@ async function refreshEpgIfStale() {
 
 function getNowPlayingTitle(ch) {
   if (!ch || !ch.name) return '';
-  const programmes = epgIndexByName[normalizeChannelName(ch.name)];
+  const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
   if (!programmes || !programmes.length) return '';
   const { current } = getCurrentAndNextProgramme(programmes, Date.now());
   return current ? current.title : '';
