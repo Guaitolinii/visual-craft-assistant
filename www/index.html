@@ -968,6 +968,25 @@
         </div>
       </div>
 
+      <div class="settings-card">
+        <label class="url-label">
+          <span>EPG — guia de programação (opcional)</span>
+          <div class="url-input-wrap">
+            <i data-lucide="calendar-clock" style="width:18px;height:18px;color:var(--muted-fg)"></i>
+            <input type="url" id="epg-url" placeholder="http://seu-provedor.com/xmltv.php?username=...&password=..." aria-label="URL do EPG XMLTV" />
+          </div>
+          <p class="url-hint">Cole aqui a URL do xmltv.php do seu provedor (a maioria dos painéis Xtream Codes tem um). A programação "Agora / A seguir" é buscada e atualizada sozinha a cada poucas horas, sem precisar mexer aqui de novo.</p>
+        </label>
+        <div class="settings-actions">
+          <button class="btn-primary" id="save-epg-btn">Salvar EPG</button>
+          <button class="btn-ghost" id="clear-epg-btn">Limpar</button>
+          <span class="save-indicator" id="epg-save-indicator" style="display:none">
+            <i data-lucide="check-circle-2" style="width:15px;height:15px"></i>
+            <span id="epg-save-indicator-text">EPG salvo.</span>
+          </span>
+        </div>
+      </div>
+
       <div class="info-grid">
         <div class="info-card">
           <i data-lucide="zap" style="width:20px;height:20px;color:var(--primary)"></i>
@@ -1157,6 +1176,117 @@ function createReconnectCircuitBreaker(opts) {
       attempts = [];
     },
   };
+}
+</script>
+
+<script id="epg-helpers">
+// ─── EPG Helpers (pure, dependency-free) ───
+// Parses an XMLTV feed (the format Xtream Codes panels expose at xmltv.php)
+// and indexes programmes by normalized channel name, since the M3U entries
+// this app loads don't carry a tvg-id to match against. Kept dependency-free
+// (no DOMParser) with `function`/`var` only, same reasoning and same test
+// harness as the resilience-helpers block above - see its comment.
+
+function normalizeChannelName(name) {
+  if (!name) return "";
+  return name
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\b(fhd|uhd|4k|hd|sd)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function extractXmltvChannels(xmlText) {
+  var channels = [];
+  var re = /<channel\s+id="([^"]*)"[^>]*>([\s\S]*?)<\/channel>/g;
+  var m;
+  while ((m = re.exec(xmlText))) {
+    var id = m[1];
+    if (!id) continue;
+    var nameMatch = /<display-name>([^<]*)<\/display-name>/.exec(m[2]);
+    if (!nameMatch) continue;
+    channels.push({ id: id, displayName: nameMatch[1] });
+  }
+  return channels;
+}
+
+function extractXmltvProgrammes(xmlText) {
+  var programmes = [];
+  var re = /<programme\s+start="[^"]*"\s+stop="[^"]*"\s+start_timestamp="(\d+)"\s+stop_timestamp="(\d+)"\s+channel="([^"]*)"[^>]*>([\s\S]*?)<\/programme>/g;
+  var m;
+  while ((m = re.exec(xmlText))) {
+    var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(m[4]);
+    programmes.push({
+      channelId: m[3],
+      start: Number(m[1]) * 1000,
+      stop: Number(m[2]) * 1000,
+      title: titleMatch ? titleMatch[1] : "",
+    });
+  }
+  return programmes;
+}
+
+// Groups programmes under every normalized display-name that shares a
+// channel id (an id often has an "HD"/"[H265]" variant with the same
+// schedule), trimmed to a window around `nowMs` so the cached index stays
+// small enough for localStorage instead of holding the whole multi-MB feed.
+function buildNameToProgrammesIndex(channels, programmes, opts) {
+  var options = opts || {};
+  var nowMs = options.nowMs != null ? options.nowMs : Date.now();
+  var keepPastMs = options.keepPastMs != null ? options.keepPastMs : 60 * 60 * 1000;
+  var keepFutureMs = options.keepFutureMs != null ? options.keepFutureMs : 48 * 60 * 60 * 1000;
+
+  var idToNames = {};
+  channels.forEach(function (c) {
+    var norm = normalizeChannelName(c.displayName);
+    if (!norm) return;
+    if (!idToNames[c.id]) idToNames[c.id] = [];
+    if (idToNames[c.id].indexOf(norm) === -1) idToNames[c.id].push(norm);
+  });
+
+  var index = {};
+  programmes.forEach(function (p) {
+    if (p.stop < nowMs - keepPastMs) return;
+    if (p.start > nowMs + keepFutureMs) return;
+    var names = idToNames[p.channelId];
+    if (!names) return;
+    names.forEach(function (name) {
+      if (!index[name]) index[name] = [];
+      index[name].push({ start: p.start, stop: p.stop, title: p.title });
+    });
+  });
+
+  Object.keys(index).forEach(function (name) {
+    index[name].sort(function (a, b) { return a.start - b.start; });
+  });
+
+  return index;
+}
+
+function getCurrentAndNextProgramme(programmes, nowMs) {
+  if (!programmes || !programmes.length) return { current: null, next: null };
+  var current = null;
+  var next = null;
+  for (var i = 0; i < programmes.length; i++) {
+    var p = programmes[i];
+    if (p.start <= nowMs && nowMs < p.stop) {
+      current = p;
+      next = programmes[i + 1] || null;
+      break;
+    }
+    if (p.start > nowMs) {
+      next = p;
+      break;
+    }
+  }
+  return { current: current, next: next };
+}
+
+function isEpgCacheStale(fetchedAtMs, nowMs, ttlMs) {
+  if (!fetchedAtMs) return true;
+  return (nowMs - fetchedAtMs) >= ttlMs;
 }
 </script>
 
@@ -1465,6 +1595,67 @@ let reconnectCircuitBreaker = createReconnectCircuitBreaker();
 let lastMpegBufferedEnd = -1;
 let mpegBufferStallCount = 0;
 let lastMpegBgReconnectTime = 0;
+
+// ─── EPG (guia de programação) ───
+// Busca o xmltv.php do provedor (formato padrão em painéis Xtream Codes),
+// indexa por nome de canal normalizado (a lista não traz tvg-id) e guarda
+// só uma janela pequena em torno de agora no localStorage - o feed inteiro
+// tem alguns MB e não cabe/nem precisa ficar todo em cache.
+const EPG_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const EPG_KEEP_PAST_MS = 30 * 60 * 1000;
+const EPG_KEEP_FUTURE_MS = EPG_REFRESH_INTERVAL_MS + 60 * 60 * 1000;
+let epgIndexByName = {};
+let epgFetchInFlight = false;
+
+function loadEpgIndexFromCache() {
+  try {
+    const raw = localStorage.getItem(LS.EPG_CACHE);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function refreshEpgIfStale() {
+  const epgUrl = localStorage.getItem(LS.EPG_URL);
+  if (!epgUrl) return;
+
+  const cached = loadEpgIndexFromCache();
+  if (cached && cached.index) epgIndexByName = cached.index;
+
+  if (!isEpgCacheStale(cached && cached.fetchedAt, Date.now(), EPG_REFRESH_INTERVAL_MS)) return;
+  if (epgFetchInFlight) return;
+  epgFetchInFlight = true;
+
+  try {
+    const res = await fetch(proxyIfInsecure(epgUrl), { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const xmlText = await res.text();
+    const channels = extractXmltvChannels(xmlText);
+    const programmes = extractXmltvProgrammes(xmlText);
+    const index = buildNameToProgrammesIndex(channels, programmes, {
+      nowMs: Date.now(),
+      keepPastMs: EPG_KEEP_PAST_MS,
+      keepFutureMs: EPG_KEEP_FUTURE_MS,
+    });
+    epgIndexByName = index;
+    localStorage.setItem(LS.EPG_CACHE, JSON.stringify({ fetchedAt: Date.now(), index }));
+    render();
+  } catch (e) {
+    console.warn("[EPG] Falha ao atualizar guia de programação:", e);
+  } finally {
+    epgFetchInFlight = false;
+  }
+}
+
+function getNowPlayingTitle(ch) {
+  if (!ch || !ch.name) return "";
+  const programmes = epgIndexByName[normalizeChannelName(ch.name)];
+  if (!programmes || !programmes.length) return "";
+  const { current } = getCurrentAndNextProgramme(programmes, Date.now());
+  return current ? current.title : "";
+}
 
 // ─── Auto-Calibração Progressiva de Buffers ───
 // hlsMax/hlsMaxMax: buffer HLS em segundos (hls.js)
@@ -2344,9 +2535,10 @@ function renderPlayerInfo() {
   const ch = _state.selected;
   if (!ch) return;
 
+  const nowPlaying = getNowPlayingTitle(ch);
   document.getElementById("player-monogram").textContent = ch.initials;
   document.getElementById("player-name").textContent     = ch.name;
-  document.getElementById("player-status").textContent   = ch.category;
+  document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   document.getElementById("player-badge").textContent    = "● AO VIVO";
 
   // Logo no art
@@ -2544,6 +2736,7 @@ function logoImgOrInitials(ch, size = "100%") {
 function cardHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
+  const nowPlaying = getNowPlayingTitle(ch);
   return `
     <article class="channel-card ${sel}">
       <button class="card-main" data-channel-id="${ch.id}" aria-label="Assistir ${ch.name}">
@@ -2551,7 +2744,7 @@ function cardHTML(ch) {
         <div class="card-tags"><span>● AO VIVO</span><span>${ch.category}</span></div>
         <h3>${ch.name}</h3>
         ${isChannelHls(ch) ? `<div style="padding:0 .75rem;margin-top:.25rem"><span class="tag-hls">HLS</span></div>` : ""}
-        <p>${ch.category}</p>
+        <p>${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
       </button>
       <button class="fav-btn ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
         <i data-lucide="heart" style="width:18px;height:18px${fav?";fill:currentColor":""}"></i>
@@ -2562,6 +2755,7 @@ function cardHTML(ch) {
 function listHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
+  const nowPlaying = getNowPlayingTitle(ch);
   const logoHtml = ch.logo
     ? `<img src="${ch.logo}" alt="${ch.name}" style="width:100%;height:100%;object-fit:contain;padding:.25rem"
          onerror="this.style.display='none';this.nextElementSibling.style.display=''">
@@ -2578,7 +2772,7 @@ function listHTML(ch) {
           </div>
           <h3>${ch.name}</h3>
           ${isChannelHls(ch) ? `<div style="margin-top:.2rem"><span class="tag-hls">HLS</span></div>` : ""}
-          <p>${ch.category}</p>
+          <p>${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
         </div>
       </button>
       <button class="fav-btn-list ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
@@ -2621,7 +2815,7 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache" };
 
 function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
@@ -2629,12 +2823,15 @@ function loadSettingsForm() {
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
   const vol  = localStorage.getItem(LS.VOL)  || "1";
   const proxy = localStorage.getItem(LS.PROXY) || "";
+  const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
   document.getElementById("pref-vol").value  = vol;
   document.getElementById("proxy-url").value = proxy;
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
+  document.getElementById("epg-url").value = epgUrl;
+  document.getElementById("epg-save-indicator").style.display = epgUrl ? "flex" : "none";
   setSettingsMode(mode);
 
   const saved = url.trim().length > 8;
@@ -2729,6 +2926,26 @@ document.addEventListener("DOMContentLoaded", () => {
       console.warn("[link] Parâmetro ?lista= inválido, ignorando:", listParam);
     }
   }
+
+  // ─── Link compartilhável: ?epg=<url-do-xmltv> (opcional, junto com ?lista=) ───
+  const epgParam = new URLSearchParams(window.location.search).get("epg");
+  if (epgParam) {
+    try {
+      const parsed = new URL(epgParam);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        localStorage.setItem(LS.EPG_URL, parsed.href);
+        localStorage.removeItem(LS.EPG_CACHE);
+      }
+    } catch (e) {
+      console.warn("[link] Parâmetro ?epg= inválido, ignorando:", epgParam);
+    }
+  }
+
+  // EPG: aplica o que já está em cache (síncrono, antes do primeiro render)
+  // e dispara a checagem de atualização; refreshEpgIfStale só busca de novo
+  // depois que EPG_REFRESH_INTERVAL_MS tiver passado desde a última vez.
+  refreshEpgIfStale();
+  setInterval(refreshEpgIfStale, 30 * 60 * 1000);
 
   // Carrega playlist salva automaticamente
   const savedUrl = localStorage.getItem(LS.URL);
@@ -2937,7 +3154,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("copy-link-btn").addEventListener("click", async () => {
     const url = localStorage.getItem(LS.URL);
     if (!url) return;
-    const shareUrl = `${window.location.origin}${window.location.pathname}?lista=${encodeURIComponent(url)}`;
+    const epgUrl = localStorage.getItem(LS.EPG_URL);
+    let shareUrl = `${window.location.origin}${window.location.pathname}?lista=${encodeURIComponent(url)}`;
+    if (epgUrl) shareUrl += `&epg=${encodeURIComponent(epgUrl)}`;
     try {
       await navigator.clipboard.writeText(shareUrl);
       showToast("Link copiado! Abra-o em qualquer TV, celular ou PC.");
@@ -2959,6 +3178,26 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("proxy-save-indicator").style.display = "none";
     localStorage.removeItem(LS.PROXY);
     showToast("Proxy removido.");
+  });
+
+  document.getElementById("save-epg-btn").addEventListener("click", () => {
+    const epgUrl = document.getElementById("epg-url").value.trim();
+    if (!epgUrl) { showToast("Cole a URL do xmltv.php antes de salvar."); return; }
+    localStorage.setItem(LS.EPG_URL, epgUrl);
+    localStorage.removeItem(LS.EPG_CACHE);
+    document.getElementById("epg-save-indicator").style.display = "flex";
+    showToast("EPG salvo. Buscando a programação...");
+    refreshEpgIfStale();
+  });
+
+  document.getElementById("clear-epg-btn").addEventListener("click", () => {
+    document.getElementById("epg-url").value = "";
+    document.getElementById("epg-save-indicator").style.display = "none";
+    localStorage.removeItem(LS.EPG_URL);
+    localStorage.removeItem(LS.EPG_CACHE);
+    epgIndexByName = {};
+    showToast("EPG removido.");
+    render();
   });
 
   document.getElementById("pref-fit").addEventListener("change", e => {

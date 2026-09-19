@@ -46,6 +46,16 @@
       Carregar
     </button>
   </div>
+  <p style="font-size:18px;color:#5c5c78;margin-top:24px">EPG — guia de programação (opcional)</p>
+  <div class="tv-onboarding-input-group">
+    <input
+      id="tv-epg-url"
+      class="tv-input"
+      type="url"
+      placeholder="http://seu-provedor.com/xmltv.php?username=...&password=..."
+      autocomplete="off"
+    />
+  </div>
   <p style="font-size:18px;color:#5c5c78">Pressione OK no controle para selecionar o campo e usar o teclado da TV</p>
 </div>
 
@@ -160,6 +170,117 @@
 
 <!-- Toast de notificações -->
 <div id="tv-toast"></div>
+
+<script id="epg-helpers">
+// ─── EPG Helpers (pure, dependency-free) ───
+// Parses an XMLTV feed (the format Xtream Codes panels expose at xmltv.php)
+// and indexes programmes by normalized channel name, since the M3U entries
+// this app loads don't carry a tvg-id to match against. Kept dependency-free
+// (no DOMParser) with `function`/`var` only, same reasoning and same test
+// harness as the resilience-helpers block above - see its comment.
+
+function normalizeChannelName(name) {
+  if (!name) return "";
+  return name
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\b(fhd|uhd|4k|hd|sd)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function extractXmltvChannels(xmlText) {
+  var channels = [];
+  var re = /<channel\s+id="([^"]*)"[^>]*>([\s\S]*?)<\/channel>/g;
+  var m;
+  while ((m = re.exec(xmlText))) {
+    var id = m[1];
+    if (!id) continue;
+    var nameMatch = /<display-name>([^<]*)<\/display-name>/.exec(m[2]);
+    if (!nameMatch) continue;
+    channels.push({ id: id, displayName: nameMatch[1] });
+  }
+  return channels;
+}
+
+function extractXmltvProgrammes(xmlText) {
+  var programmes = [];
+  var re = /<programme\s+start="[^"]*"\s+stop="[^"]*"\s+start_timestamp="(\d+)"\s+stop_timestamp="(\d+)"\s+channel="([^"]*)"[^>]*>([\s\S]*?)<\/programme>/g;
+  var m;
+  while ((m = re.exec(xmlText))) {
+    var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(m[4]);
+    programmes.push({
+      channelId: m[3],
+      start: Number(m[1]) * 1000,
+      stop: Number(m[2]) * 1000,
+      title: titleMatch ? titleMatch[1] : "",
+    });
+  }
+  return programmes;
+}
+
+// Groups programmes under every normalized display-name that shares a
+// channel id (an id often has an "HD"/"[H265]" variant with the same
+// schedule), trimmed to a window around `nowMs` so the cached index stays
+// small enough for localStorage instead of holding the whole multi-MB feed.
+function buildNameToProgrammesIndex(channels, programmes, opts) {
+  var options = opts || {};
+  var nowMs = options.nowMs != null ? options.nowMs : Date.now();
+  var keepPastMs = options.keepPastMs != null ? options.keepPastMs : 60 * 60 * 1000;
+  var keepFutureMs = options.keepFutureMs != null ? options.keepFutureMs : 48 * 60 * 60 * 1000;
+
+  var idToNames = {};
+  channels.forEach(function (c) {
+    var norm = normalizeChannelName(c.displayName);
+    if (!norm) return;
+    if (!idToNames[c.id]) idToNames[c.id] = [];
+    if (idToNames[c.id].indexOf(norm) === -1) idToNames[c.id].push(norm);
+  });
+
+  var index = {};
+  programmes.forEach(function (p) {
+    if (p.stop < nowMs - keepPastMs) return;
+    if (p.start > nowMs + keepFutureMs) return;
+    var names = idToNames[p.channelId];
+    if (!names) return;
+    names.forEach(function (name) {
+      if (!index[name]) index[name] = [];
+      index[name].push({ start: p.start, stop: p.stop, title: p.title });
+    });
+  });
+
+  Object.keys(index).forEach(function (name) {
+    index[name].sort(function (a, b) { return a.start - b.start; });
+  });
+
+  return index;
+}
+
+function getCurrentAndNextProgramme(programmes, nowMs) {
+  if (!programmes || !programmes.length) return { current: null, next: null };
+  var current = null;
+  var next = null;
+  for (var i = 0; i < programmes.length; i++) {
+    var p = programmes[i];
+    if (p.start <= nowMs && nowMs < p.stop) {
+      current = p;
+      next = programmes[i + 1] || null;
+      break;
+    }
+    if (p.start > nowMs) {
+      next = p;
+      break;
+    }
+  }
+  return { current: current, next: next };
+}
+
+function isEpgCacheStale(fetchedAtMs, nowMs, ttlMs) {
+  if (!fetchedAtMs) return true;
+  return (nowMs - fetchedAtMs) >= ttlMs;
+}
+</script>
 
 <!-- ══════════════════════════════════════════════════════════
      SCRIPTS
@@ -505,6 +626,67 @@ function createReconnectCircuitBreaker(opts) {
   };
 }
 let reconnectCircuitBreaker = createReconnectCircuitBreaker();
+
+// ─── EPG (guia de programação) ───
+// Mesma lógica do app web (sintoniza-link.html): busca o xmltv.php do
+// provedor, indexa por nome normalizado e guarda só uma janela pequena em
+// torno de agora. O app de TV roda dentro de um WebView local (não HTTPS),
+// então não precisa de proxy para o mixed-content - fetch direto funciona.
+const EPG_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const EPG_KEEP_PAST_MS = 30 * 60 * 1000;
+const EPG_KEEP_FUTURE_MS = EPG_REFRESH_INTERVAL_MS + 60 * 60 * 1000;
+let epgIndexByName = {};
+let epgFetchInFlight = false;
+
+function loadEpgIndexFromCache() {
+  try {
+    const raw = localStorage.getItem('sint_epg_cache');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function refreshEpgIfStale() {
+  const epgUrl = localStorage.getItem('sint_epg_url');
+  if (!epgUrl) return;
+
+  const cached = loadEpgIndexFromCache();
+  if (cached && cached.index) epgIndexByName = cached.index;
+
+  if (!isEpgCacheStale(cached && cached.fetchedAt, Date.now(), EPG_REFRESH_INTERVAL_MS)) return;
+  if (epgFetchInFlight) return;
+  epgFetchInFlight = true;
+
+  try {
+    const res = await fetch(epgUrl, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const xmlText = await res.text();
+    const channels = extractXmltvChannels(xmlText);
+    const programmes = extractXmltvProgrammes(xmlText);
+    const index = buildNameToProgrammesIndex(channels, programmes, {
+      nowMs: Date.now(),
+      keepPastMs: EPG_KEEP_PAST_MS,
+      keepFutureMs: EPG_KEEP_FUTURE_MS,
+    });
+    epgIndexByName = index;
+    localStorage.setItem('sint_epg_cache', JSON.stringify({ fetchedAt: Date.now(), index }));
+    if (_state.selected) updateChannelInfo(_state.selected);
+  } catch (e) {
+    console.warn('[EPG] Falha ao atualizar guia de programação:', e);
+  } finally {
+    epgFetchInFlight = false;
+  }
+}
+
+function getNowPlayingTitle(ch) {
+  if (!ch || !ch.name) return '';
+  const programmes = epgIndexByName[normalizeChannelName(ch.name)];
+  if (!programmes || !programmes.length) return '';
+  const { current } = getCurrentAndNextProgramme(programmes, Date.now());
+  return current ? current.title : '';
+}
 
 function isChannelHls(ch) {
   if (!ch) return false;
@@ -945,7 +1127,10 @@ function updateChannelInfo(ch) {
   if (nameEl) {
     nameEl.innerHTML = ch.name + (isChannelHls(ch) ? ' <span class="tag-hls" style="vertical-align:middle;margin-left:6px">HLS</span>' : '');
   }
-  if (catEl)  catEl.textContent  = ch.category || '';
+  if (catEl) {
+    const nowPlaying = getNowPlayingTitle(ch);
+    catEl.textContent = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : (ch.category || '');
+  }
 }
 
 function updatePlayBtn() {
@@ -1027,6 +1212,12 @@ document.addEventListener('DOMContentLoaded', () => {
   updateClock();
   setInterval(updateClock, 30000);
 
+  // EPG: aplica o que já está em cache (síncrono) e agenda a checagem de
+  // atualização; refreshEpgIfStale só busca de novo depois que
+  // EPG_REFRESH_INTERVAL_MS tiver passado desde a última vez.
+  refreshEpgIfStale();
+  setInterval(refreshEpgIfStale, 30 * 60 * 1000);
+
   // Debug overlay (atualização periódica)
   setInterval(updateDebug, 1000);
 
@@ -1070,6 +1261,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Onboarding: carregar lista
   document.getElementById('tv-load-btn')?.addEventListener('click', () => {
     const url = document.getElementById('tv-m3u-url')?.value?.trim();
+    const epgUrl = document.getElementById('tv-epg-url')?.value?.trim();
+    if (epgUrl) {
+      localStorage.setItem('sint_epg_url', epgUrl);
+      localStorage.removeItem('sint_epg_cache');
+      refreshEpgIfStale();
+    }
     if (url) loadPlaylist(url);
     else showTVToast('Informe uma URL válida');
   });
