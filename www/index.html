@@ -1057,7 +1057,7 @@
             <i data-lucide="calendar-clock" style="width:18px;height:18px;color:var(--muted-fg)"></i>
             <input type="url" id="epg-url" placeholder="http://seu-provedor.com/xmltv.php?username=...&password=..." aria-label="URL do EPG XMLTV" />
           </div>
-          <p class="url-hint">Cole aqui a URL do xmltv.php do seu provedor (a maioria dos painéis Xtream Codes tem um). A programação "Agora / A seguir" é buscada e atualizada sozinha a cada poucas horas, sem precisar mexer aqui de novo.</p>
+          <p class="url-hint">Cole aqui a URL do xmltv.php do seu provedor (a maioria dos painéis Xtream Codes tem um). A programação "Agora / A seguir" é buscada e atualizada sozinha a cada poucas horas, sem precisar mexer aqui de novo. Canais de esporte/documentário costumam ter grade desatualizada no provedor - com um Proxy (acima) configurado, o app também busca uma fonte pública complementar pra esses casos.</p>
         </label>
         <div class="settings-actions">
           <button class="btn-primary" id="save-epg-btn">Salvar EPG</button>
@@ -1292,6 +1292,9 @@ function normalizeChannelName(name) {
   if (!name) return "";
   return name
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    // Feeds tipo epgshare01 prefixam o nome com a região da grade regional
+    // ("São Paulo/SP  SporTV HD") - a região não faz parte do nome do canal.
+    .replace(/^[^/\n]+\/[A-Za-z]{2}\s+/, "")
     .toLowerCase()
     .replace(/&/g, " and ")
     .replace(/\+/g, " plus ")
@@ -1299,6 +1302,19 @@ function normalizeChannelName(name) {
     .replace(/\b(fhd|uhd|4k|hd|sd)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// XMLTV "YYYYMMDDHHmmss ±HHMM" -> epoch ms. Alguns feeds (Xtream) já dão o
+// epoch pronto em start_timestamp/stop_timestamp; outros (epgshare01) só
+// têm essa data por extenso, daí esse parser existir como fallback.
+function parseXmltvDate(str) {
+  if (!str) return NaN;
+  var m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?$/.exec(String(str).trim());
+  if (!m) return NaN;
+  var offset = m[7] || "+0000";
+  var iso = m[1] + "-" + m[2] + "-" + m[3] + "T" + m[4] + ":" + m[5] + ":" + m[6]
+    + offset[0] + offset.slice(1, 3) + ":" + offset.slice(3, 5);
+  return Date.parse(iso);
 }
 
 // Provedores de TV paga brasileiros costumam nomear o canal "principal" de
@@ -1327,27 +1343,59 @@ function extractXmltvChannels(xmlText) {
   while ((m = re.exec(xmlText))) {
     var id = m[1];
     if (!id) continue;
-    var nameMatch = /<display-name>([^<]*)<\/display-name>/.exec(m[2]);
+    // display-name pode ter atributos (ex: epgshare01 usa lang="pt") e
+    // outros elementos (ex: <url>) antes dele dentro do <channel>.
+    var nameMatch = /<display-name[^>]*>([^<]*)<\/display-name>/.exec(m[2]);
     if (!nameMatch) continue;
     channels.push({ id: id, displayName: decodeXmlEntities(nameMatch[1]) });
   }
   return channels;
 }
 
+// Extrai <programme> de forma tolerante à ordem/composição dos atributos -
+// feeds Xtream trazem start_timestamp/stop_timestamp prontos (epoch em
+// segundos), mas outros (epgshare01) só têm start/stop por extenso, caindo
+// no fallback de parseXmltvDate().
 function extractXmltvProgrammes(xmlText) {
   var programmes = [];
-  var re = /<programme\s+start="[^"]*"\s+stop="[^"]*"\s+start_timestamp="(\d+)"\s+stop_timestamp="(\d+)"\s+channel="([^"]*)"[^>]*>([\s\S]*?)<\/programme>/g;
+  var re = /<programme\s+([^>]*)>([\s\S]*?)<\/programme>/g;
   var m;
   while ((m = re.exec(xmlText))) {
-    var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(m[4]);
+    var attrs = m[1];
+    var body = m[2];
+    var channelMatch = /channel="([^"]*)"/.exec(attrs);
+    if (!channelMatch) continue;
+
+    var startTsMatch = /start_timestamp="(\d+)"/.exec(attrs);
+    var stopTsMatch = /stop_timestamp="(\d+)"/.exec(attrs);
+    var startMatch = /\bstart="([^"]*)"/.exec(attrs);
+    var stopMatch = /\bstop="([^"]*)"/.exec(attrs);
+    var start = startTsMatch ? Number(startTsMatch[1]) * 1000 : (startMatch ? parseXmltvDate(startMatch[1]) : NaN);
+    var stop = stopTsMatch ? Number(stopTsMatch[1]) * 1000 : (stopMatch ? parseXmltvDate(stopMatch[1]) : NaN);
+    if (!isFinite(start) || !isFinite(stop)) continue;
+
+    var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(body);
     programmes.push({
-      channelId: m[3],
-      start: Number(m[1]) * 1000,
-      stop: Number(m[2]) * 1000,
+      channelId: channelMatch[1],
+      start: start,
+      stop: stop,
       title: titleMatch ? decodeXmlEntities(titleMatch[1]) : "",
     });
   }
   return programmes;
+}
+
+// Combina o índice do provedor do usuário (prioridade - já vem casado com
+// os apelidos/nomes específicos daquele painel) com um índice suplementar
+// (ex: epgshare01) que só preenche os nomes que o primeiro não tiver dado
+// nenhum. Nunca sobrescreve uma entrada que já existir no primeiro.
+function mergeEpgIndexes(primary, supplementary) {
+  var merged = {};
+  Object.keys(primary).forEach(function (name) { merged[name] = primary[name]; });
+  Object.keys(supplementary).forEach(function (name) {
+    if (!merged[name] || !merged[name].length) merged[name] = supplementary[name];
+  });
+  return merged;
 }
 
 // Groups programmes under every normalized display-name that shares a
@@ -1736,6 +1784,14 @@ let lastMpegBgReconnectTime = 0;
 const EPG_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const EPG_KEEP_PAST_MS = 30 * 60 * 1000;
 const EPG_KEEP_FUTURE_MS = EPG_REFRESH_INTERVAL_MS + 60 * 60 * 1000;
+// Fonte pública suplementar (a mesma "BrazilTVEPG Claro" citada em relatórios
+// de outras ferramentas) - cobre canais de esporte/documentário que o feed
+// do provedor do usuário costuma deixar desatualizado. Vem compactada em
+// .xml.gz e o servidor não manda Access-Control-Allow-Origin nenhum, então
+// só dá pra buscar através do mesmo proxy HTTPS já usado pros streams
+// (Configurações > Proxy) - sem proxy configurado, essa fonte é pulada e o
+// app segue só com o feed principal, sem quebrar nada.
+const EPGSHARE01_URL = "https://epgshare01.online/epgshare01/epg_ripper_BR1.xml.gz";
 let epgIndexByName = {};
 let epgFetchInFlight = false;
 
@@ -1746,6 +1802,40 @@ function loadEpgIndexFromCache() {
     return JSON.parse(raw);
   } catch (e) {
     return null;
+  }
+}
+
+function proxyForCors(url) {
+  const proxyBase = localStorage.getItem(LS.PROXY);
+  if (!proxyBase) return null;
+  return `${proxyBase.replace(/\/$/, "")}/stream?url=${encodeURIComponent(url)}`;
+}
+
+async function fetchGzipXmlText(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("DecompressionStream não suportado neste navegador");
+  }
+  const decompressed = res.body.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(decompressed).text();
+}
+
+async function fetchSupplementaryEpgIndex(nowMs) {
+  const proxied = proxyForCors(EPGSHARE01_URL);
+  if (!proxied) return {};
+  try {
+    const xmlText = await fetchGzipXmlText(proxied);
+    const channels = extractXmltvChannels(xmlText);
+    const programmes = extractXmltvProgrammes(xmlText);
+    return buildNameToProgrammesIndex(channels, programmes, {
+      nowMs: nowMs,
+      keepPastMs: EPG_KEEP_PAST_MS,
+      keepFutureMs: EPG_KEEP_FUTURE_MS,
+    });
+  } catch (e) {
+    console.warn("[EPG] Falha ao buscar fonte suplementar (epgshare01):", e);
+    return {};
   }
 }
 
@@ -1766,11 +1856,15 @@ async function refreshEpgIfStale() {
     const xmlText = await res.text();
     const channels = extractXmltvChannels(xmlText);
     const programmes = extractXmltvProgrammes(xmlText);
-    const index = buildNameToProgrammesIndex(channels, programmes, {
+    const primaryIndex = buildNameToProgrammesIndex(channels, programmes, {
       nowMs: Date.now(),
       keepPastMs: EPG_KEEP_PAST_MS,
       keepFutureMs: EPG_KEEP_FUTURE_MS,
     });
+
+    const supplementaryIndex = await fetchSupplementaryEpgIndex(Date.now());
+    const index = mergeEpgIndexes(primaryIndex, supplementaryIndex);
+
     epgIndexByName = index;
     localStorage.setItem(LS.EPG_CACHE, JSON.stringify({ fetchedAt: Date.now(), index }));
     render();

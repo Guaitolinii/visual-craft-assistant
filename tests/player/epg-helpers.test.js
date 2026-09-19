@@ -66,6 +66,50 @@ test("normalizeChannelName: translates & and + into words instead of dropping th
   assert.equal(ctx.normalizeChannelName("Paramount+"), "paramount plus");
 });
 
+test("normalizeChannelName: strips a leading City/UF region prefix (epgshare01 dialect)", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.normalizeChannelName("São Paulo/SP  SporTV HD ³"), "sportv");
+  assert.equal(ctx.normalizeChannelName("Belo Horizonte/MG  Premiere 6"), "premiere 6");
+  assert.equal(ctx.normalizeChannelName("São Paulo/SP   TV Brasil 2"), "tv brasil 2");
+  // Sem prefixo de regiao, nao deve mexer em nada (não é todo provedor que usa esse formato).
+  assert.equal(ctx.normalizeChannelName("Zoomoo FHD"), "zoomoo");
+});
+
+test("parseXmltvDate: parses YYYYMMDDHHmmss with a UTC offset into epoch ms", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.parseXmltvDate("20260918050000 +0000"), Date.UTC(2026, 8, 18, 5, 0, 0));
+  assert.equal(ctx.parseXmltvDate("20260913211500 -0300"), Date.UTC(2026, 8, 13, 21 + 3, 15, 0));
+});
+
+test("parseXmltvDate: defaults to +0000 when no offset is given", () => {
+  const ctx = loadEpgHelpers();
+  assert.equal(ctx.parseXmltvDate("20260918050000"), Date.UTC(2026, 8, 18, 5, 0, 0));
+});
+
+test("parseXmltvDate: returns NaN for unparseable input", () => {
+  const ctx = loadEpgHelpers();
+  assert.ok(Number.isNaN(ctx.parseXmltvDate("not a date")));
+  assert.ok(Number.isNaN(ctx.parseXmltvDate("")));
+  assert.ok(Number.isNaN(ctx.parseXmltvDate(null)));
+});
+
+test("mergeEpgIndexes: keeps the primary source's entry when both have the same name", () => {
+  const ctx = loadEpgHelpers();
+  const primary = { sportv: [{ start: 1, stop: 2, title: "Fonte principal" }] };
+  const extra = { sportv: [{ start: 9, stop: 10, title: "Fonte secundaria" }] };
+  const merged = ctx.mergeEpgIndexes(primary, extra);
+  assert.equal(merged.sportv, primary.sportv);
+});
+
+test("mergeEpgIndexes: fills in names the primary source is missing", () => {
+  const ctx = loadEpgHelpers();
+  const primary = { zoomoo: [{ start: 1, stop: 2, title: "X" }] };
+  const extra = { espn: [{ start: 3, stop: 4, title: "Y" }] };
+  const merged = ctx.mergeEpgIndexes(primary, extra);
+  assert.equal(merged.zoomoo, primary.zoomoo);
+  assert.equal(merged.espn, extra.espn);
+});
+
 test("resolveEpgProgrammes: falls back to the canonical alias when the exact name is missing", () => {
   const ctx = loadEpgHelpers();
   const index = { "premiere clubes": [{ start: 1, stop: 2, title: "Jogo" }] };
@@ -102,6 +146,41 @@ test("extractXmltvProgrammes: reads start/stop as epoch ms and the title", () =>
     { channelId: programmes[0].channelId, start: programmes[0].start, stop: programmes[0].stop, title: programmes[0].title },
     { channelId: "zoomoo.br", start: 1789344900000, stop: 1789345260000, title: "Flash, O Aventureiro" }
   );
+});
+
+test("extractXmltvChannels: reads the display-name even with a lang attribute and a <url> sibling (epgshare01 dialect)", () => {
+  const ctx = loadEpgHelpers();
+  const xml = `<tv>
+    <channel id="São.Paulo/SP..SporTV.br">
+      <url>http://www.clarotv.com.br</url>
+      <display-name lang="pt">São Paulo/SP  SporTV</display-name>
+    </channel>
+  </tv>`;
+  const channels = ctx.extractXmltvChannels(xml);
+  assert.equal(channels.length, 1);
+  assert.equal(channels[0].id, "São.Paulo/SP..SporTV.br");
+  assert.equal(channels[0].displayName, "São Paulo/SP  SporTV");
+});
+
+test("extractXmltvProgrammes: falls back to parsing start/stop when start_timestamp is absent (epgshare01 dialect)", () => {
+  const ctx = loadEpgHelpers();
+  const xml = `<tv>
+    <programme channel="ESPN.5.br" start="20260918050000 +0000" stop="20260918060000 +0000">
+      <title lang="pt">Bola da Vez</title>
+    </programme>
+  </tv>`;
+  const programmes = ctx.extractXmltvProgrammes(xml);
+  assert.equal(programmes.length, 1);
+  assert.deepEqual(
+    { channelId: programmes[0].channelId, start: programmes[0].start, stop: programmes[0].stop, title: programmes[0].title },
+    { channelId: "ESPN.5.br", start: Date.UTC(2026, 8, 18, 5, 0, 0), stop: Date.UTC(2026, 8, 18, 6, 0, 0), title: "Bola da Vez" }
+  );
+});
+
+test("extractXmltvProgrammes: skips a programme whose start/stop can't be parsed at all", () => {
+  const ctx = loadEpgHelpers();
+  const xml = `<tv><programme channel="X" start="garbage" stop="also garbage"><title>Y</title></programme></tv>`;
+  assert.equal(ctx.extractXmltvProgrammes(xml).length, 0);
 });
 
 test("buildNameToProgrammesIndex: indexes programmes under every normalized name sharing a channel id", () => {
