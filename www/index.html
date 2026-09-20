@@ -1887,7 +1887,7 @@ async function loadPlaylistFromUrl(url) {
   renderCatalog(); // mostra skeleton
 
   try {
-    const res = await fetch(url, { cache: "no-cache" });
+    const res = await fetch(proxyIfInsecure(url), { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const channels = parseM3U(text);
