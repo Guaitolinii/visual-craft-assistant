@@ -16,6 +16,14 @@ const config: CapacitorConfig = {
     // misto entre o próprio app e os streams http:// que ele carrega).
     androidScheme: "http",
   },
+  plugins: {
+    // Roteia fetch()/XMLHttpRequest pelo HTTP nativo (URLSession/OkHttp) em
+    // vez do WebView - CORS é uma regra só de navegador, então isso permite
+    // chamar o player_api.php da Xtream direto do provedor, sem proxy.
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;
