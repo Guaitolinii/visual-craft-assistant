@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1920, height=1080" />
+  <meta name="viewport" content="width=1920, initial-scale=1" />
   <title>Sintoniza IPTV — Smart TV</title>
   <meta name="description" content="Sintoniza IPTV — versão Smart TV para LG webOS e Samsung Tizen." />
 
@@ -15,9 +15,8 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
 
-  <!-- CSS e motor de navegação TV -->
+  <!-- CSS de TV -->
   <link rel="stylesheet" href="tv-styles.css" />
-  <script src="tv-nav.js" defer></script>
 
   <style>
     /* Variáveis de ícone SVG embutidas (substitui Lucide CDN) */
@@ -152,19 +151,19 @@
 <!-- Sidebar overlay -->
 <div id="tv-sidebar">
   <div class="tv-sidebar-title">Menu</div>
-  <div class="tv-sidebar-item active" id="sb-home" data-focusable>
+  <div class="tv-sidebar-item active" id="sb-home" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     Início
   </div>
-  <div class="tv-sidebar-item" id="sb-favs" data-focusable>
+  <div class="tv-sidebar-item" id="sb-favs" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
     Favoritos
   </div>
-  <div class="tv-sidebar-item" id="sb-reload-list" data-focusable>
+  <div class="tv-sidebar-item" id="sb-reload-list" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
     Recarregar lista
   </div>
-  <div class="tv-sidebar-item" id="sb-debug" data-focusable>
+  <div class="tv-sidebar-item" id="sb-debug" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     Telemetria
   </div>
@@ -836,7 +835,7 @@ async function playStream(url) {
   const video = document.getElementById('tv-video');
 
   // Samsung Tizen → AVPlay nativo (HLS via hardware)
-  if (IS_TIZEN && window.webapis?.avplay) {
+  if (IS_TIZEN && window.webapis && window.webapis.avplay) {
     playViaTizenAVPlay(playUrl);
     return;
   }
@@ -1046,10 +1045,10 @@ function reloadChannel(escalate) {
   const ch = _state.selected;
   const verdict = reconnectCircuitBreaker.recordAttempt(Date.now());
   if (verdict === 'GIVE_UP') {
-    console.warn(`[TV Circuit Breaker] Muitas reconexões automáticas para "${ch?.name || 'canal'}". Parando.`);
+    console.warn(`[TV Circuit Breaker] Muitas reconexões automáticas para "${(ch && ch.name) || 'canal'}". Parando.`);
     stopWatchdog();
     setState({ playing: false });
-    showError(`Canal "${ch?.name || ''}" está instável. Selecione-o novamente para tentar de novo.`);
+    showError(`Canal "${(ch && ch.name) || ''}" está instável. Selecione-o novamente para tentar de novo.`);
     return;
   }
 
@@ -1057,7 +1056,7 @@ function reloadChannel(escalate) {
   if (escalate) escalateBuffer();
   setTimeout(() => {
     isReloading = false;
-    if (_state.selected?.url) playStream(_state.selected.url);
+    if (_state.selected && _state.selected.url) playStream(_state.selected.url);
   }, 1200);
 }
 
@@ -1104,7 +1103,7 @@ function renderTabs() {
       // Mover foco para o primeiro card
       setTimeout(() => {
         const first = document.querySelector('#tv-channel-row .tv-channel-card');
-        if (first) TVNav.focusEl(first);
+        if (first) first.focus();
       }, 50);
     });
   });
@@ -1120,7 +1119,7 @@ function renderChannels() {
   }
 
   rowEl.innerHTML = channels.map((ch, idx) => {
-    const playing = _state.selected?.id === ch.id;
+    const playing = !!(_state.selected && _state.selected.id === ch.id);
     const logoHtml = ch.logo
       ? `<img class="tv-channel-logo" src="${ch.logo}" alt="${ch.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
         + `<div class="tv-channel-logo-fallback" style="display:none">${ch.initials}</div>`
@@ -1131,7 +1130,7 @@ function renderChannels() {
            data-focusable
            data-id="${ch.id}"
            style="animation-delay:${Math.min(idx * 0.03, 0.5)}s"
-           tabindex="-1">
+           tabindex="0">
         ${ch.live ? '<div class="tv-card-live">LIVE</div>' : ''}
         ${logoHtml}
         <div class="tv-channel-label" title="${ch.name}">${ch.name}</div>
@@ -1253,7 +1252,7 @@ function updateClock() {
 function updateDebug() {
   const video = document.getElementById('tv-video');
   let buf = 0;
-  if (video?.buffered?.length > 0) {
+  if (video && video.buffered && video.buffered.length > 0) {
     const cur = video.currentTime;
     for (let i = 0; i < video.buffered.length; i++) {
       if (video.buffered.start(i) <= cur && cur <= video.buffered.end(i)) {
@@ -1286,14 +1285,40 @@ function openSidebar() {
   const sb = document.getElementById('tv-sidebar');
   if (sb) sb.classList.add('open');
   sidebarOpen = true;
-  setTimeout(() => TVNav.focusEl('#sb-home'), 50);
+  setTimeout(() => {
+    const home = document.getElementById('sb-home');
+    if (home) home.focus();
+  }, 50);
 }
 
 function closeSidebar() {
   const sb = document.getElementById('tv-sidebar');
   if (sb) sb.classList.remove('open');
   sidebarOpen = false;
-  setTimeout(() => TVNav.focusFirst(), 50);
+  setTimeout(focusFirstFocusable, 50);
+}
+
+// ──────────────────────────────────────────────────────────────
+// NAVEGAÇÃO POR CONTROLE REMOTO (D-PAD)
+// ──────────────────────────────────────────────────────────────
+// Detecta genericamente qualquer <button>, <input> ou elemento com
+// tabindex="0" visível na tela - sem exigir um atributo especial por
+// elemento - e move o foco pro mais próximo na direção pressionada via
+// getBoundingClientRect().
+function getFocusableEls() {
+  return Array.from(document.querySelectorAll(
+    'button:not(:disabled):not([style*="display: none"]):not([style*="display:none"]), ' +
+    '[tabindex="0"]:not([style*="display: none"]):not([style*="display:none"]), ' +
+    'input:not(:disabled):not([style*="display: none"]):not([style*="display:none"])'
+  )).filter((el) => {
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
+
+function focusFirstFocusable() {
+  const el = document.querySelector('button:not(:disabled), [tabindex="0"], input');
+  if (el) el.focus();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1314,8 +1339,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Debug overlay (atualização periódica)
   setInterval(updateDebug, 1000);
 
+  // Wrapper de addEventListener('click', ...) tolerante a elemento ausente.
+  // Evita optional chaining (?.) - não suportado no Chromium 68/79 do
+  // webOS 5.0/6.0, onde ele quebra o parse do <script> inteiro.
+  function onClick(id, handler) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
+  }
+
   // Eventos dos botões do player
-  document.getElementById('tv-play-btn')?.addEventListener('click', () => {
+  onClick('tv-play-btn', () => {
     const video = document.getElementById('tv-video');
     if (!video) return;
     if (video.paused) { video.play(); setState({ playing: true }); }
@@ -1323,12 +1356,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePlayBtn();
   });
 
-  document.getElementById('tv-reload-btn')?.addEventListener('click', () => {
+  onClick('tv-reload-btn', () => {
     currentBufferStageIndex = 0;
-    if (_state.selected?.url) playStream(_state.selected.url);
+    if (_state.selected && _state.selected.url) playStream(_state.selected.url);
   });
 
-  document.getElementById('tv-mute-btn')?.addEventListener('click', () => {
+  onClick('tv-mute-btn', () => {
     const video = document.getElementById('tv-video');
     if (!video) return;
     video.muted = !video.muted;
@@ -1342,19 +1375,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('tv-fav-btn')?.addEventListener('click', () => {
+  onClick('tv-fav-btn', () => {
     if (_state.selected) toggleFav(_state.selected);
   });
 
-  document.getElementById('tv-retry-btn')?.addEventListener('click', () => {
+  onClick('tv-retry-btn', () => {
     hideError();
-    if (_state.selected?.url) playStream(_state.selected.url);
+    if (_state.selected && _state.selected.url) playStream(_state.selected.url);
   });
 
   // Onboarding: carregar lista
-  document.getElementById('tv-load-btn')?.addEventListener('click', () => {
-    const url = document.getElementById('tv-m3u-url')?.value?.trim();
-    const epgUrl = document.getElementById('tv-epg-url')?.value?.trim();
+  onClick('tv-load-btn', () => {
+    const m3uEl = document.getElementById('tv-m3u-url');
+    const url = m3uEl && m3uEl.value ? m3uEl.value.trim() : '';
+    const epgEl = document.getElementById('tv-epg-url');
+    const epgUrl = epgEl && epgEl.value ? epgEl.value.trim() : '';
     if (epgUrl) {
       localStorage.setItem('sint_epg_url', epgUrl);
       localStorage.removeItem('sint_epg_cache');
@@ -1365,48 +1400,91 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Sidebar items
-  document.getElementById('sb-home')?.addEventListener('click', () => {
+  onClick('sb-home', () => {
     setState({ activeTab: 'Todos' });
     renderTabs(); renderChannels();
     closeSidebar();
   });
-  document.getElementById('sb-favs')?.addEventListener('click', () => {
+  onClick('sb-favs', () => {
     setState({ activeTab: 'Favoritos' });
     renderTabs(); renderChannels();
     closeSidebar();
   });
-  document.getElementById('sb-reload-list')?.addEventListener('click', () => {
+  onClick('sb-reload-list', () => {
     closeSidebar();
-    const url = localStorage.getItem('sint_m3u_url');
+    const url = localStorage.getItem('sint_url');
     if (url) loadPlaylist(url);
     else showTVToast('Nenhuma lista salva. Vá ao menu inicial.');
   });
-  document.getElementById('sb-debug')?.addEventListener('click', () => {
+  onClick('sb-debug', () => {
     const dbg = document.getElementById('tv-debug');
     if (dbg) dbg.classList.toggle('hidden');
     closeSidebar();
   });
 
-  // Inicializa o motor D-pad (aguarda tv-nav.js carregar)
-  const initNav = () => {
-    if (typeof TVNav === 'undefined') { setTimeout(initNav, 100); return; }
-    TVNav.init({
-      onBack: () => {
-        if (sidebarOpen) { closeSidebar(); return; }
-        // Voltar: se está nos cards, sobe para abas
-        const cur = TVNav.getCurrent();
-        if (cur?.closest('#tv-channel-row')) {
-          TVNav.focusEl('.tv-tab.active') || TVNav.focusEl('.tv-tab');
-        } else if (cur?.closest('#tv-tabs')) {
-          // No topo: abre sidebar
-          openSidebar();
-        } else {
-          openSidebar();
+  // Motor D-pad: ver getFocusableEls()/focusFirstFocusable() acima.
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+
+    // Botão Voltar do controle: fecha a sidebar, ou sobe dos cards pras
+    // abas, ou abre a sidebar.
+    if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'XF86Back') {
+      if (sidebarOpen) { closeSidebar(); return; }
+      if (active && active.closest('#tv-channel-row')) {
+        const tab = document.querySelector('.tv-tab.active') || document.querySelector('.tv-tab');
+        if (tab) tab.focus();
+      } else {
+        openSidebar();
+      }
+      return;
+    }
+
+    if (!active || active === document.body) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        focusFirstFocusable();
+      }
+      return;
+    }
+
+    if (active.tagName === 'INPUT' && ['Enter', 'Escape', 'ArrowDown', 'ArrowUp'].indexOf(e.key) === -1) return;
+
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1) {
+      e.preventDefault();
+      const focusables = getFocusableEls();
+      const currentRect = active.getBoundingClientRect();
+      let bestMatch = null;
+      let minDistance = Infinity;
+
+      for (const f of focusables) {
+        if (f === active) continue;
+        const r = f.getBoundingClientRect();
+        let dx = 0, dy = 0, isValid = false;
+
+        if (e.key === 'ArrowUp') { dy = currentRect.top - r.bottom; isValid = dy >= 0; dx = Math.abs(currentRect.left - r.left); }
+        else if (e.key === 'ArrowDown') { dy = r.top - currentRect.bottom; isValid = dy >= 0; dx = Math.abs(currentRect.left - r.left); }
+        else if (e.key === 'ArrowLeft') { dx = currentRect.left - r.right; isValid = dx >= 0; dy = Math.abs(currentRect.top - r.top); }
+        else if (e.key === 'ArrowRight') { dx = r.left - currentRect.right; isValid = dx >= 0; dy = Math.abs(currentRect.top - r.top); }
+
+        if (isValid) {
+          const distance = dy * dy + dx * dx;
+          if (distance < minDistance) { minDistance = distance; bestMatch = f; }
         }
-      },
-    });
-  };
-  initNav();
+      }
+
+      if (bestMatch) {
+        bestMatch.focus();
+        bestMatch.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+
+    if (e.key === 'Enter' && active.tagName !== 'BUTTON') {
+      e.preventDefault();
+      active.click();
+    }
+  });
+
+  setTimeout(focusFirstFocusable, 100);
 
   // Carrega lista salva automaticamente
   // Lê 'sint_url' — compatível com o app web sintoniza.html
@@ -1426,7 +1504,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Visibilidade da aba (suspender watchdog)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopWatchdog();
-    else if (_state.playing && _state.selected?.url) startWatchdog(_state.selected.url);
+    else if (_state.playing && _state.selected && _state.selected.url) startWatchdog(_state.selected.url);
   });
 });
 </script>
