@@ -626,6 +626,98 @@
     .view { display: block; }
     .view.hidden { display: none; }
 
+    /* ════════════ VOD VIEW (Filmes/Séries) ════════════ */
+    .vod-hero {
+      position: relative; width: 100%; height: 22rem; border-radius: .75rem;
+      overflow: hidden; margin: 1.5rem 0 2rem; background: oklch(0.12 0.01 65);
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: 2rem; box-shadow: 0 20px 40px oklch(0.1 0.01 65 / 25%);
+    }
+    .vod-hero-bg {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: cover; opacity: .55;
+      mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
+      -webkit-mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
+    }
+    .vod-hero-scrim {
+      position: absolute; inset: 0;
+      background: linear-gradient(to top, oklch(0.05 0.01 65) 15%, transparent 65%);
+    }
+    .vod-hero-copy { position: relative; z-index: 2; max-width: 36rem; color: oklch(0.98 0 0); }
+    .vod-hero-copy h2 { font-size: 2.1rem; font-weight: 700; text-shadow: 0 2px 10px oklch(0 0 0 / 50%); margin-bottom: .6rem; }
+    .vod-hero-copy p {
+      font-size: 1rem; color: oklch(0.85 0.01 75); line-height: 1.5; margin-bottom: 1.25rem;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .vod-row { margin-bottom: 2rem; }
+    .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+    .vod-carousel {
+      display: flex; gap: 1rem; overflow-x: auto; padding-bottom: .75rem; scroll-snap-type: x mandatory;
+    }
+    .vod-carousel::-webkit-scrollbar { height: 6px; }
+    .vod-carousel::-webkit-scrollbar-track { background: transparent; }
+    .vod-carousel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    .vod-card {
+      min-width: 9.5rem; width: 9.5rem; flex-shrink: 0; text-align: left;
+      background: none; border: none; padding: 0; scroll-snap-align: start;
+      color: inherit; transition: transform 180ms;
+    }
+    .vod-card:hover { transform: translateY(-4px); }
+    .vod-card img {
+      width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
+      background: var(--secondary); box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%); margin-bottom: .5rem;
+    }
+    .vod-card p { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vod-progress { height: 3px; background: oklch(1 0 0 / 20%); border-radius: 2px; margin: -.4rem 0 .4rem; overflow: hidden; }
+    .vod-progress span { display: block; height: 100%; background: var(--primary); }
+    .vod-empty { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
+    .vod-error { color: var(--error); padding: 1rem 0; }
+
+    /* ════════════ VOD MODAL ════════════ */
+    #vod-modal {
+      position: fixed; inset: 0; z-index: 9999; padding: 1rem;
+      background: oklch(0.05 0.01 65 / 82%); backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Sem !important aqui, a regra .hidden abaixo nunca venceria um eventual
+       style inline e o modal ficaria visível em tela cheia desde o carregamento
+       da página, bloqueando o app inteiro (bug já visto e corrigido antes). */
+    #vod-modal.hidden {
+      display: none !important;
+    }
+    .vod-modal-card {
+      background: var(--background); width: 100%; max-width: 42rem; max-height: 90vh;
+      border-radius: 1rem; overflow: hidden; display: flex; flex-direction: column;
+      box-shadow: 0 20px 50px oklch(0.1 0.01 65 / 40%); border: 1px solid var(--border);
+    }
+    .vod-modal-hero { position: relative; height: 16rem; background: oklch(0.15 0 0); flex-shrink: 0; }
+    .vod-modal-hero img {
+      width: 100%; height: 100%; object-fit: cover; opacity: .65;
+      mask-image: linear-gradient(to top, transparent, black);
+      -webkit-mask-image: linear-gradient(to top, transparent, black);
+    }
+    .vod-modal-close {
+      position: absolute; top: 1rem; right: 1rem; z-index: 2;
+      background: oklch(0.1 0.01 65 / 55%); color: oklch(0.98 0 0);
+      border: none; border-radius: 999px; width: 2.4rem; height: 2.4rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .vod-modal-titlebox { position: absolute; left: 1.5rem; right: 1.5rem; bottom: 1.25rem; color: oklch(0.98 0 0); }
+    .vod-modal-titlebox h2 { font-size: 1.6rem; font-weight: 700; text-shadow: 0 2px 10px oklch(0 0 0 / 60%); }
+    .vod-modal-meta { display: flex; gap: .75rem; margin-top: .35rem; font-size: .82rem; color: oklch(0.85 0.01 75); }
+    .vod-modal-body { padding: 1.5rem; overflow-y: auto; }
+    .vod-modal-body p#vod-modal-plot { color: var(--foreground); line-height: 1.55; margin-bottom: 1.25rem; }
+    #vod-modal-actions { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    .vod-modal-episodes { display: flex; flex-direction: column; gap: .5rem; margin-top: .75rem; }
+    .ep-btn {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      width: 100%; padding: .8rem 1rem; background: var(--card); border: 1px solid var(--border);
+      border-radius: .5rem; text-align: left; color: var(--foreground);
+    }
+    .ep-btn:hover { border-color: var(--primary); }
+    .ep-btn span { font-size: .85rem; font-weight: 500; }
+    #vod-hero-play, #vod-modal-play { align-items: center; gap: .5rem; }
+
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
     .settings-content { margin: 0 auto; max-width: 48rem; padding: 2rem 2rem 0; }
@@ -751,6 +843,10 @@
       .settings-content { padding: 1.5rem 1rem 0; }
       .vol-slider { width: 3.5rem; }
       .ctrl-select { max-width: 5rem; font-size: .65rem; }
+      .vod-hero { height: 16rem; padding: 1.25rem; }
+      .vod-hero-copy h2 { font-size: 1.5rem; }
+      .vod-card { min-width: 7.5rem; width: 7.5rem; }
+      .vod-modal-hero { height: 11rem; }
     }
     @media (max-width: 480px) {
       .channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -797,6 +893,19 @@
     <button class="nav-item" data-section="Todos os canais" id="nav-todos">
       <i data-lucide="list-video" style="width:19px;height:19px"></i><span>Todos os canais</span>
     </button>
+
+    <!-- Filmes/Séries: só aparece quando há credenciais Xtream salvas em
+         Configurações (mesmo padrão de degradação graciosa do EPG, que some
+         quando não configurado em vez de mostrar uma tela sempre quebrada). -->
+    <div id="sidebar-vod-tabs" style="display:none">
+      <span class="nav-label" style="margin-top:1rem">FILMES E SÉRIES</span>
+      <button class="nav-item" data-vod-view="movies" id="nav-vod-movies">
+        <i data-lucide="film" style="width:19px;height:19px"></i><span>Filmes</span>
+      </button>
+      <button class="nav-item" data-vod-view="series" id="nav-vod-series">
+        <i data-lucide="clapperboard" style="width:19px;height:19px"></i><span>Séries</span>
+      </button>
+    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -977,6 +1086,32 @@
     </div>
   </div><!-- /catalog-view -->
 
+  <!-- ══ VOD VIEW (Filmes/Séries) ══ -->
+  <div class="view hidden" id="vod-view">
+    <div class="content-shell">
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow" id="vod-eyebrow">FILMES</p>
+          <h1 id="vod-h1">O que vamos assistir?</h1>
+        </div>
+      </section>
+
+      <section class="vod-hero" id="vod-hero" style="display:none">
+        <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
+        <div class="vod-hero-scrim"></div>
+        <div class="vod-hero-copy">
+          <h2 id="vod-hero-title"></h2>
+          <p id="vod-hero-desc"></p>
+          <button class="btn-primary" id="vod-hero-play" style="display:none">
+            <i data-lucide="play" style="width:18px;height:18px"></i> Assistir
+          </button>
+        </div>
+      </section>
+
+      <div id="vod-carousels"></div>
+    </div>
+  </div><!-- /vod-view -->
+
   <!-- ══ SETTINGS VIEW ══ -->
   <div class="view settings-view hidden" id="settings-view">
     <div class="settings-content">
@@ -1069,6 +1204,25 @@
         </div>
       </div>
 
+      <div class="settings-card">
+        <label class="url-label">
+          <span>Filmes/Séries — credenciais Xtream (opcional)</span>
+          <div class="url-input-wrap">
+            <i data-lucide="film" style="width:18px;height:18px;color:var(--muted-fg)"></i>
+            <input type="url" id="vod-url" placeholder="http://seu-provedor.com/get.php?username=...&password=..." aria-label="URL de credenciais Xtream" />
+          </div>
+          <p class="url-hint">Opcional — usada só pra liberar Filmes/Séries. Pode ser igual ou diferente da lista de canais acima. Nenhuma URL é enviada para servidores externos além do seu provedor.</p>
+        </label>
+        <div class="settings-actions">
+          <button class="btn-primary" id="save-vod-btn">Salvar credenciais</button>
+          <button class="btn-ghost" id="clear-vod-btn">Limpar</button>
+          <span class="save-indicator" id="vod-save-indicator" style="display:none">
+            <i data-lucide="check-circle-2" style="width:15px;height:15px"></i>
+            <span id="vod-save-indicator-text">Credenciais salvas.</span>
+          </span>
+        </div>
+      </div>
+
       <div class="info-grid">
         <div class="info-card">
           <i data-lucide="zap" style="width:20px;height:20px;color:var(--primary)"></i>
@@ -1133,6 +1287,41 @@
   <div class="epg-popover-eyebrow">A seguir</div>
   <div class="epg-popover-title" id="epg-popover-title"></div>
   <div class="epg-popover-time" id="epg-popover-time"></div>
+</div>
+
+<!-- VOD MODAL: detalhes de um filme/série + lista de episódios -->
+<div id="vod-modal" class="hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="vod-modal-card">
+    <div class="vod-modal-hero">
+      <img id="vod-modal-bg" src="" alt="" />
+      <button id="vod-modal-close" class="vod-modal-close" aria-label="Fechar">
+        <i data-lucide="x" style="width:22px;height:22px"></i>
+      </button>
+      <div class="vod-modal-titlebox">
+        <h2 id="vod-modal-title">Título</h2>
+        <div class="vod-modal-meta">
+          <span id="vod-modal-rating"></span>
+          <span id="vod-modal-year"></span>
+        </div>
+      </div>
+    </div>
+    <div class="vod-modal-body">
+      <p id="vod-modal-plot">Sinopse não disponível.</p>
+
+      <div id="vod-modal-actions">
+        <button class="btn-primary" id="vod-modal-play">
+          <i data-lucide="play" style="width:18px;height:18px"></i> <span>Assistir</span>
+        </button>
+      </div>
+
+      <div id="vod-modal-series-content" style="display:none">
+        <h3 style="margin-bottom:.75rem;border-bottom:1px solid var(--border);padding-bottom:.5rem">Episódios</h3>
+        <div id="vod-modal-episodes" class="vod-modal-episodes">
+          <!-- Episódios injetados via JS -->
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script id="resilience-helpers">
@@ -1486,7 +1675,7 @@ const DEMO_CHANNELS = [
 // ESTADO CENTRAL
 // ═══════════════════════════════════════════════════════════════
 let _state = {
-  section:   "catalog",   // "catalog" | "settings"
+  section:   "catalog",   // "catalog" | "settings" | "vod"
   active:    "Início",
   query:     "",
   channels:  null,        // null = usa DEMO_CHANNELS
@@ -1498,6 +1687,7 @@ let _state = {
   viewMode:  localStorage.getItem("sint_view") || "grid",
   recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]"),
   loadingPlaylist: false,
+  vodType:   "movies",    // "movies" | "series" - sub-aba ativa em Filmes/Séries
 };
 
 const _subs = [];
@@ -2027,6 +2217,15 @@ async function detectStreamType(url) {
     return { type: "hls", url };
   }
 
+  // Filmes/episódios (VOD) são arquivos progressivos (mp4/mkv/...), nunca um
+  // manifesto de streaming ao vivo - tocar via hls.js/mpegts.js neles falha
+  // (o player tentaria interpretar o arquivo de vídeo como uma playlist).
+  // A extensão já deixa isso inequívoco, então toca direto na tag <video>
+  // sem nenhuma sondagem de rede.
+  if (/\.(mp4|mkv|avi|mov|webm|m4v|wmv|flv|3gp)$/i.test(clean)) {
+    return { type: "direct", url };
+  }
+
   // Se for .ts, realiza teste rápido (probe de 800ms) para verificar se o servidor IPTV aceita .m3u8
   if (clean.endsWith('.ts')) {
     const hlsAlternative = url.replace(/\.ts($|\?)/i, '.m3u8$1');
@@ -2508,7 +2707,7 @@ async function playStream(url) {
     } else {
       tryDirectPlay(playUrl, video);
     }
-  } else {
+  } else if (currentStreamType === "mpegts") {
     // ─── MPEG-TS: Acúmulo de Buffer Real de 25s (mesma lógica do HLS) ───
     // mpegts.js alimenta o MSE continuamente. O buffer real (video.buffered) cresce
     // enquanto o video está pausado. Liberamos o play só quando o colchão-alvo for atingido.
@@ -2671,6 +2870,12 @@ async function playStream(url) {
     } else {
       tryDirectPlay(playUrl, video);
     }
+  } else {
+    // ─── Arquivo direto (VOD: filme/episódio em mp4/mkv/...) ───
+    // Sem manifesto para carregar e sem MSE envolvido - a própria tag
+    // <video> já sabe tocar isso, então nem hls.js nem mpegts.js entram
+    // em cena aqui.
+    tryDirectPlay(playUrl, video);
   }
 }
 
@@ -2776,8 +2981,11 @@ function releaseScreenWakeLock() {
 }
 
 function enableLiveBar() {
+  // Filmes/episódios (VOD) não são "ao vivo" - o rótulo some nesse caso em
+  // vez de mostrar uma etiqueta errada sobre o conteúdo sob demanda.
+  const isVod = _state.selected && _state.selected.isVod;
   document.getElementById("live-bar").style.display = "block";
-  document.getElementById("live-label").textContent = "AO VIVO";
+  document.getElementById("live-label").textContent = isVod ? "" : "AO VIVO";
   document.getElementById("live-label").className = "live-label";
 }
 
@@ -2846,7 +3054,7 @@ function renderPlayerInfo() {
   document.getElementById("player-monogram").textContent = ch.initials;
   document.getElementById("player-name").textContent     = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
-  document.getElementById("player-badge").textContent    = "● AO VIVO";
+  document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
 
   // Logo no art
   const artLogo = document.getElementById("player-art-logo");
@@ -2933,13 +3141,16 @@ function renderOnNow() {
 // RENDER — NAV
 // ═══════════════════════════════════════════════════════════════
 function renderNav() {
-  const { active, favorites, recents } = _state;
+  const { active, recents, section, vodType } = _state;
 
   document.querySelectorAll(".nav-item[data-section]").forEach(el => {
-    el.classList.toggle("active", el.dataset.section === active);
+    el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
   });
   document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
-    el.classList.toggle("active", el.dataset.section === active);
+    el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
+  });
+  document.querySelectorAll(".nav-item[data-vod-view]").forEach(el => {
+    el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
   });
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
@@ -3111,9 +3322,10 @@ function listHTML(ch) {
 // RENDER — PAGE SECTION
 // ═══════════════════════════════════════════════════════════════
 function renderPageSection() {
-  const inSettings = _state.section === "settings";
-  document.getElementById("catalog-view").classList.toggle("hidden", inSettings);
-  document.getElementById("settings-view").classList.toggle("hidden", !inSettings);
+  const section = _state.section;
+  document.getElementById("catalog-view").classList.toggle("hidden", section !== "catalog");
+  document.getElementById("settings-view").classList.toggle("hidden", section !== "settings");
+  document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3141,7 +3353,311 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
+
+function parseXtreamCredentials(m3uUrl) {
+  let url;
+  try {
+    url = new URL(m3uUrl);
+  } catch (e) {
+    return null;
+  }
+  const username = url.searchParams.get('username');
+  const password = url.searchParams.get('password');
+  if (!username || !password) return null;
+
+  // Preserve explicit port in the base URL (e.g., :80 for http://)
+  // because JavaScript's URL parser normalizes away default ports
+  const host = url.host;
+  const portMatch = m3uUrl.match(/^[^:]+:\/\/[^/\?#]+:(\d+)/);
+  const port = portMatch ? portMatch[1] : null;
+  const normalizedHost = port ? host.replace(/:.*$/, '') + ':' + port : host;
+
+  return { base: `${url.protocol}//${normalizedHost}`, username, password };
+}
+
+function buildVodStreamUrl(creds, streamId, containerExtension) {
+  const ext = containerExtension || 'mp4';
+  return `${creds.base}/movie/${creds.username}/${creds.password}/${streamId}.${ext}`;
+}
+
+function buildSeriesEpisodeUrl(creds, episodeId, containerExtension) {
+  const ext = containerExtension || 'mp4';
+  return `${creds.base}/series/${creds.username}/${creds.password}/${episodeId}.${ext}`;
+}
+
+function xtreamApiUrl(creds, action, extraParams) {
+  const params = new URLSearchParams({
+    username: creds.username,
+    password: creds.password,
+    action,
+    ...(extraParams || {}),
+  });
+  return `${creds.base}/player_api.php?${params.toString()}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILMES/SÉRIES (VOD) — catálogo, modal e "Continue Assistindo"
+// ═══════════════════════════════════════════════════════════════
+// Tudo aqui fala direto com o player_api.php do provedor (via xtreamApiUrl /
+// buildVodStreamUrl / buildSeriesEpisodeUrl) através do fetch() nativo do
+// Capacitor (Task 2) — nenhum proxy/servidor local envolvido.
+
+const CONTINUE_KEY = "sint_continue";
+let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
+
+// Ordena por mais recente e filtra por tipo — pura, sem DOM/rede, por isso
+// testável isoladamente (tests/vod/continue-watching.test.js).
+function getContinueWatchingItems(continueMap, type) {
+  return Object.keys(continueMap)
+    .map(k => continueMap[k])
+    .sort((a, b) => b.ts - a.ts)
+    .filter(item => item.type === type);
+}
+
+function saveContinueWatching(entry) {
+  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  map[entry.id] = { ...entry, ts: Date.now() };
+  localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
+}
+
+function removeContinueWatching(id) {
+  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  if (map[id]) {
+    delete map[id];
+    localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
+  }
+}
+
+// Mostra/esconde as abas Filmes/Séries na sidebar — mesmo padrão de
+// degradação graciosa do EPG (some quando não configurado em vez de exibir
+// uma tela sempre quebrada).
+function updateVodTabsVisibility() {
+  const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+  document.getElementById("sidebar-vod-tabs").style.display = creds ? "" : "none";
+}
+
+function openVodSection(vodType) {
+  const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+  if (!creds) {
+    showToast("Configure suas credenciais Xtream em Configurações para usar Filmes/Séries.");
+    return;
+  }
+  setState({ section: "vod", vodType });
+  closeSidebar();
+  loadVodCatalog(vodType, creds);
+}
+
+function continueCardHtml(item) {
+  const key = `resume-${item.type}-${item.id}`;
+  _vodCardsIndex[key] = item;
+  const pct = item.duration ? Math.min(100, Math.round((item.progress / item.duration) * 100)) : 0;
+  return `
+    <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" tabindex="0">
+      <img src="${item.cover || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+      <div class="vod-progress"><span style="width:${pct}%"></span></div>
+      <p>${item.title || ""}</p>
+    </button>`;
+}
+
+function continueWatchingRowHtml(contType) {
+  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const items = getContinueWatchingItems(map, contType);
+  if (!items.length) return "";
+  return `
+    <div class="vod-row" data-cat-id="continue">
+      <h2>Continue Assistindo</h2>
+      <div class="vod-carousel">${items.map(continueCardHtml).join("")}</div>
+    </div>`;
+}
+
+function vodCardHtml(item, contType) {
+  const id = contType === "series" ? item.series_id : item.stream_id;
+  const key = `${contType}-${id}`;
+  _vodCardsIndex[key] = item;
+  const poster = item.stream_icon || item.cover || "";
+  const title  = item.name || item.title || "Sem título";
+  return `
+    <button class="vod-card" data-vod-key="${key}" tabindex="0">
+      <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+      <p>${title}</p>
+    </button>`;
+}
+
+function setVodHero(item, vodType, creds) {
+  const isSeries = vodType === "series";
+  const title = item.name || item.title || "Título";
+  document.getElementById("vod-hero-bg").src = item.stream_icon || item.cover || "";
+  document.getElementById("vod-hero-title").textContent = title;
+  document.getElementById("vod-hero-desc").textContent =
+    item.plot || "Descubra os melhores filmes e séries direto do seu provedor.";
+  document.getElementById("vod-hero").style.display = "flex";
+
+  const playBtn = document.getElementById("vod-hero-play");
+  playBtn.style.display = "inline-flex";
+  if (isSeries) {
+    // Série: o herói abre o modal (é preciso escolher um episódio primeiro).
+    playBtn.onclick = () => openVodModal(item, vodType, creds);
+  } else {
+    playBtn.onclick = () => playVodSelection(
+      buildVodStreamUrl(creds, item.stream_id, item.container_extension),
+      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
+    );
+  }
+}
+
+async function loadVodCatalog(vodType, creds) {
+  const isSeries = vodType === "series";
+  const contType = isSeries ? "series" : "vod";
+
+  document.getElementById("vod-eyebrow").textContent = isSeries ? "SÉRIES" : "FILMES";
+  document.getElementById("vod-h1").textContent = isSeries ? "Qual série vamos maratonar?" : "O que vamos assistir?";
+  document.getElementById("vod-hero").style.display = "none";
+
+  const carouselsEl = document.getElementById("vod-carousels");
+  const contRowHtml = continueWatchingRowHtml(contType);
+  carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
+
+  try {
+    const catRes = await fetch(xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories"));
+    if (!catRes.ok) throw new Error(`HTTP ${catRes.status}`);
+    const cats = await catRes.json();
+
+    if (!Array.isArray(cats) || cats.length === 0) {
+      carouselsEl.innerHTML = contRowHtml || `<p class="vod-empty">Nenhuma categoria encontrada.</p>`;
+      return;
+    }
+
+    const topCats = cats.slice(0, 8);
+    carouselsEl.innerHTML = contRowHtml + topCats.map(cat => `
+      <div class="vod-row" data-cat-id="${cat.category_id}">
+        <h2>${cat.category_name || ""}</h2>
+        <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
+      </div>`).join("");
+
+    const firstCatId = topCats[0].category_id;
+    let heroSet = false;
+
+    topCats.forEach(cat => {
+      fetch(xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: cat.category_id }))
+        .then(res => res.json())
+        .then(streams => {
+          const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
+          if (!rowEl) return;
+          if (!Array.isArray(streams) || streams.length === 0) {
+            rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
+            return;
+          }
+          rowEl.innerHTML = streams.slice(0, 20).map(item => vodCardHtml(item, contType)).join("");
+          if (!heroSet && cat.category_id === firstCatId) {
+            heroSet = true;
+            setVodHero(streams[0], vodType, creds);
+          }
+        })
+        .catch(() => {
+          const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
+          if (rowEl) rowEl.innerHTML = `<p class="vod-error">Erro ao carregar</p>`;
+        });
+    });
+  } catch (err) {
+    carouselsEl.innerHTML = (contRowHtml || "") + `<p class="vod-error">Erro ao carregar catálogo: ${err.message}</p>`;
+  }
+}
+
+async function openVodModal(item, vodType, creds) {
+  const isSeries = vodType === "series";
+  const modal = document.getElementById("vod-modal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  const title = item.name || item.title || "Sem título";
+  document.getElementById("vod-modal-title").textContent = title;
+  document.getElementById("vod-modal-bg").src = item.stream_icon || item.cover || "";
+  document.getElementById("vod-modal-plot").textContent = item.plot || "Nenhuma sinopse disponível.";
+  document.getElementById("vod-modal-rating").textContent = item.rating && Number(item.rating) > 0 ? `★ ${item.rating}` : "";
+  document.getElementById("vod-modal-year").textContent = item.releaseDate ? String(item.releaseDate).slice(0, 4) : (item.year || "");
+
+  const playBtn = document.getElementById("vod-modal-play");
+  const seriesContent = document.getElementById("vod-modal-series-content");
+
+  if (!isSeries) {
+    seriesContent.style.display = "none";
+    playBtn.style.display = "inline-flex";
+    playBtn.querySelector("span").textContent = "Assistir";
+    playBtn.onclick = () => playVodSelection(
+      buildVodStreamUrl(creds, item.stream_id, item.container_extension),
+      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
+    );
+    playBtn.focus();
+    return;
+  }
+
+  playBtn.style.display = "none";
+  seriesContent.style.display = "block";
+  const epsContainer = document.getElementById("vod-modal-episodes");
+  epsContainer.innerHTML = `<div class="spinner" style="margin:1rem"></div>`;
+
+  try {
+    const res = await fetch(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id }));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const episodes = Object.values(data.episodes || {}).flat();
+
+    if (!episodes.length) {
+      epsContainer.innerHTML = `<p class="vod-empty">Nenhum episódio encontrado.</p>`;
+      return;
+    }
+
+    epsContainer.innerHTML = episodes.map(ep => {
+      const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
+      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}">
+        <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
+        <i data-lucide="play" style="width:18px;height:18px"></i>
+      </button>`;
+    }).join("");
+    lucide.createIcons();
+  } catch (err) {
+    epsContainer.innerHTML = `<p class="vod-error">Erro ao carregar episódios: ${err.message}</p>`;
+  }
+}
+
+function closeVodModal() {
+  const modal = document.getElementById("vod-modal");
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function playEpisode(episodeId, containerExtension, title, creds) {
+  const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
+  playVodSelection(url, { id: episodeId, contType: "series", title, cover: null });
+}
+
+// Ponto único de reprodução de VOD: reaproveita o mesmo player (playStream)
+// e engine de vídeo já usados para os canais ao vivo, só trocando o que fica
+// selecionado (_state.selected) para um "canal" sintético representando o
+// filme/episódio — mesmo padrão de selectChannel(), sem herdar a lógica de
+// "recentes" (que é só para canais).
+function playVodSelection(url, meta) {
+  if (!url) { showToast("Não foi possível obter o link de reprodução."); return; }
+  closeVodModal();
+  const continueId = meta.continueId || `resume-${meta.contType}-${meta.id}`;
+  const pseudo = {
+    id: continueId,
+    name: meta.title || "Sem título",
+    category: meta.contType === "series" ? "Série" : "Filme",
+    initials: makeInitials(meta.title || "?"),
+    color: "logo-c3",
+    logo: meta.cover || null,
+    url,
+    isVod: true,
+    vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
+    continueId,
+  };
+  setState({ selected: pseudo, playing: false, section: "catalog" });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  stopStream();
+  playStream(url);
+}
 
 function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
@@ -3150,6 +3666,7 @@ function loadSettingsForm() {
   const vol  = localStorage.getItem(LS.VOL)  || "1";
   const proxy = localStorage.getItem(LS.PROXY) || "";
   const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
+  const vodUrl = localStorage.getItem(LS.VOD_URL) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
@@ -3158,6 +3675,8 @@ function loadSettingsForm() {
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   document.getElementById("epg-url").value = epgUrl;
   document.getElementById("epg-save-indicator").style.display = epgUrl ? "flex" : "none";
+  document.getElementById("vod-url").value = vodUrl;
+  document.getElementById("vod-save-indicator").style.display = vodUrl ? "flex" : "none";
   setSettingsMode(mode);
 
   const saved = url.trim().length > 8;
@@ -3273,6 +3792,9 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshEpgIfStale();
   setInterval(refreshEpgIfStale, 30 * 60 * 1000);
 
+  // Filmes/Séries: só mostra as abas se já houver credenciais Xtream salvas.
+  updateVodTabsVisibility();
+
   // Carrega playlist salva automaticamente
   const savedUrl = localStorage.getItem(LS.URL);
   if (savedUrl) {
@@ -3305,7 +3827,10 @@ document.addEventListener("DOMContentLoaded", () => {
     hideEpgPopover();
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") hideEpgPopover();
+    if (e.key === "Escape") {
+      hideEpgPopover();
+      if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
+    }
   });
   document.getElementById("channel-container").addEventListener("scroll", hideEpgPopover);
   window.addEventListener("scroll", hideEpgPopover, true);
@@ -3444,6 +3969,82 @@ document.addEventListener("DOMContentLoaded", () => {
     setState({ section: "catalog" });
   });
 
+  // ── FILMES/SÉRIES (VOD) ──
+  document.querySelectorAll("[data-vod-view]").forEach(el => {
+    el.addEventListener("click", () => openVodSection(el.dataset.vodView));
+  });
+
+  document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
+  document.getElementById("vod-modal").addEventListener("click", e => {
+    if (e.target.id === "vod-modal") closeVodModal(); // clique fora do card fecha
+  });
+
+  // Delegação: os cartões de pôster (e os de "Continue Assistindo") são
+  // recriados a cada carregamento de categoria, então um único listener no
+  // container pai cobre tudo sem precisar religar nada a cada render.
+  document.getElementById("vod-carousels").addEventListener("click", e => {
+    const card = e.target.closest("[data-vod-key]");
+    if (!card) return;
+    const item = _vodCardsIndex[card.dataset.vodKey];
+    if (!item) return;
+    if (card.dataset.vodResume === "1") {
+      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id });
+      return;
+    }
+    const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+    if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
+    openVodModal(item, _state.vodType, creds);
+  });
+
+  document.getElementById("vod-modal-episodes").addEventListener("click", e => {
+    const btn = e.target.closest(".ep-btn");
+    if (!btn) return;
+    const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+    if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
+    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds);
+  });
+
+  // "Continue Assistindo": salva o progresso do que estiver tocando (só para
+  // filmes/episódios — canais ao vivo não têm "continuar de onde parou").
+  // Throttle de ~5s para não martelar o localStorage a cada frame do vídeo.
+  let _lastContinueSaveTs = 0;
+  document.getElementById("player-video").addEventListener("timeupdate", () => {
+    const ch = _state.selected;
+    const video = document.getElementById("player-video");
+    if (!ch || !ch.isVod || !video.duration || !isFinite(video.duration)) return;
+    if (video.currentTime < 10) return; // ignora os primeiros segundos
+    const now = Date.now();
+    if (now - _lastContinueSaveTs < 5000) return;
+    _lastContinueSaveTs = now;
+
+    if (video.currentTime / video.duration > 0.97) {
+      removeContinueWatching(ch.continueId); // terminou — não é mais "continuar"
+      return;
+    }
+    saveContinueWatching({
+      id: ch.continueId,
+      type: ch.vodContentType,
+      title: ch.name,
+      cover: ch.logo,
+      url: ch.url,
+      progress: video.currentTime,
+      duration: video.duration,
+    });
+  });
+
+  // Um filme/episódio que chega ao fim naturalmente dispara "ended" - sem
+  // este listener o watchdog (feito para canais ao vivo, que nunca emitem
+  // EOF de propósito) trataria isso como um congelamento e reiniciaria o
+  // mesmo vídeo do zero uns segundos depois de ele já ter terminado.
+  document.getElementById("player-video").addEventListener("ended", () => {
+    const ch = _state.selected;
+    if (!ch || !ch.isVod) return;
+    stopWatchdog();
+    setState({ playing: false });
+    showPlayerArt();
+    removeContinueWatching(ch.continueId);
+  });
+
   // ── SETTINGS FORM ──
   document.getElementById("tab-url").addEventListener("click",  () => { setSettingsMode("url");     updateSaveBtn(); });
   document.getElementById("tab-file").addEventListener("click", () => { setSettingsMode("arquivo"); updateSaveBtn(); });
@@ -3545,6 +4146,28 @@ document.addEventListener("DOMContentLoaded", () => {
     epgIndexByName = {};
     showToast("EPG removido.");
     render();
+  });
+
+  document.getElementById("save-vod-btn").addEventListener("click", () => {
+    const vodUrl = document.getElementById("vod-url").value.trim();
+    if (!vodUrl) { showToast("Cole a URL das credenciais Xtream antes de salvar."); return; }
+    if (!parseXtreamCredentials(vodUrl)) {
+      showToast("Essa URL não tem usuário/senha — Filmes/Séries não vai funcionar com ela.");
+      return;
+    }
+    localStorage.setItem(LS.VOD_URL, vodUrl);
+    document.getElementById("vod-save-indicator").style.display = "flex";
+    updateVodTabsVisibility();
+    showToast("Credenciais salvas. Filmes/Séries já podem ser carregados.");
+  });
+
+  document.getElementById("clear-vod-btn").addEventListener("click", () => {
+    document.getElementById("vod-url").value = "";
+    document.getElementById("vod-save-indicator").style.display = "none";
+    localStorage.removeItem(LS.VOD_URL);
+    updateVodTabsVisibility();
+    if (_state.section === "vod") setState({ section: "catalog" });
+    showToast("Credenciais removidas.");
   });
 
   document.getElementById("pref-fit").addEventListener("change", e => {
