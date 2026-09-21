@@ -817,7 +817,7 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
-      .topbar { height: 4.3rem; padding: 0 .8rem; }
+      .topbar { height: 4.3rem; padding: calc(0 + env(safe-area-inset-top)) .8rem 0 .8rem; }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
