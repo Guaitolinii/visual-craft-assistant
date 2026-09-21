@@ -161,6 +161,11 @@
     .feature-layout {
       display: grid; grid-template-columns: minmax(0, 1fr) 20rem;
       gap: 1rem; margin-top: 2rem;
+      /* #player-screen moved out to be a persistent sibling (see mini-player
+         below), so .player-stage here now only wraps the slim .player-controls
+         bar - without this, grid's default stretch would inflate it to match
+         .on-now's height, leaving a tall empty rounded box. */
+      align-items: start;
     }
 
     /* ════════════ PLAYER ════════════ */
@@ -361,6 +366,31 @@
       display: flex; align-items: center; justify-content: center;
       background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
       backdrop-filter: blur(8px);
+    }
+    /* Mini-player: quando algo está tocando mas a seção ativa não é "catalog" */
+    #player-screen.mini-player {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 500;
+      height: 4.5rem;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: 0 1rem;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
+    }
+    #player-screen.mini-player .player-video-wrap {
+      width: 3.5rem; height: 3.5rem; flex-shrink: 0; border-radius: .5rem; overflow: hidden;
+    }
+    #player-screen.mini-player .player-controls,
+    #player-screen.mini-player .player-loader,
+    #player-screen.mini-player .player-art {
+      display: none;
+    }
+    #player-screen.player-hidden {
+      display: none;
     }
     .live-line {
       height: 3px; flex: 1; min-width: 3rem; border-radius: 9px;
@@ -836,6 +866,10 @@
         background: color-mix(in oklab, var(--card) 94%, transparent);
         backdrop-filter: blur(14px);
       }
+      /* Sem isso, o mini-player (bottom:0) cobriria totalmente a barra de
+         abas fixa, impedindo a navegação enquanto algo toca - o oposto do
+         que este pedido do usuário quer. */
+      #player-screen.mini-player { bottom: 4.3rem; }
       .mobile-tabs button {
         display: grid; place-items: center; align-content: center;
         gap: .22rem; background: none; border: none;
@@ -947,6 +981,65 @@
     </button>
   </header>
 
+  <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
+  <div class="player-screen" id="player-screen">
+    <!-- Controles de tela cheia "de mentira" (só usados dentro do app nativo) -->
+    <div class="fs-overlay-controls" id="fs-overlay-controls">
+      <button class="fs-overlay-btn" id="fs-rotate-btn" aria-label="Girar para retrato">
+        <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
+      </button>
+      <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
+        <i data-lucide="minimize" style="width:20px;height:20px"></i>
+      </button>
+    </div>
+    <!-- Art (visível antes de reproduzir) -->
+    <div class="player-art" id="player-art">
+      <div class="signal-lines"></div>
+      <div class="channel-monogram" id="player-monogram"></div>
+      <img id="player-art-logo" class="player-art-logo" alt="" style="display:none" />
+      <div class="player-copy">
+        <span class="live-badge" id="player-badge">● AO VIVO</span>
+        <h2 id="player-name">Nenhum canal selecionado</h2>
+        <p id="player-status">Escolha um canal abaixo</p>
+      </div>
+    </div>
+    <!-- Vídeo real -->
+    <div class="player-video-wrap">
+      <video id="player-video" class="player-video" playsinline></video>
+    </div>
+    <!-- Loader -->
+    <div class="player-loader" id="player-loader">
+      <div class="spinner"></div>
+      <p>Conectando ao canal...</p>
+    </div>
+    <!-- Overlay de erro -->
+    <div class="player-error" id="player-error">
+      <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
+      <h3>Não foi possível reproduzir</h3>
+      <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
+      <button class="retry-btn" id="retry-btn">Tentar novamente</button>
+    </div>
+    <!-- Monitor Panel / Telemetria -->
+    <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
+      <div class="debug-header">
+        <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
+        <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
+      </div>
+      <div class="debug-grid">
+        <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
+        <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
+        <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
+        <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
+        <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
+        <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
+      </div>
+    </div>
+    <!-- Botão play central -->
+    <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
+      <i data-lucide="play" style="width:28px;height:28px"></i>
+    </button>
+  </div><!-- /player-screen -->
+
   <!-- ══ CATALOG VIEW ══ -->
   <div class="view" id="catalog-view">
     <div class="content-shell">
@@ -967,62 +1060,6 @@
       <section class="feature-layout">
         <!-- PLAYER -->
         <div class="player-stage" id="player-stage">
-          <div class="player-screen" id="player-screen">
-            <!-- Controles de tela cheia "de mentira" (só usados dentro do app nativo) -->
-            <div class="fs-overlay-controls" id="fs-overlay-controls">
-              <button class="fs-overlay-btn" id="fs-rotate-btn" aria-label="Girar para retrato">
-                <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
-              </button>
-              <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
-                <i data-lucide="minimize" style="width:20px;height:20px"></i>
-              </button>
-            </div>
-            <!-- Art (visível antes de reproduzir) -->
-            <div class="player-art" id="player-art">
-              <div class="signal-lines"></div>
-              <div class="channel-monogram" id="player-monogram"></div>
-              <img id="player-art-logo" class="player-art-logo" alt="" style="display:none" />
-              <div class="player-copy">
-                <span class="live-badge" id="player-badge">● AO VIVO</span>
-                <h2 id="player-name">Nenhum canal selecionado</h2>
-                <p id="player-status">Escolha um canal abaixo</p>
-              </div>
-            </div>
-            <!-- Vídeo real -->
-            <video id="player-video" class="player-video" playsinline></video>
-            <!-- Loader -->
-            <div class="player-loader" id="player-loader">
-              <div class="spinner"></div>
-              <p>Conectando ao canal...</p>
-            </div>
-            <!-- Overlay de erro -->
-            <div class="player-error" id="player-error">
-              <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
-              <h3>Não foi possível reproduzir</h3>
-              <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
-              <button class="retry-btn" id="retry-btn">Tentar novamente</button>
-            </div>
-            <!-- Monitor Panel / Telemetria -->
-            <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
-              <div class="debug-header">
-                <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
-                <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
-              </div>
-              <div class="debug-grid">
-                <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
-                <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
-                <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
-                <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
-                <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
-                <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
-              </div>
-            </div>
-            <!-- Botão play central -->
-            <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
-              <i data-lucide="play" style="width:28px;height:28px"></i>
-            </button>
-          </div>
-
           <div class="player-controls">
             <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
               <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
@@ -3340,6 +3377,31 @@ function renderPageSection() {
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
 }
 
+// #player-screen agora é um irmão persistente de #catalog-view/#vod-view/
+// #settings-view (nunca mais fica dentro de uma view que pode ser
+// escondida) - sua visibilidade não depende mais da seção ativa, e sim de
+// se algo está tocando. Na seção "catalog" ele sempre aparece em tamanho
+// cheio (igual sempre foi, canal pausado/parado incluso - não escondemos
+// o player ao pausar um canal, só quando saímos da tela de Canais); fora
+// dela, vira uma barra compacta (mini-player) só enquanto algo está
+// tocando, e some de vez quando não há nada tocando.
+function setPlayerMode() {
+  const el = document.getElementById("player-screen");
+  if (!el) return;
+  if (_state.section === "catalog") {
+    el.classList.remove("player-hidden", "mini-player");
+    return;
+  }
+  const isPlaying = !!(_state.selected && (_state.playing || _state.selected.isVod));
+  if (!isPlaying) {
+    el.classList.remove("mini-player");
+    el.classList.add("player-hidden");
+    return;
+  }
+  el.classList.remove("player-hidden");
+  el.classList.add("mini-player");
+}
+
 // ═══════════════════════════════════════════════════════════════
 // STATUS PILL
 // ═══════════════════════════════════════════════════════════════
@@ -3665,7 +3727,7 @@ function playVodSelection(url, meta) {
     vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
     continueId,
   };
-  setState({ selected: pseudo, playing: false, section: "catalog" });
+  setState({ selected: pseudo, playing: false });
   window.scrollTo({ top: 0, behavior: "smooth" });
   stopStream();
   playStream(url);
@@ -3726,6 +3788,7 @@ function render() {
   renderPlayerInfo();
   renderCatalog();
   renderOnNow();
+  setPlayerMode();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3941,6 +4004,15 @@ document.addEventListener("DOMContentLoaded", () => {
       showFsControls();
     }
   });
+
+  // Tocar no mini-player expande de volta para a tela cheia (seção catalog)
+  document.getElementById("player-screen").addEventListener("click", (e) => {
+    const el = document.getElementById("player-screen");
+    if (el.classList.contains("mini-player")) {
+      setState({ section: "catalog" });
+    }
+  });
+
   document.getElementById("fs-exit-btn").addEventListener("click", e => {
     e.stopPropagation();
     exitPseudoFullscreen();
