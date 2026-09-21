@@ -724,19 +724,34 @@
       font-size: 1rem; color: oklch(0.85 0.01 75); line-height: 1.5; margin-bottom: 1.25rem;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
+    .vod-search-box { max-width: 28rem; margin: 1.25rem 0 0; }
     .vod-row { margin-bottom: 2rem; }
     .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+    .vod-row-header {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem;
+    }
+    .vod-row-header h2 { margin-bottom: 0; }
+    .vod-see-all {
+      background: none; border: none; color: var(--muted-fg); font-size: .8rem; font-weight: 600;
+      padding: .3rem .5rem; border-radius: .4rem; transition: background 140ms, color 140ms; flex-shrink: 0;
+    }
+    .vod-see-all:hover { background: var(--secondary); color: var(--primary); }
     .vod-carousel {
       display: flex; gap: 1rem; overflow-x: auto; padding-bottom: .75rem; scroll-snap-type: x mandatory;
     }
     .vod-carousel::-webkit-scrollbar { height: 6px; }
     .vod-carousel::-webkit-scrollbar-track { background: transparent; }
     .vod-carousel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    .vod-carousel-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+      gap: 1rem 1rem; padding-bottom: .75rem;
+    }
     .vod-card {
       min-width: 9.5rem; width: 9.5rem; flex-shrink: 0; text-align: left;
       background: none; border: none; padding: 0; scroll-snap-align: start;
       color: inherit; transition: transform 180ms;
     }
+    .vod-carousel-grid .vod-card { min-width: 0; width: 100%; }
     .vod-card:hover { transform: translateY(-4px); }
     .vod-card img {
       width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
@@ -1193,6 +1208,14 @@
         </div>
       </section>
 
+      <label class="search-box vod-search-box" for="vod-search-input">
+        <i data-lucide="search" style="width:18px;height:18px"></i>
+        <input type="text" id="vod-search-input" placeholder="Buscar filmes e séries..." aria-label="Buscar catálogo de VOD" />
+        <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
+          <i data-lucide="x" style="width:16px;height:16px"></i>
+        </button>
+      </label>
+
       <section class="vod-hero" id="vod-hero" style="display:none">
         <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
         <div class="vod-hero-scrim"></div>
@@ -1205,6 +1228,7 @@
         </div>
       </section>
 
+      <div class="vod-carousel-grid" id="vod-search-results" style="display:none"></div>
       <div id="vod-carousels"></div>
     </div>
   </div><!-- /vod-view -->
@@ -3578,6 +3602,13 @@ function xtreamApiUrl(creds, action, extraParams) {
 const CONTINUE_KEY = "sint_continue";
 let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
 
+// Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
+// - permite a busca filtrar em todas as categorias já carregadas sem refazer
+// requisições, e permite "Ver todos"/"Novidades" reaproveitarem os mesmos
+// dados já deduplicados. Resetado a cada loadVodCatalog (troca de aba ou
+// reentrada na view).
+let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {} };
+
 // Ordena por mais recente e filtra por tipo — pura, sem DOM/rede, por isso
 // testável isoladamente (tests/vod/continue-watching.test.js).
 function getContinueWatchingItems(continueMap, type) {
@@ -3585,6 +3616,50 @@ function getContinueWatchingItems(continueMap, type) {
     .map(k => continueMap[k])
     .sort((a, b) => b.ts - a.ts)
     .filter(item => item.type === type);
+}
+
+// Escapa texto do usuário antes de embuti-lo em innerHTML (usado na mensagem
+// "Nada encontrado para ..." da busca) - o app não tinha um helper genérico
+// de escape até agora, então este fica local ao uso.
+function escapeHtmlText(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+// Busca client-side no catálogo já carregado — substring case-insensitive no
+// nome. Pura, sem DOM/rede (tests/vod/filter-vod-items.test.js).
+function filterVodItemsByQuery(items, query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((item) => (item.name || "").toLowerCase().includes(q));
+}
+
+// Colapsa duplicatas exatas de catálogo (mesmo nome + mesmo ano) mantendo a
+// cópia mais recentemente adicionada. Chavear por nome+ano (e não só nome)
+// evita fundir filmes diferentes que compartilham um título traduzido (ex:
+// "O Guarda-Costas" 1992 vs 2004) e nunca funde sequências com nomes
+// diferentes (ex: os títulos de Harry Potter). Pura (tests/vod/dedupe-vod-items.test.js).
+function dedupeVodItemsByTitle(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = `${(item.name || "").trim().toLowerCase()}|${item.year || ""}`;
+    const existing = groups.get(key);
+    if (!existing || Number(item.added || 0) > Number(existing.added || 0)) {
+      groups.set(key, item);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+// Ordena pelo timestamp real "added" da API (não a categoria estática
+// "Lançamentos") e corta no limite — usada para montar a fileira "Novidades".
+// Pura (tests/vod/dedupe-vod-items.test.js).
+function selectNewestVodItems(items, limit) {
+  return items
+    .slice()
+    .sort((a, b) => Number(b.added || 0) - Number(a.added || 0))
+    .slice(0, limit);
 }
 
 function saveContinueWatching(entry) {
@@ -3678,15 +3753,35 @@ function setVodHero(item, vodType, creds) {
   }
 }
 
+// Nomes de categoria de série vêm da API como "Series | Netflix", "Series |
+// Disney Plus" etc. - o prefixo é redundante na UI (a view inteira já é
+// Séries), então tiramos só para exibição; category_id continua sendo a
+// chave real usada em todo o resto (cache, data-cat-id, fetch).
+function vodCategoryDisplayName(cat) {
+  return (cat.category_name || "").replace(/^Series\s*\|\s*/i, "");
+}
+
+const VOD_ROW_INITIAL_COUNT = 12; // cartões visíveis antes de "Ver todos"
+const VOD_NOVIDADES_COUNT = 20;
+
 async function loadVodCatalog(vodType, creds) {
   const isSeries = vodType === "series";
   const contType = isSeries ? "series" : "vod";
+
+  // Reseta o cache e a busca a cada entrada na view (troca de aba
+  // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
+  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {} };
+  const searchInput = document.getElementById("vod-search-input");
+  searchInput.value = "";
+  document.getElementById("vod-search-clear").style.display = "none";
+  document.getElementById("vod-search-results").style.display = "none";
 
   document.getElementById("vod-eyebrow").textContent = isSeries ? "SÉRIES" : "FILMES";
   document.getElementById("vod-h1").textContent = isSeries ? "Qual série vamos maratonar?" : "O que vamos assistir?";
   document.getElementById("vod-hero").style.display = "none";
 
   const carouselsEl = document.getElementById("vod-carousels");
+  carouselsEl.style.display = "block";
   const contRowHtml = continueWatchingRowHtml(contType);
   carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
 
@@ -3700,37 +3795,77 @@ async function loadVodCatalog(vodType, creds) {
       return;
     }
 
-    const topCats = cats.slice(0, 8);
+    // Todas as categorias, não só as 8 primeiras - filmes seguem organizados
+    // por gênero (Ação/Comédia/Terror/...) e séries por streaming (Netflix/
+    // Amazon Prime Video/Max/Disney Plus/...), como a API já entrega; antes
+    // disso só as 8 primeiras (na ordem que a API retorna) chegavam a
+    // renderizar, escondendo a maioria dos streamings de série.
+    const topCats = cats;
+    _vodCatalogCache.categories = topCats;
+
     carouselsEl.innerHTML = contRowHtml + topCats.map(cat => `
       <div class="vod-row" data-cat-id="${cat.category_id}">
-        <h2>${cat.category_name || ""}</h2>
+        <div class="vod-row-header">
+          <h2>${vodCategoryDisplayName(cat)}</h2>
+          <button class="vod-see-all" data-cat-id="${cat.category_id}">Ver todos</button>
+        </div>
         <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
       </div>`).join("");
 
     const firstCatId = topCats[0].category_id;
     let heroSet = false;
 
-    topCats.forEach(cat => {
+    // Cada fetch por categoria é guardado aqui para sabermos, via
+    // Promise.allSettled, quando todas já resolveram (sucesso ou erro) e
+    // montar a fileira "Novidades" - sem disparar uma segunda rodada de
+    // requisições para os mesmos dados.
+    const categoryFetches = topCats.map(cat =>
       fetch(xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: cat.category_id }))
         .then(res => res.json())
         .then(streams => {
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
-          if (!rowEl) return;
           if (!Array.isArray(streams) || streams.length === 0) {
-            rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
+            _vodCatalogCache.itemsByCategory[cat.category_id] = [];
+            if (rowEl) rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
             return;
           }
-          rowEl.innerHTML = streams.slice(0, 20).map(item => vodCardHtml(item, contType)).join("");
+          // Deduplica por (nome, ano) antes de guardar no cache e de
+          // renderizar - nenhuma duplicata de catálogo chega à tela, seja
+          // na fileira da categoria, na busca ou em "Ver todos" (todos leem
+          // deste mesmo array já limpo).
+          const deduped = dedupeVodItemsByTitle(streams);
+          _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
+          if (rowEl) {
+            rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
+          }
           if (!heroSet && cat.category_id === firstCatId) {
             heroSet = true;
-            setVodHero(streams[0], vodType, creds);
+            setVodHero(deduped[0], vodType, creds);
           }
         })
         .catch(() => {
+          _vodCatalogCache.itemsByCategory[cat.category_id] = [];
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
           if (rowEl) rowEl.innerHTML = `<p class="vod-error">Erro ao carregar</p>`;
-        });
-    });
+        })
+    );
+
+    // "Novidades": só depois que todas as categorias já resolveram (sucesso
+    // ou erro), monta uma fileira com os itens mais recentes pelo timestamp
+    // real "added" da API - não a categoria estática "Lançamentos" - e a
+    // fixa como a primeira fileira, antes das de gênero/streaming.
+    Promise.allSettled(categoryFetches).then(() => {
+      if (_vodCatalogCache.vodType !== vodType) return; // usuário já trocou de aba
+      const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      const newest = selectNewestVodItems(allItems, VOD_NOVIDADES_COUNT);
+      if (!newest.length) return;
+      const newestHtml = `
+        <div class="vod-row" data-cat-id="novidades">
+          <div class="vod-row-header"><h2>Novidades</h2></div>
+          <div class="vod-carousel">${newest.map(item => vodCardHtml(item, contType)).join("")}</div>
+        </div>`;
+      document.getElementById("vod-carousels").insertAdjacentHTML("afterbegin", newestHtml);
+    }).catch(() => {});
   } catch (err) {
     carouselsEl.innerHTML = (contRowHtml || "") + `<p class="vod-error">Erro ao carregar catálogo: ${err.message}</p>`;
   }
@@ -4197,8 +4332,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Delegação: os cartões de pôster (e os de "Continue Assistindo") são
   // recriados a cada carregamento de categoria, então um único listener no
-  // container pai cobre tudo sem precisar religar nada a cada render.
-  document.getElementById("vod-carousels").addEventListener("click", e => {
+  // container pai cobre tudo sem precisar religar nada a cada render. Os
+  // mesmos cartões também aparecem na grade de busca (#vod-search-results),
+  // que é um container irmão, não filho, de #vod-carousels - por isso o
+  // clique é fatorado numa função à parte e ligado nos dois containers.
+  function onVodCardAreaClick(e) {
     const card = e.target.closest("[data-vod-key]");
     if (!card) return;
     const item = _vodCardsIndex[card.dataset.vodKey];
@@ -4210,6 +4348,58 @@ document.addEventListener("DOMContentLoaded", () => {
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
     openVodModal(item, _state.vodType, creds);
+  }
+
+  document.getElementById("vod-carousels").addEventListener("click", e => {
+    // "Ver todos": expande a fileira daquela categoria (já cacheada e
+    // deduplicada em _vodCatalogCache.itemsByCategory) para uma grade
+    // completa em vez do carrossel horizontal cortado.
+    const seeAllBtn = e.target.closest(".vod-see-all");
+    if (seeAllBtn) {
+      const catId = seeAllBtn.dataset.catId;
+      const items = _vodCatalogCache.itemsByCategory[catId] || [];
+      const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
+      const rowEl = document.getElementById(`vod-carousel-${catId}`);
+      if (!rowEl) return;
+      rowEl.className = "vod-carousel-grid";
+      rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
+      seeAllBtn.remove(); // já expandido, o botão não tem mais função
+      return;
+    }
+    onVodCardAreaClick(e);
+  });
+
+  document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
+
+  // ── BUSCA (Filmes/Séries) ──
+  // Filtra client-side em tudo que já foi carregado nesta sessão de
+  // Filmes/Séries (_vodCatalogCache), sem nova requisição por tecla.
+  document.getElementById("vod-search-input").addEventListener("input", e => {
+    const query = e.target.value;
+    document.getElementById("vod-search-clear").style.display = query ? "flex" : "none";
+    const resultsEl = document.getElementById("vod-search-results");
+    if (!query.trim()) {
+      resultsEl.style.display = "none";
+      document.getElementById("vod-carousels").style.display = "block";
+      return;
+    }
+    // Cada array por categoria já vem deduplicado, mas o mesmo filme pode
+    // pertencer a mais de uma categoria (via category_ids) - dedupe de novo
+    // na lista achatada para a busca cross-categoria nunca repetir um item.
+    const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+    const matches = filterVodItemsByQuery(allItems, query);
+    const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
+    document.getElementById("vod-carousels").style.display = "none";
+    resultsEl.style.display = "grid";
+    resultsEl.innerHTML = matches.length
+      ? matches.map(item => vodCardHtml(item, contType)).join("")
+      : `<p class="vod-empty">Nada encontrado para "${escapeHtmlText(query)}".</p>`;
+  });
+
+  document.getElementById("vod-search-clear").addEventListener("click", () => {
+    const input = document.getElementById("vod-search-input");
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
   });
 
   document.getElementById("vod-modal-episodes").addEventListener("click", e => {

@@ -70,7 +70,10 @@ export function loadVodHelpers() {
       "\nthis.buildSeriesEpisodeUrl = typeof buildSeriesEpisodeUrl !== 'undefined' ? buildSeriesEpisodeUrl : undefined;" +
       "\nthis.xtreamApiUrl = typeof xtreamApiUrl !== 'undefined' ? xtreamApiUrl : undefined;" +
       "\nthis.getContinueWatchingItems = typeof getContinueWatchingItems !== 'undefined' ? getContinueWatchingItems : undefined;" +
-      "\nthis.computeDirectPlayRetryDelayMs = typeof computeDirectPlayRetryDelayMs !== 'undefined' ? computeDirectPlayRetryDelayMs : undefined;",
+      "\nthis.computeDirectPlayRetryDelayMs = typeof computeDirectPlayRetryDelayMs !== 'undefined' ? computeDirectPlayRetryDelayMs : undefined;" +
+      "\nthis.filterVodItemsByQuery = typeof filterVodItemsByQuery !== 'undefined' ? filterVodItemsByQuery : undefined;" +
+      "\nthis.dedupeVodItemsByTitle = typeof dedupeVodItemsByTitle !== 'undefined' ? dedupeVodItemsByTitle : undefined;" +
+      "\nthis.selectNewestVodItems = typeof selectNewestVodItems !== 'undefined' ? selectNewestVodItems : undefined;",
     context
   );
 
@@ -98,6 +101,25 @@ export function loadVodHelpers() {
       // would still be the vm realm's Array.prototype.map and would still
       // build a vm-realm array even though the mapped items are plain.
       return Array.from(result, item => ({ ...item }));
+    };
+  }
+
+  // dedupeVodItemsByTitle/selectNewestVodItems don't construct new item
+  // objects (they return the very same references passed in, which already
+  // belong to the host realm) - only the outer array is built inside the vm,
+  // so a shallow Array.from (host realm) is enough here, unlike the
+  // deep-copy needed above for getContinueWatchingItems.
+  const originalDedupeVodItemsByTitle = context.dedupeVodItemsByTitle;
+  if (originalDedupeVodItemsByTitle) {
+    context.dedupeVodItemsByTitle = function(items) {
+      return Array.from(originalDedupeVodItemsByTitle(items));
+    };
+  }
+
+  const originalSelectNewestVodItems = context.selectNewestVodItems;
+  if (originalSelectNewestVodItems) {
+    context.selectNewestVodItems = function(items, limit) {
+      return Array.from(originalSelectNewestVodItems(items, limit));
     };
   }
 
