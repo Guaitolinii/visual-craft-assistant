@@ -373,6 +373,11 @@
       left: 0; right: 0; bottom: 0;
       z-index: 500;
       height: 4.5rem;
+      /* .player-screen's base rule (and its 768px/480px breakpoint variants)
+         sets min-height: 26rem/18rem/14rem, which acts as a floor over the
+         `height` above - without clearing it here, the mini-player rendered
+         3-6x too tall and intercepted taps across the whole covered area. */
+      min-height: 0;
       display: flex;
       align-items: center;
       gap: .75rem;
@@ -382,11 +387,25 @@
       box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
     }
     #player-screen.mini-player .player-video-wrap {
+      /* Scoped to mini-player only (not a global .player-video-wrap rule):
+         this also establishes the positioning context so the absolutely
+         positioned <video> (inset:0) is confined to this 3.5rem box instead
+         of resolving against #player-screen itself. Giving .player-video-wrap
+         position:relative unconditionally would collapse it to 0 height in
+         the full-size player (it has no in-flow content and no explicit
+         size outside this mini-player rule), hiding the video entirely. */
+      position: relative;
       width: 3.5rem; height: 3.5rem; flex-shrink: 0; border-radius: .5rem; overflow: hidden;
     }
     #player-screen.mini-player .player-controls,
     #player-screen.mini-player .player-loader,
-    #player-screen.mini-player .player-art {
+    #player-screen.mini-player .player-art,
+    #player-screen.mini-player .play-center {
+      /* .play-center (the 4.5rem/72px central play button) is full-size-only
+         UI, same as the three from the brief - confirmed via live rendering
+         (agent-browser screenshot): with only those three hidden, the 72px
+         play-center button exactly filled the 72px-tall mini bar, since
+         neither of its dimensions is otherwise constrained here. */
       display: none;
     }
     #player-screen.player-hidden {
