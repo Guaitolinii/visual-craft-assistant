@@ -105,7 +105,7 @@
       display: flex; height: 5rem; align-items: center; gap: .75rem;
       border-bottom: 1px solid var(--border);
       background: color-mix(in oklab, var(--background) 92%, transparent);
-      padding: 0 2rem; backdrop-filter: blur(14px);
+      padding: calc(0 + env(safe-area-inset-top)) 2rem 0 2rem; backdrop-filter: blur(14px);
     }
     .menu-btn {
       display: none; background: none; border: none;
