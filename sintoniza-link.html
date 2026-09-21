@@ -1002,11 +1002,10 @@
 
   <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
   <div class="player-screen" id="player-screen">
-    <!-- Controles de tela cheia "de mentira" (só usados dentro do app nativo) -->
+    <!-- Controle único de tela cheia "de mentira" (só usado dentro do app
+         nativo) - mesmo botão/ícone do #fullscreen-btn compacto: sai da tela
+         cheia e desgira num só toque (ver toggleFullscreen()/Step 5 da task). -->
     <div class="fs-overlay-controls" id="fs-overlay-controls">
-      <button class="fs-overlay-btn" id="fs-rotate-btn" aria-label="Girar para retrato">
-        <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
-      </button>
       <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
         <i data-lucide="minimize" style="width:20px;height:20px"></i>
       </button>
@@ -3090,7 +3089,7 @@ function showFsControls() {
 }
 
 function enterPseudoFullscreen() {
-  document.getElementById("player-screen").classList.add("pseudo-fullscreen");
+  document.getElementById("player-screen").classList.add("pseudo-fullscreen", "rotated");
   showFsControls();
 }
 
@@ -3100,11 +3099,25 @@ function exitPseudoFullscreen() {
   document.getElementById("fs-overlay-controls").classList.remove("visible");
 }
 
+// Único botão (estilo YouTube) que entra em tela cheia E gira para paisagem
+// num só toque, e sai da tela cheia E desgira num só toque no sentido
+// inverso. Reflete o estado atual trocando o ícone maximize <-> minimize.
+function updateFullscreenBtnIcon() {
+  const btn = document.getElementById("fullscreen-btn");
+  if (!btn) return;
+  const el = document.getElementById("player-screen");
+  const isFullscreen = el.classList.contains("pseudo-fullscreen") || document.fullscreenElement === el;
+  btn.innerHTML = `<i data-lucide="${isFullscreen ? "minimize" : "maximize"}" style="width:20px;height:20px"></i>`;
+  btn.setAttribute("aria-label", isFullscreen ? "Sair da tela cheia" : "Tela cheia");
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
   if (isNativeApp()) {
     if (el.classList.contains("pseudo-fullscreen")) exitPseudoFullscreen();
     else enterPseudoFullscreen();
+    updateFullscreenBtnIcon();
     return;
   }
   if (document.fullscreenElement) { document.exitFullscreen(); }
@@ -4017,6 +4030,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Duplo clique no vídeo = fullscreen
   document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
 
+  // Navegador comum (Fullscreen API real): mantém o ícone do botão único
+  // sincronizado mesmo quando a saída da tela cheia é disparada fora do app
+  // (ex.: tecla Esc), já que nesse caminho não passamos por toggleFullscreen.
+  document.addEventListener("fullscreenchange", updateFullscreenBtnIcon);
+
   // Tocar na tela em modo tela-cheia-de-mentira reexibe os controles
   document.getElementById("player-screen").addEventListener("click", () => {
     if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
@@ -4032,14 +4050,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // #fs-exit-btn só fica visível enquanto .pseudo-fullscreen está ativo
+  // (regra CSS de .fs-overlay-controls), então passar por toggleFullscreen()
+  // sempre cai no ramo de saída - e já desgira e sincroniza o ícone do botão
+  // único (#fullscreen-btn), que fica coberto pelo overlay em tela cheia.
   document.getElementById("fs-exit-btn").addEventListener("click", e => {
     e.stopPropagation();
-    exitPseudoFullscreen();
-  });
-  document.getElementById("fs-rotate-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    document.getElementById("player-screen").classList.toggle("rotated");
-    showFsControls();
+    toggleFullscreen();
   });
 
   // ── VIEW TOGGLE ──
