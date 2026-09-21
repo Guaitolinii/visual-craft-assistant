@@ -69,7 +69,8 @@ export function loadVodHelpers() {
       "\nthis.buildVodStreamUrl = typeof buildVodStreamUrl !== 'undefined' ? buildVodStreamUrl : undefined;" +
       "\nthis.buildSeriesEpisodeUrl = typeof buildSeriesEpisodeUrl !== 'undefined' ? buildSeriesEpisodeUrl : undefined;" +
       "\nthis.xtreamApiUrl = typeof xtreamApiUrl !== 'undefined' ? xtreamApiUrl : undefined;" +
-      "\nthis.getContinueWatchingItems = typeof getContinueWatchingItems !== 'undefined' ? getContinueWatchingItems : undefined;",
+      "\nthis.getContinueWatchingItems = typeof getContinueWatchingItems !== 'undefined' ? getContinueWatchingItems : undefined;" +
+      "\nthis.computeDirectPlayRetryDelayMs = typeof computeDirectPlayRetryDelayMs !== 'undefined' ? computeDirectPlayRetryDelayMs : undefined;",
     context
   );
 

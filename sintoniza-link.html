@@ -2882,7 +2882,12 @@ async function playStream(url) {
   }
 }
 
-function tryDirectPlay(url, video) {
+function computeDirectPlayRetryDelayMs(attempt) {
+  return attempt === 1 ? 800 : 1800;
+}
+
+function tryDirectPlay(url, video, attempt) {
+  attempt = attempt || 1;
   video.src = url;
   video.play().then(() => {
     hidePlayerLoader();
@@ -2895,6 +2900,10 @@ function tryDirectPlay(url, video) {
     enableLiveBar();
     startWatchdog(url);
   }).catch(() => {
+    if (attempt < 3) {
+      setTimeout(() => tryDirectPlay(url, video, attempt + 1), computeDirectPlayRetryDelayMs(attempt));
+      return;
+    }
     hidePlayerLoader();
     showPlayerError("Formato não suportado ou erro de conexão (CORS).\nTente abrir o link diretamente ou use um reprodutor como VLC.");
   });
