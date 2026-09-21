@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,6 +16,9 @@
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      touch-action: pan-x pan-y;
+    }
     :root {
       --sidebar-w: 15.5rem;
       --background: oklch(0.975 0.008 75);
