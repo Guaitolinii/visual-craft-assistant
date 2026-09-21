@@ -334,6 +334,29 @@
       animation: spin 700ms linear infinite;
       color: var(--primary) !important;
     }
+    /* Barra de progresso do VOD (filmes/séries) - canais ao vivo não têm
+       duração total e nunca mostram isso (ver updateVodSeekVisibility()).
+       Fica em faixa própria, no mesmo tom escuro de .player-controls e logo
+       acima dela, formando junto uma única barra de ferramentas - no
+       espírito dos grandes apps de streaming (progresso em cima, botões
+       embaixo), sem copiar nenhum literalmente. */
+    .vod-seek-row {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .5rem 1rem 0; background: oklch(0.1 0.012 65); flex-shrink: 0;
+    }
+    .vod-seek-time {
+      font-size: .75rem; color: var(--muted-fg); min-width: 2.75rem;
+      text-align: center; font-variant-numeric: tabular-nums;
+    }
+    .vod-seek-bar { flex: 1; accent-color: var(--primary); cursor: pointer; }
+    /* Botões de voltar/avançar 10s (só VOD) reaproveitam .ctrl-btn - o selo
+       "10" sobre o ícone circular evita confundi-los com #reload-stream-btn,
+       que já usa o mesmo desenho (rotate-cw) para "recarregar transmissão". */
+    .ctrl-btn-skip { position: relative; }
+    .skip-badge {
+      position: absolute; bottom: .3rem; left: 50%; transform: translateX(-50%);
+      font-size: .5rem; font-weight: 700; line-height: 1; pointer-events: none;
+    }
 
     /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
        para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
@@ -1078,9 +1101,25 @@
       <section class="feature-layout">
         <!-- PLAYER -->
         <div class="player-stage" id="player-stage">
+          <!-- Seek bar do VOD: só aparece para filmes/séries (duração fixa) -
+               ver updateVodSeekVisibility(). Nunca aparece para canais ao
+               vivo, que não têm um total de duração. -->
+          <div class="vod-seek-row" id="vod-seek-row" style="display:none">
+            <span class="vod-seek-time" id="vod-seek-current">0:00</span>
+            <input type="range" class="vod-seek-bar" id="vod-seek-bar" min="0" max="100" value="0" step="0.1" aria-label="Progresso do vídeo" />
+            <span class="vod-seek-time" id="vod-seek-duration">0:00</span>
+          </div>
           <div class="player-controls">
+            <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
+              <i data-lucide="rotate-ccw" style="width:20px;height:20px"></i>
+              <span class="skip-badge">10</span>
+            </button>
             <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
               <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
+            </button>
+            <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
+              <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
+              <span class="skip-badge">10</span>
             </button>
             <button class="ctrl-btn" id="reload-stream-btn" aria-label="Recarregar canal" title="Recarregar transmissão atual" disabled>
               <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
@@ -2985,6 +3024,11 @@ function stopStream() {
   document.getElementById("live-bar").style.display = "none";
   document.getElementById("progress-fill").style.display = "none";
   document.getElementById("live-label").textContent = "";
+  // Zera a seek bar do VOD para não deixar a posição/tempo do vídeo
+  // anterior visível por um instante enquanto o próximo carrega.
+  document.getElementById("vod-seek-bar").value = 0;
+  document.getElementById("vod-seek-current").textContent = "0:00";
+  document.getElementById("vod-seek-duration").textContent = "0:00";
   document.getElementById("play-pause-btn").disabled = true;
   const reloadBtn = document.getElementById("reload-stream-btn");
   if (reloadBtn) {
@@ -3124,6 +3168,27 @@ function toggleFullscreen() {
   else if (el.requestFullscreen) { el.requestFullscreen(); }
 }
 
+// ─── Seek bar do VOD (filmes/séries) ───
+function formatSeekTime(seconds) {
+  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Mostra a faixa de progresso + botões de 10s só para filmes/séries -
+// canais ao vivo não têm duração total, então nunca fazem sentido aqui.
+// Chamada de dentro de renderPlayerInfo(), toda vez que _state.selected muda.
+function updateVodSeekVisibility() {
+  const isVod = !!(_state.selected && _state.selected.isVod);
+  const row = document.getElementById("vod-seek-row");
+  const backBtn = document.getElementById("vod-skip-back-btn");
+  const fwdBtn = document.getElementById("vod-skip-fwd-btn");
+  if (row) row.style.display = isVod ? "flex" : "none";
+  if (backBtn) backBtn.style.display = isVod ? "flex" : "none";
+  if (fwdBtn) fwdBtn.style.display = isVod ? "flex" : "none";
+}
+
 // ═══════════════════════════════════════════════════════════════
 // RENDER — PLAYER INFO
 // ═══════════════════════════════════════════════════════════════
@@ -3136,6 +3201,7 @@ function renderPlayerInfo() {
   document.getElementById("player-name").textContent     = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
+  updateVodSeekVisibility();
 
   // Logo no art
   const artLogo = document.getElementById("player-art-logo");
@@ -4026,6 +4092,36 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
+
+  // ── SEEK BAR / SKIP 10s (VOD) ──
+  // A faixa e os botões ficam escondidos (display:none) fora de VOD via
+  // updateVodSeekVisibility(), mas os listeners abaixo podem disparar mesmo
+  // com os elementos ocultos (ex.: arrasto residual) - por isso cada handler
+  // confere video.duration antes de mexer em currentTime.
+  document.getElementById("player-video").addEventListener("timeupdate", () => {
+    const video = document.getElementById("player-video");
+    const bar = document.getElementById("vod-seek-bar");
+    if (!bar || !isFinite(video.duration) || video.duration <= 0) return;
+    bar.value = (video.currentTime / video.duration) * 100;
+    document.getElementById("vod-seek-current").textContent = formatSeekTime(video.currentTime);
+    document.getElementById("vod-seek-duration").textContent = formatSeekTime(video.duration);
+  });
+
+  document.getElementById("vod-seek-bar").addEventListener("input", e => {
+    const video = document.getElementById("player-video");
+    if (!isFinite(video.duration) || video.duration <= 0) return;
+    video.currentTime = (Number(e.target.value) / 100) * video.duration;
+  });
+
+  document.getElementById("vod-skip-back-btn").addEventListener("click", () => {
+    const video = document.getElementById("player-video");
+    video.currentTime = Math.max(0, video.currentTime - 10);
+  });
+
+  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => {
+    const video = document.getElementById("player-video");
+    if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
+  });
 
   // Duplo clique no vídeo = fullscreen
   document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
