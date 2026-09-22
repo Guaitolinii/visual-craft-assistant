@@ -3823,6 +3823,17 @@ async function loadVodCatalog(vodType, creds) {
       fetch(xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: cat.category_id }))
         .then(res => res.json())
         .then(streams => {
+          // _vodCatalogCache is reassigned wholesale (not snapshotted) at
+          // the top of every loadVodCatalog call, and this closure reads
+          // that same shared variable - so if the usuário already trocou
+          // de aba (Filmes -> Séries) before this fetch resolved, writing
+          // now would leak the OLD tab's items into the NEW tab's cache
+          // under the old category_id key, where search/Novidades would
+          // pick them up since both flatten every key in itemsByCategory.
+          // Drop the write entirely rather than just skipping the DOM
+          // update, mirroring the same guard already applied below in the
+          // Novidades block.
+          if (_vodCatalogCache.vodType !== vodType) return;
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
           if (!Array.isArray(streams) || streams.length === 0) {
             _vodCatalogCache.itemsByCategory[cat.category_id] = [];
@@ -3844,6 +3855,7 @@ async function loadVodCatalog(vodType, creds) {
           }
         })
         .catch(() => {
+          if (_vodCatalogCache.vodType !== vodType) return; // ver comentário acima
           _vodCatalogCache.itemsByCategory[cat.category_id] = [];
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
           if (rowEl) rowEl.innerHTML = `<p class="vod-error">Erro ao carregar</p>`;
