@@ -126,6 +126,15 @@
       background: var(--background); padding: 1rem 0; margin: 0;
     }
     .sticky-search-container .search-box { margin: 0; max-width: 28rem; }
+    .category-pills {
+      display: flex; gap: .5rem; overflow-x: auto; margin-bottom: 1rem;
+      padding-bottom: .25rem; scrollbar-width: none;
+    }
+    .category-pills::-webkit-scrollbar { display: none; }
+    .category-pills .nav-item {
+      flex: 0 0 auto; width: auto; height: 2.2rem; white-space: nowrap;
+      border-radius: 999px; border: 1px solid var(--border); padding: 0 1rem;
+    }
     .icon-btn {
       background: none; border: none; color: var(--muted-fg);
       padding: .4rem; border-radius: .5rem; transition: background 140ms;
@@ -1322,6 +1331,7 @@
             </div>
           </div>
         </div>
+        <div class="category-pills" id="category-pills"></div>
         <div id="channel-container"></div>
       </section>
     </div>
@@ -3480,17 +3490,17 @@ function renderNav() {
   }
 }
 
+// Pílulas de categoria dentro da própria view de Canais (ver Task 7 do plano
+// de redesenho: a sidebar não lista mais uma categoria por item, então essa
+// navegação precisa continuar existindo em algum lugar - fica junto do
+// catálogo, igual "Ver todos" de Filmes/Séries já fica dentro da própria view).
 function renderCategoryNav() {
   const cats = _state.categories;
-  const label = document.getElementById("categories-label");
-  const nav   = document.getElementById("category-nav");
-  if (!label || !nav) return;
-  if (!cats.length) { label.style.display = "none"; nav.innerHTML = ""; return; }
-  label.style.display = "";
+  const nav = document.getElementById("category-pills");
+  if (!nav) return;
+  if (!cats.length) { nav.innerHTML = ""; return; }
   nav.innerHTML = cats.map(cat => `
-    <button class="nav-item" data-section="${cat}">
-      <i data-lucide="tv-2" style="width:19px;height:19px"></i><span>${cat}</span>
-    </button>`).join("");
+    <button class="nav-item" data-section="${cat}"><span>${cat}</span></button>`).join("");
   nav.querySelectorAll(".nav-item[data-section]").forEach(el => {
     el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); });
   });
@@ -3910,6 +3920,40 @@ function vodCardHtml(item, contType) {
     </button>`;
 }
 
+// Cartão da lista unificada "Acessados Recentemente" da tela Início - canais
+// usam data-channel-id (mesmo padrão de renderCatalog), filmes/séries
+// reaproveitam continueCardHtml (mesmo formato de item já usado no "Continue
+// Assistindo" de Filmes/Séries).
+function homeRecentCardHtml(item) {
+  if (item.type === "channel") {
+    const ch = getChannels().find(c => c.id === item.id);
+    if (!ch) return "";
+    return `
+      <button class="vod-card" data-channel-id="${ch.id}" tabindex="0">
+        <img src="${ch.logo || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+        <p>${ch.name || ""}</p>
+      </button>`;
+  }
+  return continueCardHtml(item);
+}
+
+function renderHomeRecents() {
+  const section = document.getElementById("home-recents-section");
+  const list = document.getElementById("home-recents-list");
+  if (!section || !list) return;
+  const continueMap = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const items = getUnifiedRecentItems(_state.recents, continueMap, 10)
+    .map(homeRecentCardHtml)
+    .filter(Boolean);
+  if (!items.length) {
+    section.style.display = "none";
+    list.innerHTML = "";
+    return;
+  }
+  section.style.display = "";
+  list.innerHTML = items.join("");
+}
+
 function setVodHero(item, vodType, creds) {
   const isSeries = vodType === "series";
   const title = item.name || item.title || "Título";
@@ -4230,6 +4274,7 @@ function render() {
   renderPlayerInfo();
   renderCatalog();
   renderOnNow();
+  renderHomeRecents();
   setPlayerMode();
 }
 
@@ -4372,8 +4417,14 @@ document.addEventListener("DOMContentLoaded", () => {
     playStream(ch.url);
   });
 
-  document.getElementById("mini-play-btn").addEventListener("click", () => document.getElementById("play-pause-btn").click());
-  document.getElementById("play-pause-btn").addEventListener("click", () => {
+  // Fatorado numa função nomeada (em vez de mini-play-btn disparar um
+  // .click() sintético em play-pause-btn) porque um .click() programático
+  // ainda dispara um evento real que borbulha até #player-screen - e lá tem
+  // um listener que expande o mini-player (setState({section:"catalog"}))
+  // em QUALQUER clique dentro dele. Chamar a função direto, com
+  // stopPropagation no clique real do usuário, evita que pausar/dar play
+  // pelo mini-player force essa navegação como efeito colateral.
+  function togglePlayPause() {
     const video = document.getElementById("player-video");
     if (!_state.playing) {
       const ch = _state.selected;
@@ -4382,6 +4433,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (video.paused) { video.play(); }
       else              { video.pause(); setState({ playing: false }); showPlayerArt(); }
     }
+  }
+  document.getElementById("mini-play-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePlayPause();
+  });
+  document.getElementById("play-pause-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePlayPause();
   });
 
   const reloadBtn = document.getElementById("reload-stream-btn");
@@ -4599,6 +4658,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
+
+  // "Acessados Recentemente" (Início): mesma delegação, mas também precisa
+  // tratar cartões de canal (data-channel-id), que os outros dois
+  // containers de VOD nunca contêm.
+  document.getElementById("home-recents-list").addEventListener("click", e => {
+    const channelCard = e.target.closest("[data-channel-id]");
+    if (channelCard) {
+      selectChannel(getChannels().find(c => c.id === +channelCard.dataset.channelId));
+      return;
+    }
+    onVodCardAreaClick(e);
+  });
 
   // ── BUSCA (Filmes/Séries) ──
   // Filtra client-side em tudo que já foi carregado nesta sessão de
