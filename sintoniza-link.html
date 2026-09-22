@@ -121,6 +121,11 @@
       color: var(--foreground); font-size: .9rem;
     }
     .search-clear { background: none; border: none; color: var(--muted-fg); display: flex; }
+    .sticky-search-container {
+      position: sticky; top: calc(5rem + env(safe-area-inset-top)); z-index: 25;
+      background: var(--background); padding: 1rem 0; margin: 0;
+    }
+    .sticky-search-container .search-box { margin: 0; max-width: 28rem; }
     .icon-btn {
       background: none; border: none; color: var(--muted-fg);
       padding: .4rem; border-radius: .5rem; transition: background 140ms;
@@ -999,6 +1004,7 @@
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
       .topbar { height: calc(4.3rem + env(safe-area-inset-top)); padding: calc(0px + env(safe-area-inset-top)) .8rem 0 .8rem; }
+      .sticky-search-container { top: calc(4.3rem + env(safe-area-inset-top)); }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
@@ -1133,13 +1139,7 @@
     <button class="menu-btn icon-btn" id="menu-btn" aria-label="Abrir menu">
       <i data-lucide="menu" style="width:22px;height:22px"></i>
     </button>
-    <label class="search-box" for="search-input">
-      <i data-lucide="search" style="width:19px;height:19px"></i>
-      <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
-      <button class="search-clear" id="search-clear" style="display:none" aria-label="Limpar busca">
-        <i data-lucide="x" style="width:16px;height:16px"></i>
-      </button>
-    </label>
+    <div style="flex:1"></div>
     <button class="icon-btn" aria-label="Notificações">
       <i data-lucide="bell" style="width:19px;height:19px"></i>
     </button>
@@ -1274,6 +1274,16 @@
         </div>
       </section>
 
+      <div class="sticky-search-container">
+        <label class="search-box" for="search-input">
+          <i data-lucide="search" style="width:19px;height:19px"></i>
+          <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
+          <button class="search-clear" id="search-clear" style="display:none" aria-label="Limpar busca">
+            <i data-lucide="x" style="width:16px;height:16px"></i>
+          </button>
+        </label>
+      </div>
+
       <!-- FEATURE LAYOUT -->
       <section class="feature-layout">
         <!-- PLAYER: #player-screen now renders above (persistent sibling) -
@@ -1328,13 +1338,15 @@
         </div>
       </section>
 
-      <label class="search-box vod-search-box" for="vod-search-input">
-        <i data-lucide="search" style="width:18px;height:18px"></i>
-        <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
-        <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
-          <i data-lucide="x" style="width:16px;height:16px"></i>
-        </button>
-      </label>
+      <div class="sticky-search-container">
+        <label class="search-box vod-search-box" for="vod-search-input">
+          <i data-lucide="search" style="width:18px;height:18px"></i>
+          <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
+          <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
+            <i data-lucide="x" style="width:16px;height:16px"></i>
+          </button>
+        </label>
+      </div>
 
       <section class="vod-hero" id="vod-hero" style="display:none">
         <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
