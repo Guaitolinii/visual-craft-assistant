@@ -121,6 +121,11 @@
       color: var(--foreground); font-size: .9rem;
     }
     .search-clear { background: none; border: none; color: var(--muted-fg); display: flex; }
+    .sticky-search-container {
+      position: sticky; top: calc(5rem + env(safe-area-inset-top)); z-index: 25;
+      background: var(--background); padding: 1rem 0; margin: 0;
+    }
+    .sticky-search-container .search-box { margin: 0; max-width: 28rem; }
     .icon-btn {
       background: none; border: none; color: var(--muted-fg);
       padding: .4rem; border-radius: .5rem; transition: background 140ms;
@@ -467,7 +472,6 @@
     #player-screen.mini-player .player-controls,
     #player-screen.mini-player .vod-seek-row,
     #player-screen.mini-player .player-loader,
-    #player-screen.mini-player .player-art,
     #player-screen.mini-player .play-center {
       /* .play-center (the 4.5rem/72px central play button) is full-size-only
          UI, same as the three from the brief - confirmed via live rendering
@@ -478,6 +482,53 @@
          toggled via inline style (element.style.display) elsewhere, which
          otherwise wins over this rule regardless of source order. */
       display: none !important;
+    }
+    #player-screen.mini-player .player-art {
+      display: flex !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      position: static;
+      flex: 1;
+      padding: 0;
+      background: none;
+      align-items: center;
+    }
+    #player-screen.mini-player .signal-lines,
+    #player-screen.mini-player .channel-monogram,
+    #player-screen.mini-player .player-art-logo {
+      display: none !important;
+    }
+    #player-screen.mini-player .player-copy {
+      display: flex !important;
+      flex-direction: column;
+      justify-content: center;
+      overflow: hidden;
+      margin-left: .75rem;
+    }
+    #player-screen.mini-player .player-copy h2 {
+      font-size: .85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 0;
+    }
+    #player-screen.mini-player .player-copy p,
+    #player-screen.mini-player .live-badge {
+      display: none !important;
+    }
+    .mini-play-btn { display: none; }
+    #player-screen.mini-player .mini-play-btn {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      background: none;
+      border: none;
+      color: white;
+      margin-left: auto;
+      margin-right: .5rem;
+      cursor: pointer;
     }
     #player-screen.player-hidden {
       display: none;
@@ -953,6 +1004,7 @@
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
       .topbar { height: calc(4.3rem + env(safe-area-inset-top)); padding: calc(0px + env(safe-area-inset-top)) .8rem 0 .8rem; }
+      .sticky-search-container { top: calc(4.3rem + env(safe-area-inset-top)); }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
@@ -967,7 +1019,7 @@
       .sidebar-scrim.open { display: block; }
       .mobile-tabs {
         position: fixed; inset: auto 0 0; z-index: 32;
-        display: grid; grid-template-columns: repeat(4, 1fr);
+        display: grid; grid-template-columns: repeat(5, 1fr);
         /* Additive, same pattern as .topbar's top inset: the base 4.3rem bar
            height is preserved and env(safe-area-inset-bottom) grows the box
            on top of it (height), while the matching padding-bottom keeps the
@@ -990,10 +1042,10 @@
       #player-screen.mini-player { bottom: calc(4.3rem + env(safe-area-inset-bottom)); }
       .mobile-tabs button {
         display: grid; place-items: center; align-content: center;
-        gap: .22rem; background: none; border: none;
-        color: var(--muted-fg); font-size: .65rem;
+        gap: .15rem; background: none; border: none;
+        color: var(--muted-fg); font-size: .6rem;
       }
-      .mobile-tabs svg { width: 1.3rem; height: 1.3rem; }
+      .mobile-tabs svg { width: 1.2rem; height: 1.2rem; }
       .mobile-tabs .active { color: var(--primary); }
       .settings-content { padding: 1.5rem 1rem 0; }
       .vol-slider { width: 3.5rem; }
@@ -1033,20 +1085,7 @@
   <nav class="sidebar-nav" aria-label="Navegação principal">
     <span class="nav-label">CATÁLOGO</span>
     <button class="nav-item active" data-section="Início">
-      <i data-lucide="home" style="width:19px;height:19px"></i><span>Início</span>
-    </button>
-    <button class="nav-item" data-section="Favoritos">
-      <i data-lucide="heart" style="width:19px;height:19px"></i><span>Favoritos</span>
-      <span class="nav-count" id="fav-count" style="display:none"></span>
-    </button>
-    <button class="nav-item" data-section="Recentes">
-      <i data-lucide="clock-3" style="width:19px;height:19px"></i><span>Recentes</span>
-      <span class="nav-count" id="recent-count" style="display:none"></span>
-    </button>
-    <span class="nav-label" id="categories-label" style="display:none">CATEGORIAS</span>
-    <div id="category-nav"></div>
-    <button class="nav-item" data-section="Todos os canais" id="nav-todos">
-      <i data-lucide="list-video" style="width:19px;height:19px"></i><span>Todos os canais</span>
+      <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
 
     <!-- Filmes/Séries: só aparece quando há credenciais Xtream salvas em
@@ -1087,13 +1126,7 @@
     <button class="menu-btn icon-btn" id="menu-btn" aria-label="Abrir menu">
       <i data-lucide="menu" style="width:22px;height:22px"></i>
     </button>
-    <label class="search-box" for="search-input">
-      <i data-lucide="search" style="width:19px;height:19px"></i>
-      <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
-      <button class="search-clear" id="search-clear" style="display:none" aria-label="Limpar busca">
-        <i data-lucide="x" style="width:16px;height:16px"></i>
-      </button>
-    </label>
+    <div style="flex:1"></div>
     <button class="icon-btn" aria-label="Notificações">
       <i data-lucide="bell" style="width:19px;height:19px"></i>
     </button>
@@ -1126,6 +1159,9 @@
           <h2 id="player-name">Nenhum canal selecionado</h2>
           <p id="player-status">Escolha um canal abaixo</p>
         </div>
+        <button class="mini-play-btn" id="mini-play-btn" aria-label="Reproduzir/Pausar">
+          <i data-lucide="play" style="width:20px;height:20px" id="mini-play-icon"></i>
+        </button>
       </div>
       <!-- Vídeo real -->
       <div class="player-video-wrap">
@@ -1225,6 +1261,16 @@
         </div>
       </section>
 
+      <div class="sticky-search-container">
+        <label class="search-box" for="search-input">
+          <i data-lucide="search" style="width:19px;height:19px"></i>
+          <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
+          <button class="search-clear" id="search-clear" style="display:none" aria-label="Limpar busca">
+            <i data-lucide="x" style="width:16px;height:16px"></i>
+          </button>
+        </label>
+      </div>
+
       <!-- FEATURE LAYOUT -->
       <section class="feature-layout">
         <!-- PLAYER: #player-screen now renders above (persistent sibling) -
@@ -1244,6 +1290,18 @@
           </div>
           <div class="now-list" id="now-list"></div>
         </aside>
+      </section>
+
+      <!-- HOME RECENTS -->
+      <section id="home-recents-section" style="display:none; padding-top: 1rem;">
+        <div class="section-heading" style="margin-bottom: 1rem;">
+          <div>
+            <p class="eyebrow">CONTINUE ASSISTINDO</p>
+            <h2>Acessados Recentemente</h2>
+          </div>
+        </div>
+        <div id="home-recents-list" style="display:grid; gap:.75rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));">
+        </div>
       </section>
 
       <!-- CATALOG -->
@@ -1279,13 +1337,15 @@
         </div>
       </section>
 
-      <label class="search-box vod-search-box" for="vod-search-input">
-        <i data-lucide="search" style="width:18px;height:18px"></i>
-        <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
-        <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
-          <i data-lucide="x" style="width:16px;height:16px"></i>
-        </button>
-      </label>
+      <div class="sticky-search-container">
+        <label class="search-box vod-search-box" for="vod-search-input">
+          <i data-lucide="search" style="width:18px;height:18px"></i>
+          <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
+          <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
+            <i data-lucide="x" style="width:16px;height:16px"></i>
+          </button>
+        </label>
+      </div>
 
       <section class="vod-hero" id="vod-hero" style="display:none">
         <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
@@ -1464,10 +1524,13 @@
     <i data-lucide="heart"></i><span>Favoritos</span>
   </button>
   <button data-section="Todos os canais" class="mobile-tab">
-    <i data-lucide="list-video"></i><span>Canais</span>
+    <i data-lucide="monitor-play"></i><span>Canais</span>
   </button>
-  <button id="mob-menu">
-    <i data-lucide="menu"></i><span>Mais</span>
+  <button class="mobile-tab" data-vod-view="series">
+    <i data-lucide="tv"></i><span>Séries</span>
+  </button>
+  <button class="mobile-tab" data-vod-view="movies">
+    <i data-lucide="film"></i><span>Filmes</span>
   </button>
 </nav>
 
@@ -1877,7 +1940,9 @@ let _state = {
   playing:   false,
   muted:     false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
-  recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]"),
+  recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]").map((item, i) =>
+    typeof item === "string" ? { id: item, type: "channel", ts: Date.now() - i * 1000 } : item
+  ),
   loadingPlaylist: false,
   vodType:   "movies",    // "movies" | "series" - sub-aba ativa em Filmes/Séries
 };
@@ -1913,7 +1978,8 @@ function selectChannel(ch, autoPlay = true) {
     connectionEffectiveType: navigator.connection && navigator.connection.effectiveType,
     stagesLength: BUFFER_STAGES.length,
   });
-  const recents = [ch.id, ..._state.recents.filter(id => id !== ch.id)].slice(0, 8);
+  const now = Date.now();
+  const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
   localStorage.setItem("sint_recents", JSON.stringify(recents));
   stopStream();
@@ -1977,7 +2043,7 @@ function visibleChannels() {
     let matchS = false;
     if (!query) {
       if (active === "Início" || active === "Todos os canais") matchS = true;
-      else if (active === "Recentes")  matchS = recents.includes(ch.id);
+      else if (active === "Recentes")  matchS = recents.some(r => r.id === ch.id);
       else if (active === "Favoritos") matchS = isFav(ch);
       else                             matchS = ch.category === active;
     } else {
@@ -3139,6 +3205,7 @@ function showPlayerArt()  {
   document.getElementById("player-video").classList.remove("active");
   document.getElementById("play-center-btn").classList.remove("hidden");
   document.getElementById("play-pause-icon").setAttribute("data-lucide","play");
+  document.getElementById("mini-play-icon").setAttribute("data-lucide","play");
   lucide.createIcons();
 }
 function showPlayerVideo() {
@@ -3146,6 +3213,7 @@ function showPlayerVideo() {
   document.getElementById("player-video").classList.add("active");
   document.getElementById("play-center-btn").classList.add("hidden");
   document.getElementById("play-pause-icon").setAttribute("data-lucide","pause");
+  document.getElementById("mini-play-icon").setAttribute("data-lucide","pause");
   lucide.createIcons();
 }
 function showPlayerLoader() {
@@ -3394,21 +3462,29 @@ function renderNav() {
   document.querySelectorAll(".nav-item[data-vod-view]").forEach(el => {
     el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
   });
+  document.querySelectorAll(".mobile-tab[data-vod-view]").forEach(el => {
+    el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
+  });
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
   const fc = document.getElementById("fav-count");
-  fc.textContent    = favCount || "";
-  fc.style.display  = favCount ? "" : "none";
+  if (fc) {
+    fc.textContent    = favCount || "";
+    fc.style.display  = favCount ? "" : "none";
+  }
   // Conta recentes
   const rc = document.getElementById("recent-count");
-  rc.textContent    = recents.length || "";
-  rc.style.display  = recents.length ? "" : "none";
+  if (rc) {
+    rc.textContent    = recents.length || "";
+    rc.style.display  = recents.length ? "" : "none";
+  }
 }
 
 function renderCategoryNav() {
   const cats = _state.categories;
   const label = document.getElementById("categories-label");
   const nav   = document.getElementById("category-nav");
+  if (!label || !nav) return;
   if (!cats.length) { label.style.display = "none"; nav.innerHTML = ""; return; }
   label.style.display = "";
   nav.innerHTML = cats.map(cat => `
@@ -3696,6 +3772,16 @@ function getContinueWatchingItems(continueMap, type) {
     .map(k => continueMap[k])
     .sort((a, b) => b.ts - a.ts)
     .filter(item => item.type === type);
+}
+
+function getUnifiedRecentItems(channelRecents, continueMap, limit) {
+  const vodRecents = Object.keys(continueMap).map(k => ({
+    ...continueMap[k],
+    id: continueMap[k].id || continueMap[k].stream_id || continueMap[k].series_id
+  }));
+  return [...channelRecents, ...vodRecents]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, limit);
 }
 
 // Escapa texto do usuário antes de embuti-lo em innerHTML (usado na mensagem
@@ -4040,7 +4126,7 @@ async function openVodModal(item, vodType, creds) {
 
     epsContainer.innerHTML = episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}">
+      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}" data-series-cover="${(item.stream_icon || item.cover || '').replace(/"/g, "&quot;")}">
         <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>`;
@@ -4057,9 +4143,9 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-function playEpisode(episodeId, containerExtension, title, creds) {
+function playEpisode(episodeId, containerExtension, title, creds, cover) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
-  playVodSelection(url, { id: episodeId, contType: "series", title, cover: null });
+  playVodSelection(url, { id: episodeId, contType: "series", title, cover: cover || null });
 }
 
 // Ponto único de reprodução de VOD: reaproveita o mesmo player (playStream)
@@ -4246,7 +4332,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── SIDEBAR ──
   document.getElementById("menu-btn").addEventListener("click", openSidebar);
-  document.getElementById("mob-menu").addEventListener("click", openSidebar);
   document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
   document.getElementById("sidebar-scrim").addEventListener("click", closeSidebar);
 
@@ -4287,6 +4372,7 @@ document.addEventListener("DOMContentLoaded", () => {
     playStream(ch.url);
   });
 
+  document.getElementById("mini-play-btn").addEventListener("click", () => document.getElementById("play-pause-btn").click());
   document.getElementById("play-pause-btn").addEventListener("click", () => {
     const video = document.getElementById("player-video");
     if (!_state.playing) {
@@ -4382,6 +4468,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Duplo clique no vídeo = fullscreen
+  let _lastVideoTapTs = 0;
+  document.getElementById("player-video").addEventListener("click", () => {
+    const now = Date.now();
+    if (now - _lastVideoTapTs < 350) {
+      toggleFullscreen();
+      _lastVideoTapTs = 0; // avoid a third tap re-triggering immediately
+    } else {
+      _lastVideoTapTs = now;
+    }
+  });
   document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
 
   // Navegador comum (Fullscreen API real): mantém o ícone do botão único
@@ -4484,9 +4580,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
       const rowEl = document.getElementById(`vod-carousel-${catId}`);
       if (!rowEl) return;
-      rowEl.className = "vod-carousel-grid";
-      rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
-      seeAllBtn.remove(); // já expandido, o botão não tem mais função
+
+      if (seeAllBtn.dataset.expanded) {
+        rowEl.className = "vod-carousel";
+        rowEl.innerHTML = items.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
+        seeAllBtn.textContent = "Ver todos";
+        delete seeAllBtn.dataset.expanded;
+        seeAllBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        rowEl.className = "vod-carousel-grid";
+        rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
+        seeAllBtn.textContent = "Recolher";
+        seeAllBtn.dataset.expanded = "true";
+      }
       return;
     }
     onVodCardAreaClick(e);
@@ -4555,7 +4661,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds);
+    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds, btn.dataset.seriesCover);
   });
 
   // "Continue Assistindo": salva o progresso do que estiver tocando (só para
