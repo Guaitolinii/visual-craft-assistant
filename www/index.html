@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,6 +16,9 @@
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      touch-action: pan-x pan-y;
+    }
     :root {
       --sidebar-w: 15.5rem;
       --background: oklch(0.975 0.008 75);
@@ -102,7 +105,7 @@
       display: flex; height: 5rem; align-items: center; gap: .75rem;
       border-bottom: 1px solid var(--border);
       background: color-mix(in oklab, var(--background) 92%, transparent);
-      padding: 0 2rem; backdrop-filter: blur(14px);
+      padding: calc(0px + env(safe-area-inset-top)) 2rem 0 2rem; backdrop-filter: blur(14px);
     }
     .menu-btn {
       display: none; background: none; border: none;
@@ -158,17 +161,35 @@
     .feature-layout {
       display: grid; grid-template-columns: minmax(0, 1fr) 20rem;
       gap: 1rem; margin-top: 2rem;
+      /* #player-screen (video + controls) lives outside .feature-layout
+         entirely now (persistent sibling of .topbar/.view - see markup and
+         mini-player below), so .player-stage right below is a permanently
+         empty placeholder, kept only so .on-now still lands in grid column 2
+         instead of collapsing into column 1. align-items:start is still
+         required for that empty placeholder: grid's default stretch would
+         otherwise inflate it to match .on-now's height, rendering as a tall
+         empty rounded box next to the sidebar. Not dead - still load-bearing. */
+      align-items: start;
     }
 
     /* ════════════ PLAYER ════════════ */
-    .player-stage {
+    /* Empty placeholder - see .feature-layout comment above. */
+    .player-stage {}
+    /* #player-screen: the actual persistent player (video + controls),
+       rendered as a sibling of .topbar/.view so it survives navigation
+       between Channels/VOD/Séries and can dock as a mini-player. Card
+       framing (radius/shadow/margin) lives on the id rule below; only the
+       mini-player/pseudo-fullscreen states override it back to a flat/edge-
+       to-edge bar. */
+    #player-screen {
+      display: flex; flex-direction: column;
       overflow: hidden; border-radius: .5rem;
       background: oklch(0.08 0.01 65);
       box-shadow: 0 18px 45px oklch(0.2 0.03 65 / 14%);
-      display: flex; flex-direction: column;
+      margin: 1.5rem 2rem 0;
     }
     /* Área visual com art/vídeo — altura fixa */
-    .player-screen {
+    .player-media {
       position: relative;
       min-height: 26rem;
       background: oklch(0.06 0.01 65);
@@ -326,6 +347,29 @@
       animation: spin 700ms linear infinite;
       color: var(--primary) !important;
     }
+    /* Barra de progresso do VOD (filmes/séries) - canais ao vivo não têm
+       duração total e nunca mostram isso (ver updateVodSeekVisibility()).
+       Fica em faixa própria, no mesmo tom escuro de .player-controls e logo
+       acima dela, formando junto uma única barra de ferramentas - no
+       espírito dos grandes apps de streaming (progresso em cima, botões
+       embaixo), sem copiar nenhum literalmente. */
+    .vod-seek-row {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .5rem 1rem 0; background: oklch(0.1 0.012 65); flex-shrink: 0;
+    }
+    .vod-seek-time {
+      font-size: .75rem; color: var(--muted-fg); min-width: 2.75rem;
+      text-align: center; font-variant-numeric: tabular-nums;
+    }
+    .vod-seek-bar { flex: 1; accent-color: var(--primary); cursor: pointer; }
+    /* Botões de voltar/avançar 10s (só VOD) reaproveitam .ctrl-btn - o selo
+       "10" sobre o ícone circular evita confundi-los com #reload-stream-btn,
+       que já usa o mesmo desenho (rotate-cw) para "recarregar transmissão". */
+    .ctrl-btn-skip { position: relative; }
+    .skip-badge {
+      position: absolute; bottom: .3rem; left: 50%; transform: translateX(-50%);
+      font-size: .5rem; font-weight: 700; line-height: 1; pointer-events: none;
+    }
 
     /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
        para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
@@ -336,6 +380,18 @@
        Fullscreen API de verdade. */
     #player-screen.pseudo-fullscreen {
       position: fixed; inset: 0; z-index: 9999; background: #000;
+      /* The base #player-screen rule (card framing) sets a margin and rounded
+         corners meant for the full-size card - both must be cleared here so
+         the fixed inset:0 box truly covers the whole screen edge-to-edge. */
+      margin: 0; border-radius: 0; box-shadow: none;
+    }
+    /* .player-controls/.vod-seek-row now live inside #player-screen (see
+       markup) - hidden here to preserve the pre-existing pseudo-fullscreen
+       behavior (video only + the floating .fs-overlay-controls exit button),
+       same as before they were moved in. */
+    #player-screen.pseudo-fullscreen .player-controls,
+    #player-screen.pseudo-fullscreen .vod-seek-row {
+      display: none;
     }
     #player-screen.pseudo-fullscreen #player-video {
       width: 100%; height: 100%; object-fit: contain;
@@ -358,6 +414,70 @@
       display: flex; align-items: center; justify-content: center;
       background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
       backdrop-filter: blur(8px);
+    }
+    /* Mini-player: quando algo está tocando mas a seção ativa não é "catalog" */
+    #player-screen.mini-player {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 500;
+      height: 4.5rem;
+      /* .player-media's base rule (and its 768px/480px breakpoint variants)
+         sets min-height: 26rem/18rem/14rem, which acts as a floor over the
+         `height` above - without clearing it here, the mini-player rendered
+         3-6x too tall and intercepted taps across the whole covered area. */
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: .75rem;
+      padding: 0 1rem;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
+      /* Clear the full-size card's framing (margin/rounded corners) so the
+         mini-player stays a flat, edge-to-edge docked bar. */
+      margin: 0; border-radius: 0;
+    }
+    #player-screen.mini-player .player-media {
+      /* .player-media's base rule sets min-height:26rem, flex:1 and its own
+         dark background - all sized for the full-size video card. Now that
+         .player-controls/.vod-seek-row are #player-screen's siblings of
+         .player-media (not .player-media's own siblings), .player-media is
+         the flex item taking the mini bar's remaining row space - without
+         resetting these, it stretched full-width as a tall dark rectangle,
+         the same class of bug already fixed once below for .player-video-wrap. */
+      position: relative;
+      min-height: 0;
+      flex: 0 0 auto;
+      background: transparent;
+      overflow: visible;
+    }
+    #player-screen.mini-player .player-video-wrap {
+      /* Scoped to mini-player only (not a global .player-video-wrap rule):
+         this also establishes the positioning context so the absolutely
+         positioned <video> (inset:0) is confined to this 3.5rem box instead
+         of resolving against .player-media/#player-screen. Giving
+         .player-video-wrap position:relative unconditionally would collapse
+         it to 0 height in the full-size player (it has no in-flow content
+         and no explicit size outside this mini-player rule), hiding the
+         video entirely. */
+      position: relative;
+      width: 3.5rem; height: 3.5rem; flex-shrink: 0; border-radius: .5rem; overflow: hidden;
+    }
+    #player-screen.mini-player .player-controls,
+    #player-screen.mini-player .vod-seek-row,
+    #player-screen.mini-player .player-loader,
+    #player-screen.mini-player .player-art,
+    #player-screen.mini-player .play-center {
+      /* .play-center (the 4.5rem/72px central play button) is full-size-only
+         UI, same as the three from the brief - confirmed via live rendering
+         (agent-browser screenshot): with only those three hidden, the 72px
+         play-center button exactly filled the 72px-tall mini bar, since
+         neither of its dimensions is otherwise constrained here. */
+      display: none;
+    }
+    #player-screen.player-hidden {
+      display: none;
     }
     .live-line {
       height: 3px; flex: 1; min-width: 3rem; border-radius: 9px;
@@ -649,19 +769,34 @@
       font-size: 1rem; color: oklch(0.85 0.01 75); line-height: 1.5; margin-bottom: 1.25rem;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
+    .vod-search-box { max-width: 28rem; margin: 1.25rem 0 0; }
     .vod-row { margin-bottom: 2rem; }
     .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+    .vod-row-header {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem;
+    }
+    .vod-row-header h2 { margin-bottom: 0; }
+    .vod-see-all {
+      background: none; border: none; color: var(--muted-fg); font-size: .8rem; font-weight: 600;
+      padding: .3rem .5rem; border-radius: .4rem; transition: background 140ms, color 140ms; flex-shrink: 0;
+    }
+    .vod-see-all:hover { background: var(--secondary); color: var(--primary); }
     .vod-carousel {
       display: flex; gap: 1rem; overflow-x: auto; padding-bottom: .75rem; scroll-snap-type: x mandatory;
     }
     .vod-carousel::-webkit-scrollbar { height: 6px; }
     .vod-carousel::-webkit-scrollbar-track { background: transparent; }
     .vod-carousel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    .vod-carousel-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+      gap: 1rem 1rem; padding-bottom: .75rem;
+    }
     .vod-card {
       min-width: 9.5rem; width: 9.5rem; flex-shrink: 0; text-align: left;
       background: none; border: none; padding: 0; scroll-snap-align: start;
       color: inherit; transition: transform 180ms;
     }
+    .vod-carousel-grid .vod-card { min-width: 0; width: 100%; }
     .vod-card:hover { transform: translateY(-4px); }
     .vod-card img {
       width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
@@ -814,12 +949,13 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
-      .topbar { height: 4.3rem; padding: 0 .8rem; }
+      .topbar { height: 4.3rem; padding: calc(0px + env(safe-area-inset-top)) .8rem 0 .8rem; }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
       .status-pill { display: none; }
-      .player-screen { min-height: 18rem; }
+      #player-screen { margin: 1rem 1rem 0; }
+      .player-media { min-height: 18rem; }
       .channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
       .channel-logo { height: 6.5rem; }
       .skel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -829,10 +965,26 @@
       .mobile-tabs {
         position: fixed; inset: auto 0 0; z-index: 32;
         display: grid; grid-template-columns: repeat(4, 1fr);
-        height: 4.3rem; border-top: 1px solid var(--border);
+        /* Additive, same pattern as .topbar's top inset: the base 4.3rem bar
+           height is preserved and env(safe-area-inset-bottom) grows the box
+           on top of it (height), while the matching padding-bottom keeps the
+           buttons themselves centered in that original 4.3rem zone - the
+           inset becomes pure gutter above the home indicator instead of
+           squeezing the icons. Resolves to plain 4.3rem/0 with no visual
+           change on non-notched devices (Android, desktop), where the env()
+           value is 0. */
+        height: calc(4.3rem + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        border-top: 1px solid var(--border);
         background: color-mix(in oklab, var(--card) 94%, transparent);
         backdrop-filter: blur(14px);
       }
+      /* Sem isso, o mini-player (bottom:0) cobriria totalmente a barra de
+         abas fixa, impedindo a navegação enquanto algo toca - o oposto do
+         que este pedido do usuário quer. Additive env(safe-area-inset-bottom)
+         so the mini-player still docks flush above the tab bar even when the
+         bar grows taller to clear the home indicator. */
+      #player-screen.mini-player { bottom: calc(4.3rem + env(safe-area-inset-bottom)); }
       .mobile-tabs button {
         display: grid; place-items: center; align-content: center;
         gap: .22rem; background: none; border: none;
@@ -850,7 +1002,7 @@
     }
     @media (max-width: 480px) {
       .channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .player-screen { min-height: 14rem; }
+      .player-media { min-height: 14rem; }
       .welcome-row h1 { font-size: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -944,6 +1096,116 @@
     </button>
   </header>
 
+  <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
+  <div id="player-screen">
+    <!-- .player-media: video area only (art/video/loader/error/debug/play
+         button) - kept separate from #player-screen so the absolutely
+         positioned elements inside it (inset:0) fill just this flex:1 media
+         box, not the whole card including .vod-seek-row/.player-controls
+         below. #player-screen itself carries the card framing (radius/
+         shadow/margin) and stacks .player-media above the controls. -->
+    <div class="player-media">
+      <!-- Controle único de tela cheia "de mentira" (só usado dentro do app
+           nativo) - mesmo botão/ícone do #fullscreen-btn compacto: sai da tela
+           cheia e desgira num só toque (ver toggleFullscreen()/Step 5 da task). -->
+      <div class="fs-overlay-controls" id="fs-overlay-controls">
+        <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
+          <i data-lucide="minimize" style="width:20px;height:20px"></i>
+        </button>
+      </div>
+      <!-- Art (visível antes de reproduzir) -->
+      <div class="player-art" id="player-art">
+        <div class="signal-lines"></div>
+        <div class="channel-monogram" id="player-monogram"></div>
+        <img id="player-art-logo" class="player-art-logo" alt="" style="display:none" />
+        <div class="player-copy">
+          <span class="live-badge" id="player-badge">● AO VIVO</span>
+          <h2 id="player-name">Nenhum canal selecionado</h2>
+          <p id="player-status">Escolha um canal abaixo</p>
+        </div>
+      </div>
+      <!-- Vídeo real -->
+      <div class="player-video-wrap">
+        <video id="player-video" class="player-video" playsinline></video>
+      </div>
+      <!-- Loader -->
+      <div class="player-loader" id="player-loader">
+        <div class="spinner"></div>
+        <p>Conectando ao canal...</p>
+      </div>
+      <!-- Overlay de erro -->
+      <div class="player-error" id="player-error">
+        <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
+        <h3>Não foi possível reproduzir</h3>
+        <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
+        <button class="retry-btn" id="retry-btn">Tentar novamente</button>
+      </div>
+      <!-- Monitor Panel / Telemetria -->
+      <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
+        <div class="debug-header">
+          <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
+          <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
+        </div>
+        <div class="debug-grid">
+          <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
+          <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
+          <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
+          <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
+          <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
+          <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
+        </div>
+      </div>
+      <!-- Botão play central -->
+      <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
+        <i data-lucide="play" style="width:28px;height:28px"></i>
+      </button>
+    </div><!-- /player-media -->
+    <!-- Seek bar do VOD: só aparece para filmes/séries (duração fixa) -
+         ver updateVodSeekVisibility(). Nunca aparece para canais ao
+         vivo, que não têm um total de duração. -->
+    <div class="vod-seek-row" id="vod-seek-row" style="display:none">
+      <span class="vod-seek-time" id="vod-seek-current">0:00</span>
+      <input type="range" class="vod-seek-bar" id="vod-seek-bar" min="0" max="100" value="0" step="0.1" aria-label="Progresso do vídeo" />
+      <span class="vod-seek-time" id="vod-seek-duration">0:00</span>
+    </div>
+    <div class="player-controls">
+      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
+        <i data-lucide="rotate-ccw" style="width:20px;height:20px"></i>
+        <span class="skip-badge">10</span>
+      </button>
+      <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
+        <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
+      </button>
+      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
+        <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
+        <span class="skip-badge">10</span>
+      </button>
+      <button class="ctrl-btn" id="reload-stream-btn" aria-label="Recarregar canal" title="Recarregar transmissão atual" disabled>
+        <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
+      </button>
+      <button class="ctrl-btn" id="debug-toggle-btn" aria-label="Estatísticas do Stream" title="Painel de Monitoramento / Telemetria">
+        <i data-lucide="activity" style="width:20px;height:20px"></i>
+      </button>
+      <button class="ctrl-btn" id="mute-btn" aria-label="Silenciar/Dessilenciar">
+        <i data-lucide="volume-2" style="width:20px;height:20px" id="mute-icon"></i>
+      </button>
+      <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
+      <div class="live-line">
+        <div class="live-bar" id="live-bar" style="display:none"></div>
+        <div class="progress-fill" id="progress-fill" style="width:0;display:none"></div>
+      </div>
+      <span id="live-label" class="live-label"></span>
+      <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
+        <option value="contain">Original</option>
+        <option value="cover">Preencher</option>
+        <option value="fill">Esticar</option>
+      </select>
+      <button class="ctrl-btn" aria-label="Tela cheia" id="fullscreen-btn">
+        <i data-lucide="maximize" style="width:20px;height:20px"></i>
+      </button>
+    </div>
+  </div><!-- /player-screen -->
+
   <!-- ══ CATALOG VIEW ══ -->
   <div class="view" id="catalog-view">
     <div class="content-shell">
@@ -962,93 +1224,11 @@
 
       <!-- FEATURE LAYOUT -->
       <section class="feature-layout">
-        <!-- PLAYER -->
-        <div class="player-stage" id="player-stage">
-          <div class="player-screen" id="player-screen">
-            <!-- Controles de tela cheia "de mentira" (só usados dentro do app nativo) -->
-            <div class="fs-overlay-controls" id="fs-overlay-controls">
-              <button class="fs-overlay-btn" id="fs-rotate-btn" aria-label="Girar para retrato">
-                <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
-              </button>
-              <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
-                <i data-lucide="minimize" style="width:20px;height:20px"></i>
-              </button>
-            </div>
-            <!-- Art (visível antes de reproduzir) -->
-            <div class="player-art" id="player-art">
-              <div class="signal-lines"></div>
-              <div class="channel-monogram" id="player-monogram"></div>
-              <img id="player-art-logo" class="player-art-logo" alt="" style="display:none" />
-              <div class="player-copy">
-                <span class="live-badge" id="player-badge">● AO VIVO</span>
-                <h2 id="player-name">Nenhum canal selecionado</h2>
-                <p id="player-status">Escolha um canal abaixo</p>
-              </div>
-            </div>
-            <!-- Vídeo real -->
-            <video id="player-video" class="player-video" playsinline></video>
-            <!-- Loader -->
-            <div class="player-loader" id="player-loader">
-              <div class="spinner"></div>
-              <p>Conectando ao canal...</p>
-            </div>
-            <!-- Overlay de erro -->
-            <div class="player-error" id="player-error">
-              <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
-              <h3>Não foi possível reproduzir</h3>
-              <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
-              <button class="retry-btn" id="retry-btn">Tentar novamente</button>
-            </div>
-            <!-- Monitor Panel / Telemetria -->
-            <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
-              <div class="debug-header">
-                <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
-                <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
-              </div>
-              <div class="debug-grid">
-                <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
-                <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
-                <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
-                <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
-                <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
-                <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
-              </div>
-            </div>
-            <!-- Botão play central -->
-            <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
-              <i data-lucide="play" style="width:28px;height:28px"></i>
-            </button>
-          </div>
-
-          <div class="player-controls">
-            <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
-              <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
-            </button>
-            <button class="ctrl-btn" id="reload-stream-btn" aria-label="Recarregar canal" title="Recarregar transmissão atual" disabled>
-              <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
-            </button>
-            <button class="ctrl-btn" id="debug-toggle-btn" aria-label="Estatísticas do Stream" title="Painel de Monitoramento / Telemetria">
-              <i data-lucide="activity" style="width:20px;height:20px"></i>
-            </button>
-            <button class="ctrl-btn" id="mute-btn" aria-label="Silenciar/Dessilenciar">
-              <i data-lucide="volume-2" style="width:20px;height:20px" id="mute-icon"></i>
-            </button>
-            <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
-            <div class="live-line">
-              <div class="live-bar" id="live-bar" style="display:none"></div>
-              <div class="progress-fill" id="progress-fill" style="width:0;display:none"></div>
-            </div>
-            <span id="live-label" class="live-label"></span>
-            <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
-              <option value="contain">Original</option>
-              <option value="cover">Preencher</option>
-              <option value="fill">Esticar</option>
-            </select>
-            <button class="ctrl-btn" aria-label="Tela cheia" id="fullscreen-btn">
-              <i data-lucide="maximize" style="width:20px;height:20px"></i>
-            </button>
-          </div>
-        </div>
+        <!-- PLAYER: #player-screen now renders above (persistent sibling) -
+             .player-stage is a permanently empty placeholder, kept only so
+             .on-now still lands in the grid's second column (see the
+             .feature-layout/.player-stage CSS comments). -->
+        <div class="player-stage" id="player-stage"></div>
 
         <!-- ON NOW -->
         <aside class="on-now">
@@ -1096,6 +1276,14 @@
         </div>
       </section>
 
+      <label class="search-box vod-search-box" for="vod-search-input">
+        <i data-lucide="search" style="width:18px;height:18px"></i>
+        <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
+        <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
+          <i data-lucide="x" style="width:16px;height:16px"></i>
+        </button>
+      </label>
+
       <section class="vod-hero" id="vod-hero" style="display:none">
         <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
         <div class="vod-hero-scrim"></div>
@@ -1108,6 +1296,7 @@
         </div>
       </section>
 
+      <div class="vod-carousel-grid" id="vod-search-results" style="display:none"></div>
       <div id="vod-carousels"></div>
     </div>
   </div><!-- /vod-view -->
@@ -2879,7 +3068,12 @@ async function playStream(url) {
   }
 }
 
-function tryDirectPlay(url, video) {
+function computeDirectPlayRetryDelayMs(attempt) {
+  return attempt === 1 ? 800 : 1800;
+}
+
+function tryDirectPlay(url, video, attempt) {
+  attempt = attempt || 1;
   video.src = url;
   video.play().then(() => {
     hidePlayerLoader();
@@ -2892,6 +3086,10 @@ function tryDirectPlay(url, video) {
     enableLiveBar();
     startWatchdog(url);
   }).catch(() => {
+    if (attempt < 3) {
+      setTimeout(() => tryDirectPlay(url, video, attempt + 1), computeDirectPlayRetryDelayMs(attempt));
+      return;
+    }
     hidePlayerLoader();
     showPlayerError("Formato não suportado ou erro de conexão (CORS).\nTente abrir o link diretamente ou use um reprodutor como VLC.");
   });
@@ -2918,6 +3116,11 @@ function stopStream() {
   document.getElementById("live-bar").style.display = "none";
   document.getElementById("progress-fill").style.display = "none";
   document.getElementById("live-label").textContent = "";
+  // Zera a seek bar do VOD para não deixar a posição/tempo do vídeo
+  // anterior visível por um instante enquanto o próximo carrega.
+  document.getElementById("vod-seek-bar").value = 0;
+  document.getElementById("vod-seek-current").textContent = "0:00";
+  document.getElementById("vod-seek-duration").textContent = "0:00";
   document.getElementById("play-pause-btn").disabled = true;
   const reloadBtn = document.getElementById("reload-stream-btn");
   if (reloadBtn) {
@@ -3022,7 +3225,7 @@ function showFsControls() {
 }
 
 function enterPseudoFullscreen() {
-  document.getElementById("player-screen").classList.add("pseudo-fullscreen");
+  document.getElementById("player-screen").classList.add("pseudo-fullscreen", "rotated");
   showFsControls();
 }
 
@@ -3032,15 +3235,50 @@ function exitPseudoFullscreen() {
   document.getElementById("fs-overlay-controls").classList.remove("visible");
 }
 
+// Único botão (estilo YouTube) que entra em tela cheia E gira para paisagem
+// num só toque, e sai da tela cheia E desgira num só toque no sentido
+// inverso. Reflete o estado atual trocando o ícone maximize <-> minimize.
+function updateFullscreenBtnIcon() {
+  const btn = document.getElementById("fullscreen-btn");
+  if (!btn) return;
+  const el = document.getElementById("player-screen");
+  const isFullscreen = el.classList.contains("pseudo-fullscreen") || document.fullscreenElement === el;
+  btn.innerHTML = `<i data-lucide="${isFullscreen ? "minimize" : "maximize"}" style="width:20px;height:20px"></i>`;
+  btn.setAttribute("aria-label", isFullscreen ? "Sair da tela cheia" : "Tela cheia");
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
   if (isNativeApp()) {
     if (el.classList.contains("pseudo-fullscreen")) exitPseudoFullscreen();
     else enterPseudoFullscreen();
+    updateFullscreenBtnIcon();
     return;
   }
   if (document.fullscreenElement) { document.exitFullscreen(); }
   else if (el.requestFullscreen) { el.requestFullscreen(); }
+}
+
+// ─── Seek bar do VOD (filmes/séries) ───
+function formatSeekTime(seconds) {
+  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Mostra a faixa de progresso + botões de 10s só para filmes/séries -
+// canais ao vivo não têm duração total, então nunca fazem sentido aqui.
+// Chamada de dentro de renderPlayerInfo(), toda vez que _state.selected muda.
+function updateVodSeekVisibility() {
+  const isVod = !!(_state.selected && _state.selected.isVod);
+  const row = document.getElementById("vod-seek-row");
+  const backBtn = document.getElementById("vod-skip-back-btn");
+  const fwdBtn = document.getElementById("vod-skip-fwd-btn");
+  if (row) row.style.display = isVod ? "flex" : "none";
+  if (backBtn) backBtn.style.display = isVod ? "flex" : "none";
+  if (fwdBtn) fwdBtn.style.display = isVod ? "flex" : "none";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3055,6 +3293,7 @@ function renderPlayerInfo() {
   document.getElementById("player-name").textContent     = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
+  updateVodSeekVisibility();
 
   // Logo no art
   const artLogo = document.getElementById("player-art-logo");
@@ -3328,6 +3567,31 @@ function renderPageSection() {
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
 }
 
+// #player-screen agora é um irmão persistente de #catalog-view/#vod-view/
+// #settings-view (nunca mais fica dentro de uma view que pode ser
+// escondida) - sua visibilidade não depende mais da seção ativa, e sim de
+// se algo está tocando. Na seção "catalog" ele sempre aparece em tamanho
+// cheio (igual sempre foi, canal pausado/parado incluso - não escondemos
+// o player ao pausar um canal, só quando saímos da tela de Canais); fora
+// dela, vira uma barra compacta (mini-player) só enquanto algo está
+// tocando, e some de vez quando não há nada tocando.
+function setPlayerMode() {
+  const el = document.getElementById("player-screen");
+  if (!el) return;
+  if (_state.section === "catalog") {
+    el.classList.remove("player-hidden", "mini-player");
+    return;
+  }
+  const isPlaying = !!(_state.selected && (_state.playing || _state.selected.isVod));
+  if (!isPlaying) {
+    el.classList.remove("mini-player");
+    el.classList.add("player-hidden");
+    return;
+  }
+  el.classList.remove("player-hidden");
+  el.classList.add("mini-player");
+}
+
 // ═══════════════════════════════════════════════════════════════
 // STATUS PILL
 // ═══════════════════════════════════════════════════════════════
@@ -3406,6 +3670,22 @@ function xtreamApiUrl(creds, action, extraParams) {
 const CONTINUE_KEY = "sint_continue";
 let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
 
+// Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
+// - permite a busca filtrar em todas as categorias já carregadas sem refazer
+// requisições, e permite "Ver todos"/"Novidades" reaproveitarem os mesmos
+// dados já deduplicados. Resetado a cada loadVodCatalog (troca de aba ou
+// reentrada na view).
+let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {} };
+
+// Estado do debounce da busca de VOD (ver listener de #vod-search-input) -
+// _vodSearchDebounceTimer guarda o setTimeout pendente do achatar+dedupe+
+// filtrar+renderizar (o trabalho caro), _vodSearchActive/
+// _vodHeroVisibleBeforeSearch controlam esconder/restaurar o #vod-hero
+// exatamente uma vez por busca (não a cada tecla).
+let _vodSearchDebounceTimer = null;
+let _vodSearchActive = false;
+let _vodHeroVisibleBeforeSearch = false;
+
 // Ordena por mais recente e filtra por tipo — pura, sem DOM/rede, por isso
 // testável isoladamente (tests/vod/continue-watching.test.js).
 function getContinueWatchingItems(continueMap, type) {
@@ -3413,6 +3693,63 @@ function getContinueWatchingItems(continueMap, type) {
     .map(k => continueMap[k])
     .sort((a, b) => b.ts - a.ts)
     .filter(item => item.type === type);
+}
+
+// Escapa texto do usuário antes de embuti-lo em innerHTML (usado na mensagem
+// "Nada encontrado para ..." da busca) - o app não tinha um helper genérico
+// de escape até agora, então este fica local ao uso.
+function escapeHtmlText(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+// Busca client-side no catálogo já carregado — substring case-insensitive no
+// nome. Pura, sem DOM/rede (tests/vod/filter-vod-items.test.js).
+function filterVodItemsByQuery(items, query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((item) => (item.name || "").toLowerCase().includes(q));
+}
+
+// get_vod_streams (filmes) e get_series (séries) usam campos diferentes para
+// ano e data de adição: filmes têm "year"/"added", séries têm "releaseDate"
+// (ex: "2019-05-10") e "last_modified" no lugar. Sem isso, item.year/added
+// ficam sempre undefined para séries - o dedup abaixo degradaria para
+// casar só por nome (perdendo a proteção do ano) e "Novidades" ordenaria por
+// undefined para toda série (sem ordenação real nenhuma).
+function vodItemYearKey(item) {
+  return item.year || String(item.releaseDate || "").slice(0, 4);
+}
+function vodItemAddedTs(item) {
+  return Number(item.added || item.last_modified || 0);
+}
+
+// Colapsa duplicatas exatas de catálogo (mesmo nome + mesmo ano) mantendo a
+// cópia mais recentemente adicionada. Chavear por nome+ano (e não só nome)
+// evita fundir filmes diferentes que compartilham um título traduzido (ex:
+// "O Guarda-Costas" 1992 vs 2004) e nunca funde sequências com nomes
+// diferentes (ex: os títulos de Harry Potter). Pura (tests/vod/dedupe-vod-items.test.js).
+function dedupeVodItemsByTitle(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = `${(item.name || "").trim().toLowerCase()}|${vodItemYearKey(item)}`;
+    const existing = groups.get(key);
+    if (!existing || vodItemAddedTs(item) > vodItemAddedTs(existing)) {
+      groups.set(key, item);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+// Ordena pelo timestamp real "added"/"last_modified" da API (não a categoria
+// estática "Lançamentos") e corta no limite — usada para montar a fileira
+// "Novidades". Pura (tests/vod/dedupe-vod-items.test.js).
+function selectNewestVodItems(items, limit) {
+  return items
+    .slice()
+    .sort((a, b) => vodItemAddedTs(b) - vodItemAddedTs(a))
+    .slice(0, limit);
 }
 
 function saveContinueWatching(entry) {
@@ -3506,15 +3843,44 @@ function setVodHero(item, vodType, creds) {
   }
 }
 
+// Nomes de categoria vêm da API com um prefixo redundante antes do "|" -
+// séries como "Series | Netflix", "Series | Disney Plus", filmes como
+// "Filmes | Ação", "Filmes | Comédia" etc. A view inteira já deixa claro se é
+// Filmes ou Séries, então tiramos qualquer prefixo "<algo> | " (não só
+// "Series |") apenas para exibição; category_id continua sendo a chave real
+// usada em todo o resto (cache, data-cat-id, fetch).
+function vodCategoryDisplayName(cat) {
+  return (cat.category_name || "").replace(/^[^|]+\|\s*/, "");
+}
+
+const VOD_ROW_INITIAL_COUNT = 12; // cartões visíveis antes de "Ver todos"
+const VOD_NOVIDADES_COUNT = 20;
+
 async function loadVodCatalog(vodType, creds) {
   const isSeries = vodType === "series";
   const contType = isSeries ? "series" : "vod";
+
+  // Reseta o cache e a busca a cada entrada na view (troca de aba
+  // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
+  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {} };
+  const searchInput = document.getElementById("vod-search-input");
+  searchInput.value = "";
+  document.getElementById("vod-search-clear").style.display = "none";
+  document.getElementById("vod-search-results").style.display = "none";
+  // Reseta o estado da busca (debounce pendente + flag de "estava em busca")
+  // junto com o resto do cache acima - sem isso, trocar de aba (Filmes ->
+  // Séries) no meio de uma busca deixaria o #vod-hero da nova aba escondido
+  // incorretamente na próxima tecla digitada (a captura de "estava visível
+  // antes" só acontece uma vez por busca, ver listener de vod-search-input).
+  clearTimeout(_vodSearchDebounceTimer);
+  _vodSearchActive = false;
 
   document.getElementById("vod-eyebrow").textContent = isSeries ? "SÉRIES" : "FILMES";
   document.getElementById("vod-h1").textContent = isSeries ? "Qual série vamos maratonar?" : "O que vamos assistir?";
   document.getElementById("vod-hero").style.display = "none";
 
   const carouselsEl = document.getElementById("vod-carousels");
+  carouselsEl.style.display = "block";
   const contRowHtml = continueWatchingRowHtml(contType);
   carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
 
@@ -3528,37 +3894,98 @@ async function loadVodCatalog(vodType, creds) {
       return;
     }
 
-    const topCats = cats.slice(0, 8);
+    // Todas as categorias, não só as 8 primeiras - filmes seguem organizados
+    // por gênero (Ação/Comédia/Terror/...) e séries por streaming (Netflix/
+    // Amazon Prime Video/Max/Disney Plus/...), como a API já entrega; antes
+    // disso só as 8 primeiras (na ordem que a API retorna) chegavam a
+    // renderizar, escondendo a maioria dos streamings de série.
+    const topCats = cats;
+    _vodCatalogCache.categories = topCats;
+
     carouselsEl.innerHTML = contRowHtml + topCats.map(cat => `
       <div class="vod-row" data-cat-id="${cat.category_id}">
-        <h2>${cat.category_name || ""}</h2>
+        <div class="vod-row-header">
+          <h2>${vodCategoryDisplayName(cat)}</h2>
+          <button class="vod-see-all" data-cat-id="${cat.category_id}">Ver todos</button>
+        </div>
         <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
       </div>`).join("");
 
     const firstCatId = topCats[0].category_id;
     let heroSet = false;
 
-    topCats.forEach(cat => {
+    // Cada fetch por categoria é guardado aqui para sabermos, via
+    // Promise.allSettled, quando todas já resolveram (sucesso ou erro) e
+    // montar a fileira "Novidades" - sem disparar uma segunda rodada de
+    // requisições para os mesmos dados.
+    const categoryFetches = topCats.map(cat =>
       fetch(xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: cat.category_id }))
         .then(res => res.json())
         .then(streams => {
+          // _vodCatalogCache is reassigned wholesale (not snapshotted) at
+          // the top of every loadVodCatalog call, and this closure reads
+          // that same shared variable - so if the usuário already trocou
+          // de aba (Filmes -> Séries) before this fetch resolved, writing
+          // now would leak the OLD tab's items into the NEW tab's cache
+          // under the old category_id key, where search/Novidades would
+          // pick them up since both flatten every key in itemsByCategory.
+          // Drop the write entirely rather than just skipping the DOM
+          // update, mirroring the same guard already applied below in the
+          // Novidades block.
+          if (_vodCatalogCache.vodType !== vodType) return;
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
-          if (!rowEl) return;
           if (!Array.isArray(streams) || streams.length === 0) {
-            rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
+            _vodCatalogCache.itemsByCategory[cat.category_id] = [];
+            if (rowEl) rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
             return;
           }
-          rowEl.innerHTML = streams.slice(0, 20).map(item => vodCardHtml(item, contType)).join("");
+          // Deduplica por (nome, ano) antes de guardar no cache e de
+          // renderizar - nenhuma duplicata de catálogo chega à tela, seja
+          // na fileira da categoria, na busca ou em "Ver todos" (todos leem
+          // deste mesmo array já limpo).
+          const deduped = dedupeVodItemsByTitle(streams);
+          _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
+          if (rowEl) {
+            rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
+          }
           if (!heroSet && cat.category_id === firstCatId) {
             heroSet = true;
-            setVodHero(streams[0], vodType, creds);
+            setVodHero(deduped[0], vodType, creds);
           }
         })
         .catch(() => {
+          if (_vodCatalogCache.vodType !== vodType) return; // ver comentário acima
+          _vodCatalogCache.itemsByCategory[cat.category_id] = [];
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
           if (rowEl) rowEl.innerHTML = `<p class="vod-error">Erro ao carregar</p>`;
-        });
-    });
+        })
+    );
+
+    // "Novidades": só depois que todas as categorias já resolveram (sucesso
+    // ou erro), monta uma fileira com os itens mais recentes pelo timestamp
+    // real "added"/"last_modified" da API - não a categoria estática
+    // "Lançamentos" - e a fixa logo depois de "Continue Assistindo" (quando
+    // presente), antes das fileiras de gênero/streaming - "Continue
+    // Assistindo" é sobre o que o usuário já começou, então continua sendo
+    // sempre a primeira fileira quando existe.
+    Promise.allSettled(categoryFetches).then(() => {
+      if (_vodCatalogCache.vodType !== vodType) return; // usuário já trocou de aba
+      const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      const newest = selectNewestVodItems(allItems, VOD_NOVIDADES_COUNT);
+      if (!newest.length) return;
+      const newestHtml = `
+        <div class="vod-row" data-cat-id="novidades">
+          <div class="vod-row-header"><h2>Novidades</h2></div>
+          <div class="vod-carousel">${newest.map(item => vodCardHtml(item, contType)).join("")}</div>
+        </div>`;
+      const carouselsEl = document.getElementById("vod-carousels");
+      const continueRow = carouselsEl.querySelector('.vod-row[data-cat-id="continue"]');
+      if (continueRow) {
+        continueRow.insertAdjacentHTML("afterend", newestHtml);
+      } else {
+        carouselsEl.insertAdjacentHTML("afterbegin", newestHtml);
+      }
+    }).catch(() => {});
   } catch (err) {
     carouselsEl.innerHTML = (contRowHtml || "") + `<p class="vod-error">Erro ao carregar catálogo: ${err.message}</p>`;
   }
@@ -3653,7 +4080,7 @@ function playVodSelection(url, meta) {
     vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
     continueId,
   };
-  setState({ selected: pseudo, playing: false, section: "catalog" });
+  setState({ selected: pseudo, playing: false });
   window.scrollTo({ top: 0, behavior: "smooth" });
   stopStream();
   playStream(url);
@@ -3714,6 +4141,7 @@ function render() {
   renderPlayerInfo();
   renderCatalog();
   renderOnNow();
+  setPlayerMode();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3920,8 +4348,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
 
+  // ── SEEK BAR / SKIP 10s (VOD) ──
+  // A faixa e os botões ficam escondidos (display:none) fora de VOD via
+  // updateVodSeekVisibility(), mas os listeners abaixo podem disparar mesmo
+  // com os elementos ocultos (ex.: arrasto residual) - por isso cada handler
+  // confere video.duration antes de mexer em currentTime.
+  document.getElementById("player-video").addEventListener("timeupdate", () => {
+    const video = document.getElementById("player-video");
+    const bar = document.getElementById("vod-seek-bar");
+    if (!bar || !isFinite(video.duration) || video.duration <= 0) return;
+    bar.value = (video.currentTime / video.duration) * 100;
+    document.getElementById("vod-seek-current").textContent = formatSeekTime(video.currentTime);
+    document.getElementById("vod-seek-duration").textContent = formatSeekTime(video.duration);
+  });
+
+  document.getElementById("vod-seek-bar").addEventListener("input", e => {
+    const video = document.getElementById("player-video");
+    if (!isFinite(video.duration) || video.duration <= 0) return;
+    video.currentTime = (Number(e.target.value) / 100) * video.duration;
+  });
+
+  document.getElementById("vod-skip-back-btn").addEventListener("click", () => {
+    const video = document.getElementById("player-video");
+    video.currentTime = Math.max(0, video.currentTime - 10);
+  });
+
+  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => {
+    const video = document.getElementById("player-video");
+    if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
+  });
+
   // Duplo clique no vídeo = fullscreen
   document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
+
+  // Navegador comum (Fullscreen API real): mantém o ícone do botão único
+  // sincronizado mesmo quando a saída da tela cheia é disparada fora do app
+  // (ex.: tecla Esc), já que nesse caminho não passamos por toggleFullscreen.
+  document.addEventListener("fullscreenchange", updateFullscreenBtnIcon);
 
   // Tocar na tela em modo tela-cheia-de-mentira reexibe os controles
   document.getElementById("player-screen").addEventListener("click", () => {
@@ -3929,14 +4392,22 @@ document.addEventListener("DOMContentLoaded", () => {
       showFsControls();
     }
   });
+
+  // Tocar no mini-player expande de volta para a tela cheia (seção catalog)
+  document.getElementById("player-screen").addEventListener("click", (e) => {
+    const el = document.getElementById("player-screen");
+    if (el.classList.contains("mini-player")) {
+      setState({ section: "catalog" });
+    }
+  });
+
+  // #fs-exit-btn só fica visível enquanto .pseudo-fullscreen está ativo
+  // (regra CSS de .fs-overlay-controls), então passar por toggleFullscreen()
+  // sempre cai no ramo de saída - e já desgira e sincroniza o ícone do botão
+  // único (#fullscreen-btn), que fica coberto pelo overlay em tela cheia.
   document.getElementById("fs-exit-btn").addEventListener("click", e => {
     e.stopPropagation();
-    exitPseudoFullscreen();
-  });
-  document.getElementById("fs-rotate-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    document.getElementById("player-screen").classList.toggle("rotated");
-    showFsControls();
+    toggleFullscreen();
   });
 
   // ── VIEW TOGGLE ──
@@ -3981,8 +4452,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Delegação: os cartões de pôster (e os de "Continue Assistindo") são
   // recriados a cada carregamento de categoria, então um único listener no
-  // container pai cobre tudo sem precisar religar nada a cada render.
-  document.getElementById("vod-carousels").addEventListener("click", e => {
+  // container pai cobre tudo sem precisar religar nada a cada render. Os
+  // mesmos cartões também aparecem na grade de busca (#vod-search-results),
+  // que é um container irmão, não filho, de #vod-carousels - por isso o
+  // clique é fatorado numa função à parte e ligado nos dois containers.
+  function onVodCardAreaClick(e) {
     const card = e.target.closest("[data-vod-key]");
     if (!card) return;
     const item = _vodCardsIndex[card.dataset.vodKey];
@@ -3994,6 +4468,83 @@ document.addEventListener("DOMContentLoaded", () => {
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
     openVodModal(item, _state.vodType, creds);
+  }
+
+  document.getElementById("vod-carousels").addEventListener("click", e => {
+    // "Ver todos": expande a fileira daquela categoria (já cacheada e
+    // deduplicada em _vodCatalogCache.itemsByCategory) para uma grade
+    // completa em vez do carrossel horizontal cortado.
+    const seeAllBtn = e.target.closest(".vod-see-all");
+    if (seeAllBtn) {
+      const catId = seeAllBtn.dataset.catId;
+      const items = _vodCatalogCache.itemsByCategory[catId] || [];
+      const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
+      const rowEl = document.getElementById(`vod-carousel-${catId}`);
+      if (!rowEl) return;
+      rowEl.className = "vod-carousel-grid";
+      rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
+      seeAllBtn.remove(); // já expandido, o botão não tem mais função
+      return;
+    }
+    onVodCardAreaClick(e);
+  });
+
+  document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
+
+  // ── BUSCA (Filmes/Séries) ──
+  // Filtra client-side em tudo que já foi carregado nesta sessão de
+  // Filmes/Séries (_vodCatalogCache), sem nova requisição por tecla. O
+  // achatar+dedupe+filtrar+renderizar é debounced (o catálogo agora traz
+  // ~27-31 categorias inteiras, não só as 8 primeiras - refazer isso a cada
+  // tecla digitada ficou pesado o bastante pra valer a pena); o toggle do
+  // botão "Limpar" e o caminho de campo vazio continuam síncronos/instantâneos.
+  const VOD_SEARCH_DEBOUNCE_MS = 250;
+  document.getElementById("vod-search-input").addEventListener("input", e => {
+    const query = e.target.value;
+    document.getElementById("vod-search-clear").style.display = query ? "flex" : "none";
+    const resultsEl = document.getElementById("vod-search-results");
+    const heroEl = document.getElementById("vod-hero");
+    clearTimeout(_vodSearchDebounceTimer);
+
+    if (!query.trim()) {
+      _vodSearchActive = false;
+      resultsEl.style.display = "none";
+      document.getElementById("vod-carousels").style.display = "block";
+      if (_vodHeroVisibleBeforeSearch) heroEl.style.display = "flex";
+      return;
+    }
+
+    // #vod-hero não tem nada a ver com resultado de busca (é o destaque da
+    // categoria) - esconde assim que a busca fica ativa, e só uma vez por
+    // busca guarda se ele estava visível antes, pra poder restaurar certo
+    // ao limpar (sem isso, cada tecla re-capturaria "escondido" - o próprio
+    // estado que a tecla anterior deixou - e a busca nunca o traria de volta).
+    if (!_vodSearchActive) {
+      _vodSearchActive = true;
+      _vodHeroVisibleBeforeSearch = heroEl.style.display !== "none";
+    }
+    heroEl.style.display = "none";
+
+    _vodSearchDebounceTimer = setTimeout(() => {
+      // Cada array por categoria já vem deduplicado, mas o mesmo filme pode
+      // pertencer a mais de uma categoria (via category_ids) - dedupe de novo
+      // na lista achatada para a busca cross-categoria nunca repetir um item.
+      const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      const matches = filterVodItemsByQuery(allItems, query);
+      const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
+      document.getElementById("vod-carousels").style.display = "none";
+      resultsEl.style.display = "grid";
+      resultsEl.innerHTML = matches.length
+        ? matches.map(item => vodCardHtml(item, contType)).join("")
+        : `<p class="vod-empty">Nada encontrado para "${escapeHtmlText(query)}".</p>`;
+    }, VOD_SEARCH_DEBOUNCE_MS);
+  });
+
+  document.getElementById("vod-search-clear").addEventListener("click", () => {
+    clearTimeout(_vodSearchDebounceTimer);
+    const input = document.getElementById("vod-search-input");
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
   });
 
   document.getElementById("vod-modal-episodes").addEventListener("click", e => {
