@@ -70,6 +70,7 @@ export function loadVodHelpers() {
       "\nthis.buildSeriesEpisodeUrl = typeof buildSeriesEpisodeUrl !== 'undefined' ? buildSeriesEpisodeUrl : undefined;" +
       "\nthis.xtreamApiUrl = typeof xtreamApiUrl !== 'undefined' ? xtreamApiUrl : undefined;" +
       "\nthis.getContinueWatchingItems = typeof getContinueWatchingItems !== 'undefined' ? getContinueWatchingItems : undefined;" +
+      "\nthis.getUnifiedRecentItems = typeof getUnifiedRecentItems !== 'undefined' ? getUnifiedRecentItems : undefined;" +
       "\nthis.computeDirectPlayRetryDelayMs = typeof computeDirectPlayRetryDelayMs !== 'undefined' ? computeDirectPlayRetryDelayMs : undefined;" +
       "\nthis.filterVodItemsByQuery = typeof filterVodItemsByQuery !== 'undefined' ? filterVodItemsByQuery : undefined;" +
       "\nthis.dedupeVodItemsByTitle = typeof dedupeVodItemsByTitle !== 'undefined' ? dedupeVodItemsByTitle : undefined;" +
@@ -100,6 +101,14 @@ export function loadVodHelpers() {
       // Array.from here is this (host) realm's, unlike result.map(), which
       // would still be the vm realm's Array.prototype.map and would still
       // build a vm-realm array even though the mapped items are plain.
+      return Array.from(result, item => ({ ...item }));
+    };
+  }
+
+  const originalGetUnifiedRecentItems = context.getUnifiedRecentItems;
+  if (originalGetUnifiedRecentItems) {
+    context.getUnifiedRecentItems = function(channelRecents, continueMap, limit) {
+      const result = originalGetUnifiedRecentItems(channelRecents, continueMap, limit);
       return Array.from(result, item => ({ ...item }));
     };
   }
