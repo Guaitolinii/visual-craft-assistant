@@ -467,7 +467,6 @@
     #player-screen.mini-player .player-controls,
     #player-screen.mini-player .vod-seek-row,
     #player-screen.mini-player .player-loader,
-    #player-screen.mini-player .player-art,
     #player-screen.mini-player .play-center {
       /* .play-center (the 4.5rem/72px central play button) is full-size-only
          UI, same as the three from the brief - confirmed via live rendering
@@ -478,6 +477,53 @@
          toggled via inline style (element.style.display) elsewhere, which
          otherwise wins over this rule regardless of source order. */
       display: none !important;
+    }
+    #player-screen.mini-player .player-art {
+      display: flex !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      position: static;
+      flex: 1;
+      padding: 0;
+      background: none;
+      align-items: center;
+    }
+    #player-screen.mini-player .signal-lines,
+    #player-screen.mini-player .channel-monogram,
+    #player-screen.mini-player .player-art-logo {
+      display: none !important;
+    }
+    #player-screen.mini-player .player-copy {
+      display: flex !important;
+      flex-direction: column;
+      justify-content: center;
+      overflow: hidden;
+      margin-left: .75rem;
+    }
+    #player-screen.mini-player .player-copy h2 {
+      font-size: .85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 0;
+    }
+    #player-screen.mini-player .player-copy p,
+    #player-screen.mini-player .live-badge {
+      display: none !important;
+    }
+    .mini-play-btn { display: none; }
+    #player-screen.mini-player .mini-play-btn {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      background: none;
+      border: none;
+      color: white;
+      margin-left: auto;
+      margin-right: .5rem;
+      cursor: pointer;
     }
     #player-screen.player-hidden {
       display: none;
@@ -1126,6 +1172,9 @@
           <h2 id="player-name">Nenhum canal selecionado</h2>
           <p id="player-status">Escolha um canal abaixo</p>
         </div>
+        <button class="mini-play-btn" id="mini-play-btn" aria-label="Reproduzir/Pausar">
+          <i data-lucide="play" style="width:20px;height:20px" id="mini-play-icon"></i>
+        </button>
       </div>
       <!-- Vídeo real -->
       <div class="player-video-wrap">
@@ -3139,6 +3188,7 @@ function showPlayerArt()  {
   document.getElementById("player-video").classList.remove("active");
   document.getElementById("play-center-btn").classList.remove("hidden");
   document.getElementById("play-pause-icon").setAttribute("data-lucide","play");
+  document.getElementById("mini-play-icon").setAttribute("data-lucide","play");
   lucide.createIcons();
 }
 function showPlayerVideo() {
@@ -3146,6 +3196,7 @@ function showPlayerVideo() {
   document.getElementById("player-video").classList.add("active");
   document.getElementById("play-center-btn").classList.add("hidden");
   document.getElementById("play-pause-icon").setAttribute("data-lucide","pause");
+  document.getElementById("mini-play-icon").setAttribute("data-lucide","pause");
   lucide.createIcons();
 }
 function showPlayerLoader() {
@@ -4287,6 +4338,7 @@ document.addEventListener("DOMContentLoaded", () => {
     playStream(ch.url);
   });
 
+  document.getElementById("mini-play-btn").addEventListener("click", () => document.getElementById("play-pause-btn").click());
   document.getElementById("play-pause-btn").addEventListener("click", () => {
     const video = document.getElementById("player-video");
     if (!_state.playing) {
