@@ -4546,9 +4546,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
       const rowEl = document.getElementById(`vod-carousel-${catId}`);
       if (!rowEl) return;
-      rowEl.className = "vod-carousel-grid";
-      rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
-      seeAllBtn.remove(); // já expandido, o botão não tem mais função
+
+      if (seeAllBtn.dataset.expanded) {
+        rowEl.className = "vod-carousel";
+        rowEl.innerHTML = items.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
+        seeAllBtn.textContent = "Ver todos";
+        delete seeAllBtn.dataset.expanded;
+        seeAllBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        rowEl.className = "vod-carousel-grid";
+        rowEl.innerHTML = items.map(item => vodCardHtml(item, contType)).join("");
+        seeAllBtn.textContent = "Recolher";
+        seeAllBtn.dataset.expanded = "true";
+      }
       return;
     }
     onVodCardAreaClick(e);
