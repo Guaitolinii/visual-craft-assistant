@@ -1019,7 +1019,7 @@
       .sidebar-scrim.open { display: block; }
       .mobile-tabs {
         position: fixed; inset: auto 0 0; z-index: 32;
-        display: grid; grid-template-columns: repeat(4, 1fr);
+        display: grid; grid-template-columns: repeat(5, 1fr);
         /* Additive, same pattern as .topbar's top inset: the base 4.3rem bar
            height is preserved and env(safe-area-inset-bottom) grows the box
            on top of it (height), while the matching padding-bottom keeps the
@@ -1042,10 +1042,10 @@
       #player-screen.mini-player { bottom: calc(4.3rem + env(safe-area-inset-bottom)); }
       .mobile-tabs button {
         display: grid; place-items: center; align-content: center;
-        gap: .22rem; background: none; border: none;
-        color: var(--muted-fg); font-size: .65rem;
+        gap: .15rem; background: none; border: none;
+        color: var(--muted-fg); font-size: .6rem;
       }
-      .mobile-tabs svg { width: 1.3rem; height: 1.3rem; }
+      .mobile-tabs svg { width: 1.2rem; height: 1.2rem; }
       .mobile-tabs .active { color: var(--primary); }
       .settings-content { padding: 1.5rem 1rem 0; }
       .vol-slider { width: 3.5rem; }
@@ -1512,10 +1512,13 @@
     <i data-lucide="heart"></i><span>Favoritos</span>
   </button>
   <button data-section="Todos os canais" class="mobile-tab">
-    <i data-lucide="list-video"></i><span>Canais</span>
+    <i data-lucide="monitor-play"></i><span>Canais</span>
   </button>
-  <button id="mob-menu">
-    <i data-lucide="menu"></i><span>Mais</span>
+  <button class="mobile-tab" data-vod-view="series">
+    <i data-lucide="tv"></i><span>Séries</span>
+  </button>
+  <button class="mobile-tab" data-vod-view="movies">
+    <i data-lucide="film"></i><span>Filmes</span>
   </button>
 </nav>
 
@@ -3444,6 +3447,9 @@ function renderNav() {
   document.querySelectorAll(".nav-item[data-vod-view]").forEach(el => {
     el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
   });
+  document.querySelectorAll(".mobile-tab[data-vod-view]").forEach(el => {
+    el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
+  });
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
   const fc = document.getElementById("fav-count");
@@ -4301,7 +4307,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── SIDEBAR ──
   document.getElementById("menu-btn").addEventListener("click", openSidebar);
-  document.getElementById("mob-menu").addEventListener("click", openSidebar);
   document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
   document.getElementById("sidebar-scrim").addEventListener("click", closeSidebar);
 
