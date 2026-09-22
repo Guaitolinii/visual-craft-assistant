@@ -1085,20 +1085,7 @@
   <nav class="sidebar-nav" aria-label="Navegação principal">
     <span class="nav-label">CATÁLOGO</span>
     <button class="nav-item active" data-section="Início">
-      <i data-lucide="home" style="width:19px;height:19px"></i><span>Início</span>
-    </button>
-    <button class="nav-item" data-section="Favoritos">
-      <i data-lucide="heart" style="width:19px;height:19px"></i><span>Favoritos</span>
-      <span class="nav-count" id="fav-count" style="display:none"></span>
-    </button>
-    <button class="nav-item" data-section="Recentes">
-      <i data-lucide="clock-3" style="width:19px;height:19px"></i><span>Recentes</span>
-      <span class="nav-count" id="recent-count" style="display:none"></span>
-    </button>
-    <span class="nav-label" id="categories-label" style="display:none">CATEGORIAS</span>
-    <div id="category-nav"></div>
-    <button class="nav-item" data-section="Todos os canais" id="nav-todos">
-      <i data-lucide="list-video" style="width:19px;height:19px"></i><span>Todos os canais</span>
+      <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
 
     <!-- Filmes/Séries: só aparece quando há credenciais Xtream salvas em
@@ -3460,18 +3447,23 @@ function renderNav() {
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
   const fc = document.getElementById("fav-count");
-  fc.textContent    = favCount || "";
-  fc.style.display  = favCount ? "" : "none";
+  if (fc) {
+    fc.textContent    = favCount || "";
+    fc.style.display  = favCount ? "" : "none";
+  }
   // Conta recentes
   const rc = document.getElementById("recent-count");
-  rc.textContent    = recents.length || "";
-  rc.style.display  = recents.length ? "" : "none";
+  if (rc) {
+    rc.textContent    = recents.length || "";
+    rc.style.display  = recents.length ? "" : "none";
+  }
 }
 
 function renderCategoryNav() {
   const cats = _state.categories;
   const label = document.getElementById("categories-label");
   const nav   = document.getElementById("category-nav");
+  if (!label || !nav) return;
   if (!cats.length) { label.style.display = "none"; nav.innerHTML = ""; return; }
   label.style.display = "";
   nav.innerHTML = cats.map(cat => `
