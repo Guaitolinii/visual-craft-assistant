@@ -4040,7 +4040,7 @@ async function openVodModal(item, vodType, creds) {
 
     epsContainer.innerHTML = episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}">
+      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}" data-series-cover="${(item.stream_icon || item.cover || '').replace(/"/g, "&quot;")}">
         <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>`;
@@ -4057,9 +4057,9 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-function playEpisode(episodeId, containerExtension, title, creds) {
+function playEpisode(episodeId, containerExtension, title, creds, cover) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
-  playVodSelection(url, { id: episodeId, contType: "series", title, cover: null });
+  playVodSelection(url, { id: episodeId, contType: "series", title, cover: cover || null });
 }
 
 // Ponto único de reprodução de VOD: reaproveita o mesmo player (playStream)
@@ -4565,7 +4565,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds);
+    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds, btn.dataset.seriesCover);
   });
 
   // "Continue Assistindo": salva o progresso do que estiver tocando (só para
