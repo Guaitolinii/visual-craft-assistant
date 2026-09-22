@@ -4382,6 +4382,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Duplo clique no vídeo = fullscreen
+  let _lastVideoTapTs = 0;
+  document.getElementById("player-video").addEventListener("click", () => {
+    const now = Date.now();
+    if (now - _lastVideoTapTs < 350) {
+      toggleFullscreen();
+      _lastVideoTapTs = 0; // avoid a third tap re-triggering immediately
+    } else {
+      _lastVideoTapTs = now;
+    }
+  });
   document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
 
   // Navegador comum (Fullscreen API real): mantém o ícone do botão único
