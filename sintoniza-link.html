@@ -1063,6 +1063,12 @@
   <nav class="sidebar-nav" aria-label="Navegação principal">
     <span class="nav-label">CATÁLOGO</span>
     <button class="nav-item active" data-section="Início">
+      <i data-lucide="home" style="width:19px;height:19px"></i><span>Início</span>
+    </button>
+    <button class="nav-item" data-section="Favoritos">
+      <i data-lucide="heart" style="width:19px;height:19px"></i><span>Favoritos</span>
+    </button>
+    <button class="nav-item" data-section="Todos os canais">
       <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
 
@@ -1212,7 +1218,7 @@
         </div>
       </section>
 
-      <div class="sticky-search-container">
+      <div class="sticky-search-container" id="catalog-search-slot">
         <label class="search-box" for="search-input">
           <i data-lucide="search" style="width:19px;height:19px"></i>
           <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
@@ -1223,7 +1229,7 @@
       </div>
 
       <!-- FEATURE LAYOUT -->
-      <section class="feature-layout">
+      <section class="feature-layout" id="feature-layout">
         <!-- PLAYER: #player-screen now renders above (persistent sibling) -
              .player-stage is a permanently empty placeholder, kept only so
              .on-now still lands in the grid's second column (see the
@@ -1243,22 +1249,30 @@
         </aside>
       </section>
 
-      <!-- HOME RECENTS -->
-      <section id="home-recents-section" style="display:none; padding-top: 1rem;">
-        <div class="section-heading" style="margin-bottom: 1rem;">
-          <div>
-            <p class="eyebrow">CONTINUE ASSISTINDO</p>
-            <h2>Acessados Recentemente</h2>
+      <!-- LISTAS PESSOAIS DO INÍCIO (Minha Lista + recém-assistidos) -->
+      <div id="home-lists">
+        <div id="home-mylist"></div>
+        <section id="home-recents-section" style="display:none; padding-top: 1rem;">
+          <div class="section-heading" style="margin-bottom: 1rem;">
+            <div>
+              <p class="eyebrow">CONTINUE ASSISTINDO</p>
+              <h2>Acessados Recentemente</h2>
+            </div>
           </div>
+          <div id="home-recents-list" class="home-recents-grid"></div>
+        </section>
+        <div class="empty-state" id="home-empty" style="display:none">
+          <i data-lucide="clock-3" style="width:2rem;height:2rem"></i>
+          <h3>Nada assistido ainda</h3>
+          <p>Os canais, filmes e séries que você assistir aparecem aqui.</p>
         </div>
-        <div id="home-recents-list" class="home-recents-grid"></div>
-      </section>
+      </div>
 
       <!-- CATALOG -->
-      <section class="catalog-section">
+      <section class="catalog-section" id="catalog-section">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">EXPLORE</p>
+            <p class="eyebrow" id="catalog-eyebrow">EXPLORE</p>
             <h2 id="catalog-title">Início</h2>
           </div>
           <div class="section-controls">
@@ -1990,10 +2004,31 @@ function visibleChannels() {
       else if (active === "Favoritos") matchS = isFav(ch);
       else                             matchS = ch.category === active;
     } else {
-      matchS = true; // busca sempre mostra tudo
+      // Na aba Favoritos a busca fica restrita aos favoritos; nas outras
+      // abas de canais ela procura em todos.
+      matchS = active === "Favoritos" ? isFav(ch) : true;
     }
     return matchQ && matchS;
   });
+}
+
+// O que cada aba do catálogo mostra (ponto 9 da v6): Início só as listas
+// pessoais (Minha Lista + recém-assistidos), Favoritos só os canais
+// favoritos, e Canais a grade completa com as categorias.
+function getCatalogTabLayout(active) {
+  if (active === "Início") {
+    return { showHomeLists: true, showSearch: false, showCatalog: false, showPills: false, showOnNow: false, searchPlaceholder: "", eyebrow: "" };
+  }
+  if (active === "Favoritos") {
+    return { showHomeLists: false, showSearch: true, showCatalog: true, showPills: false, showOnNow: false, searchPlaceholder: "Buscar nos favoritos...", eyebrow: "SEUS FAVORITOS" };
+  }
+  return { showHomeLists: false, showSearch: true, showCatalog: true, showPills: true, showOnNow: true, searchPlaceholder: "Buscar canais...", eyebrow: "EXPLORE" };
+}
+
+// "Todos os canais" e qualquer categoria pertencem à aba Canais.
+function getMobileTabForSection(active) {
+  if (active === "Início" || active === "Favoritos") return active;
+  return "Todos os canais";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3520,10 +3555,13 @@ function renderOnNow() {
 function renderNav() {
   const { active, recents, section, vodType } = _state;
 
-  document.querySelectorAll(".nav-item[data-section]").forEach(el => {
-    el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
+  // Abas (sidebar + barra de baixo): uma categoria acende a aba Canais.
+  const tab = getMobileTabForSection(active);
+  document.querySelectorAll(".sidebar-nav .nav-item[data-section], .mobile-tab[data-section]").forEach(el => {
+    el.classList.toggle("active", section === "catalog" && el.dataset.section === tab);
   });
-  document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
+  // Pílulas de categoria: acende exatamente a categoria ativa.
+  document.querySelectorAll("#category-pills .nav-item[data-section]").forEach(el => {
     el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
   });
   document.querySelectorAll(".nav-item[data-vod-view]").forEach(el => {
@@ -3556,8 +3594,10 @@ function renderCategoryNav() {
   const nav = document.getElementById("category-pills");
   if (!nav) return;
   if (!cats.length) { nav.innerHTML = ""; return; }
-  nav.innerHTML = cats.map(cat => `
-    <button class="nav-item" data-section="${cat}"><span>${cat}</span></button>`).join("");
+  // "Todos" primeiro: volta para a grade completa sem sair da aba Canais.
+  nav.innerHTML = [`<button class="nav-item" data-section="Todos os canais"><span>Todos</span></button>`]
+    .concat(cats.map(cat => `
+    <button class="nav-item" data-section="${cat}"><span>${cat}</span></button>`)).join("");
   nav.querySelectorAll(".nav-item[data-section]").forEach(el => {
     el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); });
   });
@@ -3572,6 +3612,12 @@ function renderCatalog() {
   const container = document.getElementById("channel-container");
   document.getElementById("catalog-title").textContent =
     query ? `Resultados para "${query}"` : active;
+
+  // Aba sem grade de canais (Início): não monta milhares de cartões escondidos.
+  if (!getCatalogTabLayout(active).showCatalog) {
+    container.innerHTML = "";
+    return;
+  }
 
   // Skeleton enquanto carrega
   if (loadingPlaylist) {
@@ -3967,6 +4013,7 @@ function openVodSection(vodType) {
     return;
   }
   setState({ section: "vod", vodType });
+  window.scrollTo({ top: 0 });
   closeSidebar();
   loadVodCatalog(vodType, creds);
 }
@@ -4028,10 +4075,11 @@ function homeRecentCardHtml(item) {
   return continueCardHtml(item);
 }
 
+// Devolve true se mostrou algum item (usado pelo estado vazio do Início).
 function renderHomeRecents() {
   const section = document.getElementById("home-recents-section");
   const list = document.getElementById("home-recents-list");
-  if (!section || !list) return;
+  if (!section || !list) return false;
   const continueMap = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
   const items = getUnifiedRecentItems(_state.recents, continueMap, 10)
     .map(homeRecentCardHtml)
@@ -4039,10 +4087,29 @@ function renderHomeRecents() {
   if (!items.length) {
     section.style.display = "none";
     list.innerHTML = "";
-    return;
+    return false;
   }
   section.style.display = "";
   list.innerHTML = items.join("");
+  return true;
+}
+
+// Listas pessoais do Início. Mostra o estado vazio quando não há nada.
+function renderHomeLists() {
+  const hasRecents = renderHomeRecents();
+  document.getElementById("home-empty").style.display = hasRecents ? "none" : "";
+}
+
+// Aplica o layout da aba ativa (ponto 9 da v6) na view de catálogo.
+function renderTabLayout() {
+  const layout = getCatalogTabLayout(_state.active);
+  document.getElementById("catalog-search-slot").style.display = layout.showSearch ? "" : "none";
+  document.getElementById("search-input").placeholder = layout.searchPlaceholder || "Buscar...";
+  document.getElementById("catalog-section").style.display = layout.showCatalog ? "" : "none";
+  document.getElementById("category-pills").style.display = layout.showPills ? "" : "none";
+  document.getElementById("feature-layout").style.display = layout.showOnNow ? "" : "none";
+  document.getElementById("catalog-eyebrow").textContent = layout.eyebrow;
+  document.getElementById("home-lists").style.display = layout.showHomeLists ? "" : "none";
 }
 
 function setVodHero(item, vodType, creds) {
@@ -4376,7 +4443,8 @@ function render() {
   renderPlayerInfo();
   renderCatalog();
   renderOnNow();
-  renderHomeRecents();
+  renderTabLayout();
+  renderHomeLists();
   setPlayerMode();
 }
 
@@ -4469,11 +4537,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ── NAV ──
-  document.querySelectorAll(".nav-item[data-section]").forEach(el => {
-    el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); });
+  // Trocar de aba sobe para o topo, onde fica o player (as pílulas de
+  // categoria não sobem: a grade que muda está logo abaixo delas).
+  document.querySelectorAll(".sidebar-nav .nav-item[data-section]").forEach(el => {
+    el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); window.scrollTo({ top: 0 }); });
   });
   document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
-    el.addEventListener("click", () => setSection(el.dataset.section));
+    el.addEventListener("click", () => { setSection(el.dataset.section); window.scrollTo({ top: 0 }); });
   });
 
   // ── SIDEBAR ──
