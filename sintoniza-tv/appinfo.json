@@ -9,6 +9,7 @@
   "largeIcon": "icon.png",
   "uiRevision": 2,
   "requiredPermissions": ["media.operation"],
+  "requiredACG": [],
   "resolution": {
     "resolutionWidth": 1920,
     "resolutionHeight": 1080
