@@ -73,3 +73,10 @@ test("#vod-modal-actions quebra linha (3 botões: Assistir, Minha Lista, Baixar)
   assert.ok(match, "#vod-modal-actions não encontrado");
   assert.match(match[0], /flex-wrap:\s*wrap/);
 });
+
+test("janela flutuante: botão, modo PiP e ligação com o Android", () => {
+  assert.ok(html.includes('id="pip-btn"'), "botão de janela flutuante não existe");
+  assert.match(html, /body\.pip-active/);
+  assert.match(html, /addEventListener\("sintonizapip"/);
+  assert.match(html, /callNativePlugin\("SintonizaPip", "setAutoEnter"/);
+});

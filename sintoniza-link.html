@@ -529,6 +529,24 @@
     #player-screen.player-hidden { display: none; }
     /* Menu das 3 listras aberto: o mini-player (z-index 500) sai da frente. */
     body.sidebar-open #player-screen.mini-player { display: none !important; }
+    /* Android dentro da janela flutuante: só o vídeo, ocupando tudo.
+       Os itens de dentro do player usam o prefixo #player-screen para vencer
+       as regras !important do mini-player (ex.: .player-art em display:flex). */
+    body.pip-active .topbar, body.pip-active .mobile-tabs, body.pip-active .view,
+    body.pip-active .sidebar, body.pip-active .sidebar-scrim, body.pip-active .toast,
+    body.pip-active #player-screen .player-controls, body.pip-active #player-screen .vod-seek-row,
+    body.pip-active #player-screen .player-art, body.pip-active #player-screen .fs-ui,
+    body.pip-active #player-screen .player-error, body.pip-active #player-screen .player-loader,
+    body.pip-active #player-screen .play-center, body.pip-active #player-screen .mini-play-btn,
+    body.pip-active #player-screen .mini-close-btn { display: none !important; }
+    body.pip-active #player-screen {
+      position: fixed !important; inset: 0 !important; z-index: 99999 !important;
+      width: 100% !important; height: 100% !important; margin: 0 !important;
+      border-radius: 0 !important; padding: 0 !important; background: #000 !important;
+      transform: none !important; border: 0 !important; box-shadow: none !important;
+    }
+    body.pip-active #player-screen .player-media { position: absolute !important; inset: 0 !important; min-height: 0 !important; }
+    body.pip-active #player-screen .player-video-wrap { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; }
     /* flow-root: a margem do player fica dentro da âncora, e a altura medida
        ao virar mini-player/tela cheia bate com o espaço que ele ocupava. */
     #player-anchor { display: flow-root; }
@@ -1280,6 +1298,7 @@
         <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
       </button>
       <div class="player-controls-spacer"></div>
+      <button class="ctrl-btn" id="pip-btn" aria-label="Janela flutuante" title="Janela flutuante" style="display:none"><i data-lucide="picture-in-picture-2" style="width:20px;height:20px"></i></button>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
         <option value="contain">Original</option>
         <option value="cover">Preencher</option>
@@ -2904,6 +2923,12 @@ document.addEventListener("visibilitychange", () => {
   } else if (action === "RESUME_WATCHDOG" && currentWatchdogUrl && _state.playing) {
     startWatchdog(currentWatchdogUrl);
   }
+  // iOS: minimizou o app com algo tocando - tenta entrar sozinho na janela
+  // flutuante (melhor esforço: o iOS pode exigir o toque no botão).
+  if (document.visibilityState === "hidden" && isIOSDevice() && _state.playing) {
+    const v = document.getElementById("player-video");
+    try { if (v && v.webkitSetPresentationMode && v.webkitPresentationMode !== "picture-in-picture") v.webkitSetPresentationMode("picture-in-picture"); } catch (err) {}
+  }
 });
 
 // Recarrega canal mantendo estado
@@ -3918,6 +3943,46 @@ function updateFullscreenBtnIcon() {
   if (window.lucide) window.lucide.createIcons();
 }
 
+// ─── Janela flutuante / Picture-in-Picture (v8) ───
+// Último valor enviado ao plugin Android (evita chamar a ponte a cada render)
+let _lastAutoPip = null;
+
+// Há janela flutuante disponível? (plugin Android, PiP do Safari/iOS ou padrão web)
+function pipSupported() {
+  const video = document.getElementById("player-video");
+  return isNativePluginAvailable("SintonizaPip")
+    || (video && typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture"))
+    || !!document.pictureInPictureEnabled;
+}
+
+// Botão do player: entra na janela flutuante agora (gesto do usuário)
+async function enterPip() {
+  const video = document.getElementById("player-video");
+  if (isNativePluginAvailable("SintonizaPip")) { callNativePlugin("SintonizaPip", "enter"); return; }
+  try {
+    if (video.webkitSetPresentationMode) video.webkitSetPresentationMode("picture-in-picture");
+    else if (video.requestPictureInPicture) await video.requestPictureInPicture();
+  } catch (e) {
+    showToast("Janela flutuante indisponível agora.");
+  }
+}
+
+// Android: liga a janela automática enquanto algo toca de verdade.
+function syncAutoPip() {
+  const active = !!(_state.selected && _state.playing);
+  if (_lastAutoPip === active) return;
+  _lastAutoPip = active;
+  callNativePlugin("SintonizaPip", "setAutoEnter", { enabled: active });
+}
+
+// Janela fechada no "x" (app continua em segundo plano): pausa.
+function pauseAfterPipClosed() {
+  const video = document.getElementById("player-video");
+  if (!video || video.paused) return;
+  if (_state.selected && _state.selected.isVod) { userPausedVod = true; video.pause(); }
+  else { video.pause(); setState({ playing: false }); showPlayerArt(); }
+}
+
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
   if (isNativeApp()) {
@@ -4783,6 +4848,8 @@ function closeCardActions() {
 // "x" do mini-player: para o que está tocando e deixa o player ocioso
 // (fundo preto e dourado). O progresso do filme/episódio já está salvo.
 function closeMiniPlayer() {
+  // Sai do PiP do navegador, se estiver ativo, antes de parar o vídeo
+  try { if (document.pictureInPictureElement) document.exitPictureInPicture(); } catch (e) {}
   stopStream();
   setState({ selected: null, playing: false });
 }
@@ -5516,6 +5583,9 @@ function render() {
   renderDownloads();
   setPlayerMode();
   scheduleDockingUpdate();
+  // Janela flutuante: modo automático do Android e botão só com algo tocando
+  syncAutoPip();
+  document.getElementById("pip-btn").style.display = (_state.selected && _state.playing && pipSupported()) ? "" : "none";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -5725,6 +5795,17 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("mini-close-btn").addEventListener("click", e => {
     e.stopPropagation();
     closeMiniPlayer();
+  });
+  // Botão de janela flutuante (PiP) no player
+  document.getElementById("pip-btn").addEventListener("click", e => { e.stopPropagation(); enterPip(); });
+  // Android avisa quando entra/sai da janela flutuante
+  window.addEventListener("sintonizapip", e => {
+    const active = !!(e && e.active);
+    // Menu aberto esconderia o mini-player dentro da janela: fecha antes
+    if (active) closeSidebar();
+    document.body.classList.toggle("pip-active", active);
+    // Saiu da janela e o app segue em segundo plano = fechou no "x": pausa
+    if (!active) setTimeout(() => { if (document.visibilityState === "hidden") pauseAfterPipClosed(); }, 400);
   });
   document.getElementById("play-pause-btn").addEventListener("click", (e) => {
     e.stopPropagation();
