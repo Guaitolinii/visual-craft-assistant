@@ -3462,12 +3462,9 @@ async function reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, 
   btn.style.display = "";
   btn.disabled = true;
   btn.textContent = "Verificando...";
+  let platform = "web";
+  try { platform = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web"; } catch (e) {}
   try {
-    // O painel Xtream às vezes continua contando a conexão que acabou de
-    // fechar por um instante - espera um pouco antes de sondar para não
-    // pegar um HTTP 4xx (limite de telas) que já vai se resolver sozinho.
-    let platform = "web";
-    try { platform = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web"; } catch (e) {}
     const base = {
       appVersion: APP_VERSION,
       platform,
@@ -3477,6 +3474,9 @@ async function reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, 
       codecSummary: describeCodecSupport(collectCodecSupport(video)),
     };
     lastPlaybackDiagnostic = buildPlaybackDiagnostic({ ...base, httpStatus: 0, contentType: "", contentLength: 0, probeError: "verificando..." });
+    // O painel Xtream às vezes continua contando a conexão que acabou de
+    // fechar por um instante - espera um pouco antes de sondar para não
+    // pegar um HTTP 4xx (limite de telas) que já vai se resolver sozinho.
     await new Promise(resolve => setTimeout(resolve, 1500));
     if (gen !== playbackGeneration) return; // outra reprodução já começou
     const probe = await probeVodUrl(url);
@@ -3486,13 +3486,19 @@ async function reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, 
       refineDirectPlayErrorMessage({ httpStatus: probe.httpStatus, contentType: probe.contentType, baseMessage, refinable });
   } catch (e) {
     // Mesmo se algo quebrar (ex.: canPlayType lançando em algum WebView
-    // exótico), ainda sobra um diagnóstico copiável, sem URL.
+    // exótico), ainda sobra um diagnóstico copiável, sem URL - mas só se
+    // essa ainda for a reprodução atual (senão pisaria no diagnóstico da
+    // falha mais nova).
+    if (gen !== playbackGeneration) return;
     lastPlaybackDiagnostic = buildPlaybackDiagnostic({
-      appVersion: APP_VERSION, platform: "web", userAgent: navigator.userAgent, fileExt: fileExtFromUrl(url),
+      appVersion: APP_VERSION, platform, userAgent: navigator.userAgent, fileExt: fileExtFromUrl(url),
       errorName, mediaErrorCode, mediaErrorMessage, attempts, codecSummary: "",
       httpStatus: 0, contentType: "", contentLength: 0, probeError: (e && e.message) || String(e),
     });
   } finally {
+    // Idem: uma falha antiga não pode reabilitar o botão enquanto a sondagem
+    // de uma falha mais nova ainda está em "Verificando...".
+    if (gen !== playbackGeneration) return;
     btn.disabled = false;
     btn.textContent = "Copiar diagnóstico";
   }
