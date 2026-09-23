@@ -1954,9 +1954,7 @@ let _state = {
   selected:  null,
   playing:   false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
-  recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]").map((item, i) =>
-    typeof item === "string" ? { id: item, type: "channel", ts: Date.now() - i * 1000 } : item
-  ),
+  recents:   normalizeChannelRecents(JSON.parse(localStorage.getItem("sint_recents") || "[]"), Date.now()),
   loadingPlaylist: false,
   vodType:   "movies",    // "movies" | "series" - sub-aba ativa em Filmes/Séries
 };
@@ -4420,6 +4418,24 @@ function getContinueWatchingItems(continueMap, type) {
     .filter(item => item.type === type);
 }
 
+// Recentes de canal gravados por versões antigas: número ou texto (id do
+// canal) viram { id, type: "channel", ts }; o resto é descartado. Antes,
+// ids numéricos antigos viravam cartões laranja com "?" no fim da lista.
+function normalizeChannelRecents(raw, nowMs) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item, i) => {
+    const fallbackTs = nowMs - (i + 1) * 1000;
+    if (typeof item === "number") return { id: item, type: "channel", ts: fallbackTs };
+    if (typeof item === "string" && item.trim()) {
+      return { id: /^\d+$/.test(item) ? Number(item) : item, type: "channel", ts: fallbackTs };
+    }
+    if (item && typeof item === "object" && item.id != null) {
+      return { ...item, type: item.type || "channel", ts: Number(item.ts) || fallbackTs };
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 function getUnifiedRecentItems(channelRecents, continueMap, limit) {
   const vodRecents = Object.keys(continueMap).map(k => ({
     ...continueMap[k],
@@ -4812,6 +4828,8 @@ function homeRecentCardHtml(item) {
         <p>${ch.name || ""}</p>
       </button>`;
   }
+  // Só filme/série de verdade; entradas sem tipo conhecido não viram cartão
+  if (item.type !== "vod" && item.type !== "series") return "";
   return continueCardHtml(item);
 }
 
