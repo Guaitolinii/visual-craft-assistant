@@ -804,6 +804,25 @@
       color: inherit; transition: transform 180ms;
     }
     .vod-carousel-grid .vod-card { min-width: 0; width: 100%; }
+    /* Recém-assistidos do Início: grade (3 por linha no celular) em vez de
+       uma coluna só - antes o minmax(14rem) inline dava 1 coluna numa tela
+       de celular e cada cartão ficava sozinho numa linha. */
+    .home-recents-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem;
+    }
+    .home-recents-grid .vod-card { min-width: 0; width: 100%; }
+    /* Canal na grade: logo inteira (contain) sobre a cor do canal, no mesmo
+       formato 2:3 dos pôsteres para as linhas ficarem alinhadas. */
+    .vod-card-logo {
+      width: 100%; aspect-ratio: 2/3; border-radius: .5rem; margin-bottom: .5rem;
+      display: grid; place-items: center; overflow: hidden;
+      color: oklch(0.98 0 0); font-size: 1.2rem; font-weight: 700;
+      box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
+    }
+    .vod-card .vod-card-logo img {
+      width: 80%; height: auto; aspect-ratio: auto; object-fit: contain;
+      margin: 0; box-shadow: none; background: none; border-radius: 0;
+    }
     .vod-card:hover { transform: translateY(-4px); }
     .vod-card img {
       width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
@@ -1011,6 +1030,7 @@
       .vod-hero { height: 16rem; padding: 1.25rem; }
       .vod-hero-copy h2 { font-size: 1.5rem; }
       .vod-card { min-width: 7.5rem; width: 7.5rem; }
+      .home-recents-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
       .vod-modal-hero { height: 11rem; }
     }
     @media (max-width: 480px) {
@@ -1231,8 +1251,7 @@
             <h2>Acessados Recentemente</h2>
           </div>
         </div>
-        <div id="home-recents-list" style="display:grid; gap:.75rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));">
-        </div>
+        <div id="home-recents-list" class="home-recents-grid"></div>
       </section>
 
       <!-- CATALOG -->
@@ -4000,7 +4019,9 @@ function homeRecentCardHtml(item) {
     if (!ch) return "";
     return `
       <button class="vod-card" data-channel-id="${ch.id}" tabindex="0">
-        <img src="${ch.logo || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+        <div class="vod-card-logo ${ch.color}">${ch.logo
+          ? `<img src="${ch.logo}" alt="" loading="lazy" onerror="this.remove()">`
+          : `<span>${ch.initials}</span>`}</div>
         <p>${ch.name || ""}</p>
       </button>`;
   }
