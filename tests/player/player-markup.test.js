@@ -38,6 +38,12 @@ test("mini-player some enquanto o menu das 3 listras está aberto", () => {
   assert.match(html, /document\.body\.classList\.remove\("sidebar-open"\)/);
 });
 
+test("mini-player tem um x para fechar", () => {
+  assert.ok(html.includes('id="mini-close-btn"'), "botão x do mini-player não existe");
+  assert.match(html, /#player-screen\.mini-player \.mini-close-btn\s*\{[^}]*display:\s*flex/);
+  assert.match(html, /function closeMiniPlayer\(\)/);
+});
+
 test("sem avisos técnicos de buffer/reconexão na tela", () => {
   for (const text of ["Blindagem ativa", "Conexão demorando", "Canal instável — reconectando", "Recarregando sinal de"]) {
     assert.ok(!html.includes(text), `aviso técnico "${text}" ainda existe`);

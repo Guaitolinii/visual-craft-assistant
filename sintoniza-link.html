@@ -520,6 +520,12 @@
       width: 2.75rem; height: 2.75rem; flex-shrink: 0;
       background: none; border: none; color: var(--foreground); cursor: pointer;
     }
+    .mini-close-btn { display: none; }
+    #player-screen.mini-player .mini-close-btn {
+      display: flex !important; align-items: center; justify-content: center;
+      width: 2.5rem; height: 2.5rem; flex-shrink: 0;
+      background: none; border: none; color: var(--muted-fg); cursor: pointer;
+    }
     #player-screen.player-hidden { display: none; }
     /* Menu das 3 listras aberto: o mini-player (z-index 500) sai da frente. */
     body.sidebar-open #player-screen.mini-player { display: none !important; }
@@ -1200,6 +1206,9 @@
         </div>
         <button class="mini-play-btn" id="mini-play-btn" aria-label="Reproduzir/Pausar">
           <i data-lucide="play" style="width:20px;height:20px" id="mini-play-icon"></i>
+        </button>
+        <button class="mini-close-btn" id="mini-close-btn" aria-label="Fechar o mini-player">
+          <i data-lucide="x" style="width:20px;height:20px"></i>
         </button>
       </div>
       <!-- Vídeo real -->
@@ -4714,6 +4723,13 @@ function closeCardActions() {
   _actionSheetContext = null;
 }
 
+// "x" do mini-player: para o que está tocando e deixa o player ocioso
+// (fundo preto e dourado). O progresso do filme/episódio já está salvo.
+function closeMiniPlayer() {
+  stopStream();
+  setState({ selected: null, playing: false });
+}
+
 function runCardAction(actionId) {
   const ctx = _actionSheetContext;
   closeCardActions();
@@ -5357,6 +5373,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("mini-play-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     togglePlayPause();
+  });
+  document.getElementById("mini-close-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    closeMiniPlayer();
   });
   document.getElementById("play-pause-btn").addEventListener("click", (e) => {
     e.stopPropagation();
