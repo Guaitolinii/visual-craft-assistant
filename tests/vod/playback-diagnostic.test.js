@@ -17,24 +17,54 @@ test("fileExtFromUrl e formatBytes", () => {
   const ctx = loadVodHelpers();
   assert.equal(ctx.fileExtFromUrl("http://s/movie/u/p/9.MP4?t=1"), "mp4");
   assert.equal(ctx.fileExtFromUrl("http://s/live/u/p/9"), "");
+  assert.equal(ctx.fileExtFromUrl("http://s/movie/u/p/9.mp4&token=abc"), "");
   assert.equal(ctx.formatBytes(1610612736), "1.5 GB");
   assert.equal(ctx.formatBytes(734003200), "700 MB");
 });
 
-test("servidor com HTTP 4xx/5xx: a mensagem culpa o servidor com o código", () => {
-  const msg = loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 403, contentType: "", baseMessage: "base" });
-  assert.match(msg, /HTTP 403/);
-  assert.match(msg, /limite de telas/);
+test("HTTP 401/403/429/509: mensagem culpa o limite de telas ou o login expirado", () => {
+  const ctx = loadVodHelpers();
+  for (const httpStatus of [401, 403, 429, 509]) {
+    const msg = ctx.refineDirectPlayErrorMessage({ httpStatus, contentType: "", baseMessage: "base", refinable: true });
+    assert.match(msg, new RegExp(`HTTP ${httpStatus}`));
+    assert.match(msg, /limite de telas/);
+  }
+});
+
+test("HTTP 404/410: mensagem diz que o arquivo não existe mais no servidor", () => {
+  const ctx = loadVodHelpers();
+  for (const httpStatus of [404, 410]) {
+    const msg = ctx.refineDirectPlayErrorMessage({ httpStatus, contentType: "", baseMessage: "base", refinable: true });
+    assert.match(msg, new RegExp(`HTTP ${httpStatus}`));
+    assert.match(msg, /não existe mais/);
+  }
+});
+
+test("HTTP 500-599 (exceto 501): mensagem diz que o provedor está com erro agora", () => {
+  const msg = loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 500, contentType: "", baseMessage: "base", refinable: true });
+  assert.match(msg, /HTTP 500/);
+  assert.match(msg, /erro agora/);
+});
+
+test("HTTP 4xx/5xx inconclusivo (405/501: HEAD não suportado) mantém a mensagem original", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.refineDirectPlayErrorMessage({ httpStatus: 405, contentType: "", baseMessage: "base", refinable: true }), "base");
+  assert.equal(ctx.refineDirectPlayErrorMessage({ httpStatus: 501, contentType: "", baseMessage: "base", refinable: true }), "base");
 });
 
 test("servidor entregou vídeo: a mensagem culpa o formato no aparelho", () => {
-  const msg = loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 200, contentType: "video/mp4", baseMessage: "base" });
+  const msg = loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 200, contentType: "video/mp4", baseMessage: "base", refinable: true });
   assert.match(msg, /formato/);
   assert.doesNotMatch(msg, /limite de telas/);
 });
 
 test("sem resposta da sondagem: mantém a mensagem original", () => {
-  assert.equal(loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 0, contentType: "", baseMessage: "base" }), "base");
+  assert.equal(loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 0, contentType: "", baseMessage: "base", refinable: true }), "base");
+});
+
+test("refinable false: nunca reescreve a mensagem, mesmo com um HTTP que normalmente refinaria", () => {
+  const msg = loadVodHelpers().refineDirectPlayErrorMessage({ httpStatus: 403, contentType: "", baseMessage: "base", refinable: false });
+  assert.equal(msg, "base");
 });
 
 test("buildPlaybackDiagnostic junta tudo e nunca inclui URL", () => {
