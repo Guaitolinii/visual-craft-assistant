@@ -266,6 +266,15 @@
     }
     .play-center:hover { transform: translate(-50%,-50%) scale(1.07); }
     .play-center.hidden { opacity: 0; pointer-events: none; }
+
+    /* Player ocioso (nada escolhido ainda): só o fundo preto e dourado,
+       sem nome, selo, logo, play nem barra de controles. */
+    #player-screen.is-idle .player-copy,
+    #player-screen.is-idle .channel-monogram,
+    #player-screen.is-idle .player-art-logo,
+    #player-screen.is-idle .play-center,
+    #player-screen.is-idle .player-controls,
+    #player-screen.is-idle .vod-seek-row { display: none !important; }
     /* Vídeo real */
     .player-video {
       position: absolute; inset: 0;
@@ -313,6 +322,10 @@
       background: var(--primary); color: var(--primary-fg);
       border: none; border-radius: .5rem; padding: .5rem 1rem;
       font-size: .875rem; margin-top: .25rem;
+    }
+    .diag-btn {
+      background: none; border: 1px solid oklch(1 0 0 / 25%); border-radius: .5rem;
+      color: oklch(0.85 0.01 75); padding: .4rem .9rem; font-size: .78rem;
     }
     /* Controles */
     .player-controls {
@@ -508,6 +521,8 @@
       background: none; border: none; color: var(--foreground); cursor: pointer;
     }
     #player-screen.player-hidden { display: none; }
+    /* Menu das 3 listras aberto: o mini-player (z-index 500) sai da frente. */
+    body.sidebar-open #player-screen.mini-player { display: none !important; }
     /* flow-root: a margem do player fica dentro da âncora, e a altura medida
        ao virar mini-player/tela cheia bate com o espaço que ele ocupava. */
     #player-anchor { display: flow-root; }
@@ -810,6 +825,8 @@
       box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
     }
     .vod-card p { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Episódio nos recentes: código S01E03 numa linha própria, menor. */
+    .vod-card .vod-card-episode { font-size: .72rem; font-weight: 600; color: var(--primary); margin-top: .1rem; }
     .vod-progress { height: 3px; background: oklch(1 0 0 / 20%); border-radius: 2px; margin: -.4rem 0 .4rem; overflow: hidden; }
     .vod-progress span { display: block; height: 100%; background: var(--primary); }
     .vod-empty { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
@@ -1201,6 +1218,7 @@
         <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
         <p class="player-error-code" id="player-error-code" style="display:none"></p>
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
+        <button class="diag-btn" id="copy-diagnostic-btn" style="display:none">Copiar diagnóstico</button>
       </div>
       <!-- Botão play central -->
       <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
@@ -2030,6 +2048,15 @@ function setSection(name) {
   setState({ active: name, section: "catalog" });
 }
 
+// Mantém o canal/filme escolhido só se ele ainda existir na lista nova -
+// nunca escolhe um canal sozinho: o player fica ocioso (fundo preto e
+// dourado) até o usuário escolher algo (ponto 5 da v7).
+function keepSelectionIfPresent(selected, channels) {
+  if (!selected) return null;
+  if (selected.isVod) return selected;
+  return channels.some(c => c.id === selected.id) ? selected : null;
+}
+
 function visibleChannels() {
   const { active, query, recents } = _state;
   const all = getChannels();
@@ -2176,10 +2203,8 @@ async function loadPlaylistFromUrl(url) {
     setState({ channels, categories: cats, loadingPlaylist: false });
     ensureEssentialFavorites();
 
-    // Seleciona primeiro canal
-    if (!_state.selected || !channels.find(c => c.id === _state.selected?.id)) {
-      setState({ selected: channels[0] }, true);
-    }
+    // Nada de canal automático: mantém a escolha só se ela ainda existir
+    setState({ selected: keepSelectionIfPresent(_state.selected, channels) }, true);
 
     setStatus("ok", `${channels.length} canais carregados`);
     renderCategoryNav();
@@ -2203,7 +2228,7 @@ async function loadPlaylistFromFile(file) {
     const channels = parseM3U(text);
     if (channels.length === 0) throw new Error("Arquivo vazio ou inválido");
     const cats = [...new Set(channels.map(c => c.category))].sort();
-    setState({ channels, categories: cats, loadingPlaylist: false, selected: channels[0] }, true);
+    setState({ channels, categories: cats, loadingPlaylist: false, selected: keepSelectionIfPresent(_state.selected, channels) }, true);
     setStatus("ok", `${channels.length} canais carregados`);
     renderCategoryNav();
     showToast(`✓ ${channels.length} canais do arquivo`);
@@ -2413,7 +2438,6 @@ function escalateBufferStage() {
     currentBufferStageIndex++;
     const stage = BUFFER_STAGES[currentBufferStageIndex];
     console.warn(`[Buffer Progressivo] Travamento detectado. Elevando buffer para ${stage.seconds}s.`);
-    showToast(`Blindagem ativa: Buffer expandido para ${stage.seconds}s`);
     updateDebugOverlay();
   }
 }
@@ -2755,7 +2779,6 @@ function startWatchdog(url) {
         console.warn("[Watchdog N3] Falha contínua de 11s. Recriando player do zero...");
         sessionReconnectCount++;
         escalateBufferStage(); // Sobe mais um degrau até o teto de 60s
-        showToast("Canal instável — reconectando completamente...");
         if (_state.selected) {
           _state.selected.quality_score = Math.max(20, (_state.selected.quality_score || 100) - 15);
           _state.selected.failure_count = (_state.selected.failure_count || 0) + 1;
@@ -2832,10 +2855,6 @@ async function reloadCurrentChannel(isSilent = false) {
 
   const reloadBtn = document.getElementById("reload-stream-btn");
   if (reloadBtn) reloadBtn.classList.add("spinning");
-
-  if (!isSilent) {
-    showToast("Recarregando sinal de " + ch.name + "...");
-  }
 
   try {
     const video = document.getElementById("player-video");
@@ -2921,7 +2940,6 @@ async function playStream(url) {
       const loader = document.getElementById("player-loader");
       if (loader && loader.classList.contains("active") && !isReloadingStream) {
         console.warn(`[Player] Conexão demorou mais de ${Math.round(timeoutMs / 1000)}s. Reestabilizando...`);
-        showToast("Conexão demorando — restabelecendo sinal...");
         escalateBufferStage();
         reloadCurrentChannel(true);
       }
@@ -3215,7 +3233,7 @@ function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attemp
   if (mediaErrorCode === 2) return { message: "A conexão com o servidor caiu enquanto o vídeo carregava.", code };
   if (mediaErrorCode === 3) return { message: "O arquivo do vídeo está corrompido ou usa um formato de áudio/vídeo não suportado.", code };
   if (mediaErrorCode === 4 || errorName === "NotSupportedError") {
-    return { message: "O servidor recusou o vídeo. Isso costuma acontecer quando o limite de telas simultâneas do seu plano está ocupado.", code };
+    return { message: "O servidor recusou o vídeo ou este aparelho não suporta o formato dele.", code };
   }
   return { message: "Não foi possível abrir o vídeo agora.", code };
 }
@@ -3223,6 +3241,87 @@ function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attemp
 // Só retoma do ponto salvo se ele existir e não estiver colado no fim.
 function shouldApplyResume(target, duration) {
   return target > 0 && isFinite(duration) && target < duration - 5;
+}
+
+// ─── Diagnóstico de falha de filme/série (ponto 3 da v7) ───
+// MEDIA_ERR 4 sozinho não diz se o servidor recusou ou se o aparelho não
+// decodifica o formato. Juntamos o detalhe interno do player, a resposta
+// do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
+// que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
+// carregam usuário e senha.
+const APP_VERSION = "v7";
+
+function sanitizeDiagnosticText(text) {
+  return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();
+}
+
+// Tipos testados com video.canPlayType() no aparelho.
+const CODEC_PROBES = [
+  { label: "H.264", type: 'video/mp4; codecs="avc1.640028"' },
+  { label: "HEVC", type: 'video/mp4; codecs="hvc1.1.6.L120.90"' },
+  { label: "AAC", type: 'audio/mp4; codecs="mp4a.40.2"' },
+  { label: "AC3", type: 'audio/mp4; codecs="ac-3"' },
+  { label: "E-AC3", type: 'audio/mp4; codecs="ec-3"' },
+  { label: "MKV", type: "video/x-matroska" },
+];
+
+// canPlay: { [label]: "" | "maybe" | "probably" }
+function describeCodecSupport(canPlay) {
+  return CODEC_PROBES.map(p => `${p.label} ${canPlay[p.label] ? "sim" : "não"}`).join(" · ");
+}
+
+function fileExtFromUrl(url) {
+  const path = String(url || "").split("?")[0];
+  const last = path.split("/").pop() || "";
+  const dot = last.lastIndexOf(".");
+  const ext = dot > 0 ? last.slice(dot + 1).toLowerCase() : "";
+  // Descarta lixo colado sem "?" (ex.: "...9.mp4&token=abc") - não é extensão de verdade.
+  return /^[a-z0-9]{1,5}$/.test(ext) ? ext : "";
+}
+
+function formatBytes(n) {
+  if (!n) return "";
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(n / 1024 ** 2)} MB`;
+}
+
+// Depois da sondagem, separa "servidor recusou" de "aparelho não toca o
+// formato". Só reescreve a mensagem quando `refinable` é true - erros que já
+// têm causa clara (timeout, MEDIA_ERR 2/3, MKV no iPhone) nunca devem ser
+// substituídos por um palpite baseado no HTTP da sondagem. Sem resposta
+// (ex.: navegador comum bloqueado por CORS) ou HTTP inconclusivo (405/501:
+// o servidor nem suporta HEAD), fica a mensagem original.
+function refineDirectPlayErrorMessage({ httpStatus, contentType, baseMessage, refinable }) {
+  if (!refinable) return baseMessage;
+  if (httpStatus === 401 || httpStatus === 403 || httpStatus === 429 || httpStatus === 509) {
+    return `O servidor recusou o vídeo (HTTP ${httpStatus}). Costuma ser o limite de telas simultâneas do plano ou o login expirado.`;
+  }
+  if (httpStatus === 404 || httpStatus === 410) {
+    return `O arquivo desse título não existe mais no servidor (HTTP ${httpStatus}).`;
+  }
+  if (httpStatus >= 500 && httpStatus <= 599 && httpStatus !== 501) {
+    return `O servidor do provedor está com erro agora (HTTP ${httpStatus}). Tente de novo mais tarde.`;
+  }
+  if (httpStatus >= 200 && httpStatus < 400 && /video|octet-stream|matroska|mp4/i.test(contentType || "")) {
+    return "O servidor enviou o vídeo, mas este aparelho não conseguiu tocar o formato dele (provavelmente áudio Dolby AC3/E-AC3 ou vídeo HEVC).";
+  }
+  return baseMessage;
+}
+
+function buildPlaybackDiagnostic({ appVersion, platform, userAgent, fileExt, errorName, mediaErrorCode, mediaErrorMessage, attempts, httpStatus, contentType, contentLength, probeError, codecSummary }) {
+  const player = [errorName, mediaErrorCode ? `MEDIA_ERR ${mediaErrorCode}` : "", attempts ? `${attempts} tentativa(s)` : ""].filter(Boolean).join(" · ");
+  const lines = [
+    `Sintoniza ${appVersion} · ${platform}`,
+    `Aparelho: ${sanitizeDiagnosticText(userAgent)}`,
+    `Arquivo: .${fileExt || "?"}`,
+    `Player: ${player}`,
+  ];
+  if (mediaErrorMessage) lines.push(`Detalhe do player: ${sanitizeDiagnosticText(mediaErrorMessage)}`);
+  lines.push(httpStatus
+    ? `Servidor: HTTP ${httpStatus}${contentType ? ` · ${contentType}` : ""}${contentLength ? ` · ${formatBytes(contentLength)}` : ""}`
+    : `Servidor: sem resposta${probeError ? ` (${sanitizeDiagnosticText(probeError)})` : ""}`);
+  lines.push(`Formatos do aparelho: ${codecSummary}`);
+  return lines.join("\n");
 }
 
 function isIOSDevice() {
@@ -3289,9 +3388,16 @@ function tryDirectPlay(url, video, attempt, generation) {
       setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen), computeDirectPlayRetryDelayMs(attempt));
       return;
     }
+    // Guarda o detalhe interno antes de soltar o vídeo (release() limpa o erro)
+    const mediaErrorMessage = (video.error && video.error.message) || "";
     releaseVideoElement(video);
     const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
     showPlayerError(message, code);
+    // Só a mensagem "genérica" do MEDIA_ERR 4 pode ser refinada pela sondagem -
+    // timeout, MEDIA_ERR 2/3 e MKV no iPhone já têm causa conhecida e não
+    // devem ser sobrescritos por um palpite baseado no HTTP da sondagem.
+    const refinable = (mediaErrorCode === 4 || errorName === "NotSupportedError") && !(ios && isContainerUnsupportedOnIOS(url));
+    reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts: attempt, baseMessage: message, refinable, gen });
   }
 
   video.play().then(() => {
@@ -3309,6 +3415,114 @@ function tryDirectPlay(url, video, attempt, generation) {
     applyPendingResume(video);
     startWatchdog(url);
   }).catch(fail);
+}
+
+// Último diagnóstico de falha (sem URLs), para o botão "Copiar diagnóstico".
+let lastPlaybackDiagnostic = "";
+
+function collectCodecSupport(video) {
+  const out = {};
+  CODEC_PROBES.forEach(p => {
+    try { out[p.label] = video.canPlayType(p.type); } catch (e) { out[p.label] = ""; }
+  });
+  return out;
+}
+
+// Sondagem HEAD: no app nativo o fetch passa pelo HTTP nativo (CapacitorHttp),
+// sem CORS - traz status, tipo e tamanho sem baixar o vídeo. Timeout próprio
+// porque o fetch nativo ignora AbortController; no navegador comum o
+// AbortController cancela a requisição de verdade quando o tempo esgota.
+async function probeVodUrl(url) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise(resolve => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve({ httpStatus: 0, probeError: "tempo esgotado" });
+    }, 8000);
+  });
+  const request = fetch(url, { method: "HEAD", cache: "no-store", signal: controller.signal })
+    .then(res => {
+      clearTimeout(timer);
+      return {
+        httpStatus: res.status,
+        contentType: res.headers.get("content-type") || "",
+        contentLength: Number(res.headers.get("content-length") || 0),
+      };
+    })
+    .catch(e => {
+      clearTimeout(timer);
+      return { httpStatus: 0, probeError: (e && e.message) || String(e) };
+    });
+  return Promise.race([request, timeout]);
+}
+
+async function reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts, baseMessage, refinable, gen }) {
+  const btn = document.getElementById("copy-diagnostic-btn");
+  btn.style.display = "";
+  btn.disabled = true;
+  btn.textContent = "Verificando...";
+  let platform = "web";
+  try { platform = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web"; } catch (e) {}
+  try {
+    const base = {
+      appVersion: APP_VERSION,
+      platform,
+      userAgent: navigator.userAgent,
+      fileExt: fileExtFromUrl(url),
+      errorName, mediaErrorCode, mediaErrorMessage, attempts,
+      codecSummary: describeCodecSupport(collectCodecSupport(video)),
+    };
+    lastPlaybackDiagnostic = buildPlaybackDiagnostic({ ...base, httpStatus: 0, contentType: "", contentLength: 0, probeError: "verificando..." });
+    // O painel Xtream às vezes continua contando a conexão que acabou de
+    // fechar por um instante - espera um pouco antes de sondar para não
+    // pegar um HTTP 4xx (limite de telas) que já vai se resolver sozinho.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (gen !== playbackGeneration) return; // outra reprodução já começou
+    const probe = await probeVodUrl(url);
+    if (gen !== playbackGeneration) return; // outra reprodução já começou
+    lastPlaybackDiagnostic = buildPlaybackDiagnostic({ ...base, contentType: "", contentLength: 0, probeError: "", ...probe });
+    document.getElementById("player-error-msg").textContent =
+      refineDirectPlayErrorMessage({ httpStatus: probe.httpStatus, contentType: probe.contentType, baseMessage, refinable });
+  } catch (e) {
+    // Mesmo se algo quebrar (ex.: canPlayType lançando em algum WebView
+    // exótico), ainda sobra um diagnóstico copiável, sem URL - mas só se
+    // essa ainda for a reprodução atual (senão pisaria no diagnóstico da
+    // falha mais nova).
+    if (gen !== playbackGeneration) return;
+    lastPlaybackDiagnostic = buildPlaybackDiagnostic({
+      appVersion: APP_VERSION, platform, userAgent: navigator.userAgent, fileExt: fileExtFromUrl(url),
+      errorName, mediaErrorCode, mediaErrorMessage, attempts, codecSummary: "",
+      httpStatus: 0, contentType: "", contentLength: 0, probeError: (e && e.message) || String(e),
+    });
+  } finally {
+    // Idem: uma falha antiga não pode reabilitar o botão enquanto a sondagem
+    // de uma falha mais nova ainda está em "Verificando...".
+    if (gen !== playbackGeneration) return;
+    btn.disabled = false;
+    btn.textContent = "Copiar diagnóstico";
+  }
+}
+
+// Copia texto; com alternativa para WebViews sem a Clipboard API.
+async function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  return ok;
 }
 
 function stopStream() {
@@ -3388,6 +3602,14 @@ function showPlayerError(msg, code) {
   const codeEl = document.getElementById("player-error-code");
   codeEl.textContent = code || "";
   codeEl.style.display = code ? "" : "none";
+  // O botão de diagnóstico só aparece para falhas de filme/série
+  // (reportDirectPlayFailure o mostra logo depois) - sempre reiniciado
+  // habilitado e com o texto padrão, para não herdar um estado travado
+  // de "Verificando..." de uma falha anterior.
+  const diagBtn = document.getElementById("copy-diagnostic-btn");
+  diagBtn.style.display = "none";
+  diagBtn.disabled = false;
+  diagBtn.textContent = "Copiar diagnóstico";
   document.getElementById("player-error").classList.add("active");
 }
 function hidePlayerError() {
@@ -3669,6 +3891,8 @@ function updateVodSeekVisibility() {
 // ═══════════════════════════════════════════════════════════════
 function renderPlayerInfo() {
   const ch = _state.selected;
+  // Nada escolhido ainda: só o fundo preto e dourado (ponto 5 da v7).
+  document.getElementById("player-screen").classList.toggle("is-idle", !ch);
   if (!ch) return;
 
   const nowPlaying = getNowPlayingTitle(ch);
@@ -3995,6 +4219,18 @@ function shouldDockSearch(slotTop, topbarBottom) {
 
 let _playerScrolledAway = false;
 
+// Seção em que o player estava no último setPlayerMode() (ver abaixo).
+let _lastPlayerSection = null;
+
+// Volta de Configurações: lá o player fica fora do lugar (mini/oculto) e a
+// âncora vazia, então a medida antiga de "rolou para longe" não vale - sem
+// zerar, o player ficava preso como mini-player para sempre (ponto 1 da v7).
+// Recomeça como visível e a rolagem mede de novo com o player no lugar.
+function resolvePlayerScrolledAway({ prevSection, section, scrolledAway }) {
+  if (prevSection === "settings" && section !== "settings") return false;
+  return scrolledAway;
+}
+
 // Enquanto o player está fora do fluxo (mini ou tela cheia), a âncora
 // guarda a altura dele para a página não "pular" para cima.
 function lockPlayerAnchor() {
@@ -4009,6 +4245,8 @@ function unlockPlayerAnchor() {
 function setPlayerMode() {
   const el = document.getElementById("player-screen");
   if (!el) return;
+  _playerScrolledAway = resolvePlayerScrolledAway({ prevSection: _lastPlayerSection, section: _state.section, scrolledAway: _playerScrolledAway });
+  _lastPlayerSection = _state.section;
   const isFullscreen = el.classList.contains("pseudo-fullscreen");
   const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
   const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
@@ -4215,13 +4453,35 @@ function selectNewestVodItems(items, limit) {
     .slice(0, limit);
 }
 
-// Título exibido para um episódio: "Nome da Série · T1E3". Antes aparecia
-// só o título cru da API (muitas vezes apenas "S01E01").
+// Código do episódio no padrão das plataformas: S01E03 (zero à esquerda).
+function formatEpisodeCode(season, episodeNum) {
+  const pad = n => String(Number(n) || 1).padStart(2, "0");
+  return episodeNum ? `S${pad(season)}E${pad(episodeNum)}` : `S${pad(season)}`;
+}
+
+// Título completo de um episódio: "Nome da Série · S01E03".
 function formatEpisodeTitle(seriesName, season, episodeNum) {
-  const s = Number(season) || 1;
-  const code = episodeNum ? `T${s}E${episodeNum}` : `T${s}`;
+  const code = formatEpisodeCode(season, episodeNum);
   const name = String(seriesName || "").trim();
   return name ? `${name} · ${code}` : code;
+}
+
+// Separa nome da série e código do episódio de um título salvo no
+// histórico - aceita o formato da v7 ("Série · S01E03"), o da v6
+// ("Série · T1E3") e o antigo (só "S01E01"). Filme: só nome.
+function splitEpisodeTitle(title) {
+  const text = String(title || "").trim();
+  const toCode = raw => {
+    const m = /^[ST](\d+)E(\d+)$/i.exec(raw.trim());
+    return m ? formatEpisodeCode(m[1], m[2]) : "";
+  };
+  const sep = text.lastIndexOf(" · ");
+  if (sep > 0) {
+    const code = toCode(text.slice(sep + 3));
+    if (code) return { name: text.slice(0, sep), code };
+  }
+  const onlyCode = toCode(text);
+  return onlyCode ? { name: "", code: onlyCode } : { name: text, code: "" };
 }
 
 // Cópia enxuta do item da API (filme ou série), guardada no histórico e
@@ -4455,6 +4715,15 @@ function openVodSection(vodType) {
   loadVodCatalog(vodType, creds);
 }
 
+// Série: nome (abreviado com "…" se não couber) e, embaixo, S01E03 sempre
+// visível. Filme: só o nome, como antes.
+function continueCardTitleHtml(item) {
+  if (item.type !== "series") return `<p>${escapeHtmlText(item.title || "")}</p>`;
+  const { name, code } = splitEpisodeTitle(item.title);
+  return `<p class="vod-card-name">${escapeHtmlText(name || code)}</p>`
+    + (name && code ? `<p class="vod-card-episode">${code}</p>` : "");
+}
+
 function continueCardHtml(item) {
   const key = `resume-${item.type}-${item.id}`;
   _vodCardsIndex[key] = item;
@@ -4465,7 +4734,7 @@ function continueCardHtml(item) {
     <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" data-lp="continue" tabindex="0">
       ${vodCardArtHtml(cover, item.title)}
       <div class="vod-progress"><span style="width:${pct}%"></span></div>
-      <p>${item.title || ""}</p>
+      ${continueCardTitleHtml(item)}
     </button>`;
 }
 
@@ -4754,7 +5023,7 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-// Episódio: título "Série · T1E3" e capa da série (o episódio quase nunca
+// Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
@@ -4863,10 +5132,14 @@ function render() {
 function openSidebar()  {
   document.getElementById("sidebar").classList.add("open");
   document.getElementById("sidebar-scrim").classList.add("open");
+  // Esconde o mini-player enquanto o menu está aberto (ele fica por cima
+  // do menu e atrapalha a navegação - ponto 2 da v7).
+  document.body.classList.add("sidebar-open");
 }
 function closeSidebar() {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebar-scrim").classList.remove("open");
+  document.body.classList.remove("sidebar-open");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4940,7 +5213,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (savedUrl) {
     loadPlaylistFromUrl(savedUrl);
   } else {
-    setState({ selected: DEMO_CHANNELS[0] }, true);
     setStatus("ok", "Demo — adicione sua lista");
     render();
   }
@@ -5056,6 +5328,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ch?.url) playStream(ch.url);
   });
 
+  document.getElementById("copy-diagnostic-btn").addEventListener("click", async () => {
+    const ok = lastPlaybackDiagnostic && await copyTextToClipboard(lastPlaybackDiagnostic);
+    showToast(ok ? "Diagnóstico copiado. Cole no WhatsApp e mande para o suporte." : "Não foi possível copiar o diagnóstico.");
+  });
+
   document.getElementById("fit-select").addEventListener("change", e => {
     const v = e.target.value;
     document.getElementById("player-video").style.objectFit = v;
@@ -5166,9 +5443,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setState({ section: "settings" });
     closeSidebar();
     loadSettingsForm();
+    window.scrollTo({ top: 0 });
   });
   document.getElementById("settings-back").addEventListener("click", () => {
     setState({ section: "catalog" });
+    window.scrollTo({ top: 0 });
   });
 
   // ── FILMES/SÉRIES (VOD) ──
@@ -5489,7 +5768,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("copy-link-hint").style.display = "none";
     localStorage.removeItem(LS.URL);
     localStorage.removeItem(LS.MODE);
-    setState({ channels: null, categories: [], selected: DEMO_CHANNELS[0] });
+    setState({ channels: null, categories: [], selected: null });
     setStatus("ok", "Demo — adicione sua lista");
     stopStream();
     renderCategoryNav();
