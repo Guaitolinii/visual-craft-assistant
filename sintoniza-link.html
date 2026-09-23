@@ -266,6 +266,15 @@
     }
     .play-center:hover { transform: translate(-50%,-50%) scale(1.07); }
     .play-center.hidden { opacity: 0; pointer-events: none; }
+
+    /* Player ocioso (nada escolhido ainda): só o fundo preto e dourado,
+       sem nome, selo, logo, play nem barra de controles. */
+    #player-screen.is-idle .player-copy,
+    #player-screen.is-idle .channel-monogram,
+    #player-screen.is-idle .player-art-logo,
+    #player-screen.is-idle .play-center,
+    #player-screen.is-idle .player-controls,
+    #player-screen.is-idle .vod-seek-row { display: none !important; }
     /* Vídeo real */
     .player-video {
       position: absolute; inset: 0;
@@ -2032,6 +2041,15 @@ function setSection(name) {
   setState({ active: name, section: "catalog" });
 }
 
+// Mantém o canal/filme escolhido só se ele ainda existir na lista nova -
+// nunca escolhe um canal sozinho: o player fica ocioso (fundo preto e
+// dourado) até o usuário escolher algo (ponto 5 da v7).
+function keepSelectionIfPresent(selected, channels) {
+  if (!selected) return null;
+  if (selected.isVod) return selected;
+  return channels.some(c => c.id === selected.id) ? selected : null;
+}
+
 function visibleChannels() {
   const { active, query, recents } = _state;
   const all = getChannels();
@@ -2178,10 +2196,8 @@ async function loadPlaylistFromUrl(url) {
     setState({ channels, categories: cats, loadingPlaylist: false });
     ensureEssentialFavorites();
 
-    // Seleciona primeiro canal
-    if (!_state.selected || !channels.find(c => c.id === _state.selected?.id)) {
-      setState({ selected: channels[0] }, true);
-    }
+    // Nada de canal automático: mantém a escolha só se ela ainda existir
+    setState({ selected: keepSelectionIfPresent(_state.selected, channels) }, true);
 
     setStatus("ok", `${channels.length} canais carregados`);
     renderCategoryNav();
@@ -2205,7 +2221,7 @@ async function loadPlaylistFromFile(file) {
     const channels = parseM3U(text);
     if (channels.length === 0) throw new Error("Arquivo vazio ou inválido");
     const cats = [...new Set(channels.map(c => c.category))].sort();
-    setState({ channels, categories: cats, loadingPlaylist: false, selected: channels[0] }, true);
+    setState({ channels, categories: cats, loadingPlaylist: false, selected: keepSelectionIfPresent(_state.selected, channels) }, true);
     setStatus("ok", `${channels.length} canais carregados`);
     renderCategoryNav();
     showToast(`✓ ${channels.length} canais do arquivo`);
@@ -3671,6 +3687,8 @@ function updateVodSeekVisibility() {
 // ═══════════════════════════════════════════════════════════════
 function renderPlayerInfo() {
   const ch = _state.selected;
+  // Nada escolhido ainda: só o fundo preto e dourado (ponto 5 da v7).
+  document.getElementById("player-screen").classList.toggle("is-idle", !ch);
   if (!ch) return;
 
   const nowPlaying = getNowPlayingTitle(ch);
@@ -4960,7 +4978,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (savedUrl) {
     loadPlaylistFromUrl(savedUrl);
   } else {
-    setState({ selected: DEMO_CHANNELS[0] }, true);
     setStatus("ok", "Demo — adicione sua lista");
     render();
   }
@@ -5511,7 +5528,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("copy-link-hint").style.display = "none";
     localStorage.removeItem(LS.URL);
     localStorage.removeItem(LS.MODE);
-    setState({ channels: null, categories: [], selected: DEMO_CHANNELS[0] });
+    setState({ channels: null, categories: [], selected: null });
     setStatus("ok", "Demo — adicione sua lista");
     stopStream();
     renderCategoryNav();
