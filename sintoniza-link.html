@@ -808,11 +808,21 @@
     .vod-carousel::-webkit-scrollbar { height: 6px; }
     .vod-carousel::-webkit-scrollbar-track { background: transparent; }
     .vod-carousel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    /* Selo de streaming e alternância "Selo nos cartões / Agrupar por
+       streaming". Mesma geometria do protótipo aprovado, mas com os tokens
+       de cor deste arquivo (tema claro) - os nomes do protótipo (--surface,
+       --text...) não existem aqui e cairiam no fallback escuro. */
+    .vod-display-toggle { display: flex; gap: 3px; padding: 4px; margin: 10px 0 4px; width: fit-content; background: var(--secondary); border: 1px solid var(--border); border-radius: 999px; }
+    .vod-display-btn { appearance: none; border: 0; cursor: pointer; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; background: transparent; color: var(--muted-fg); }
+    .vod-display-btn[aria-pressed="true"] { background: var(--card); color: var(--foreground); }
+    .vod-provider-badge { position: absolute; top: 8px; left: 8px; z-index: 3; font-size: 10.5px; font-weight: 700; padding: 3px 7px; border-radius: 7px; box-shadow: 0 2px 8px -2px #000b; white-space: nowrap; }
+    .vod-row-provider-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; margin-right: 7px; vertical-align: middle; }
     .vod-carousel-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
       gap: 1rem 1rem; padding-bottom: .75rem;
     }
     .vod-card {
+      position: relative; /* âncora do .vod-provider-badge (absolute) */
       min-width: 9.5rem; width: 9.5rem; flex-shrink: 0; text-align: left;
       background: none; border: none; padding: 0; scroll-snap-align: start;
       color: inherit; transition: transform 180ms;
@@ -1422,6 +1432,13 @@
         </label>
       </div>
 
+      <!-- Só aparece quando vod-providers.json carregou com sucesso (ver
+           updateVodDisplayToggleVisibility) - sem selo nenhum, alternar
+           modo não faz sentido e ficaria um controle morto na tela. -->
+      <div class="vod-display-toggle" id="vod-display-toggle" style="display:none" role="group" aria-label="Forma de exibição do catálogo">
+        <button id="vod-display-badge-btn" class="vod-display-btn" aria-pressed="true">Selo nos cartões</button>
+        <button id="vod-display-group-btn" class="vod-display-btn" aria-pressed="false">Agrupar por streaming</button>
+      </div>
 
       <div class="vod-carousel-grid" id="vod-search-results" style="display:none"></div>
       <div id="vod-carousels"></div>
@@ -4697,6 +4714,34 @@ function groupItemsByProvider(items, providerOrder) {
   return groups;
 }
 
+// Cores de marca por streaming (mesmas do protótipo aprovado) - texto
+// simples em vez de logo (evita reproduzir marca registrada), mas com a
+// cor certa de cada serviço para reconhecimento rápido no cartão. As
+// chaves são as mesmas ids curtas que o mapa gerado (PROVIDERS_BR em
+// scripts/vod_providers/build_provider_map.py) grava em streamingProviders.
+const PROVIDERS_BR = {
+  netflix:   { label: "Netflix",     bg: "#E50914", fg: "#fff" },
+  prime:     { label: "Prime Video", bg: "#12b3f0", fg: "#04222e" },
+  max:       { label: "Max",         bg: "#3b2fe3", fg: "#fff" },
+  disney:    { label: "Disney+",     bg: "#0c2a8c", fg: "#fff" },
+  apple:     { label: "Apple TV+",   bg: "#16181d", fg: "#fff" },
+  paramount: { label: "Paramount+",  bg: "#0064ff", fg: "#fff" },
+  globoplay: { label: "Globoplay",   bg: "#ff2d55", fg: "#fff" },
+};
+// Ordem das fileiras no modo "Agrupar por streaming" (providerOrder de
+// groupItemsByProvider) - id fora desta lista cai em "outros".
+const PROVIDER_ORDER = ["netflix", "prime", "max", "disney", "apple", "paramount", "globoplay"];
+
+// Selo do cartão: só o primeiro streaming (cartão pequeno, um selo basta).
+// id desconhecido (fora de PROVIDERS_BR) não desenha nada em vez de um
+// selo sem cor/nome.
+function vodProviderBadgeHtml(streamingProviders) {
+  if (!streamingProviders || !streamingProviders.length) return "";
+  const p = PROVIDERS_BR[streamingProviders[0]];
+  if (!p) return "";
+  return `<span class="vod-provider-badge" style="background:${p.bg};color:${p.fg}">${p.label}</span>`;
+}
+
 // Ordena pelo timestamp real "added"/"last_modified" da API (não a categoria
 // estática "Lançamentos") e corta no limite — usada para montar a fileira
 // "Novidades". Pura (tests/vod/dedupe-vod-items.test.js).
@@ -5278,6 +5323,7 @@ function vodCardHtml(item, contType) {
   const title  = item.name || item.title || "Sem título";
   return `
     <button class="vod-card" data-vod-key="${key}" data-lp="vod" tabindex="0">
+      ${vodProviderBadgeHtml(item.streamingProviders)}
       <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
       <p>${escapeHtmlText(title)}</p>
     </button>`;

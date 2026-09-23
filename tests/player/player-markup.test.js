@@ -98,3 +98,20 @@ test("janela flutuante: pausa só no fechamento nativo, suspende ao compartilhar
   assert.match(html, /body\.pip-active #player-screen \.fs-lock-shield/);
   assert.match(html, /body\.pip-active #player-screen \.fs-lock-hint/);
 });
+
+test("VOD view has a display-mode toggle (selo nos cartões / agrupar por streaming)", () => {
+  for (const id of ["vod-display-badge-btn", "vod-display-group-btn"]) {
+    assert.ok(html.includes(`id="${id}"`), `expected #${id} in the VOD view`);
+  }
+});
+
+test("cartão de VOD desenha o selo do streaming ancorado no próprio cartão", () => {
+  const card = html.match(/function vodCardHtml\([\s\S]*?\n\}/);
+  assert.ok(card, "vodCardHtml não encontrada");
+  assert.match(card[0], /\$\{vodProviderBadgeHtml\(item\.streamingProviders\)\}/);
+  // .vod-provider-badge é position:absolute - sem position:relative no
+  // .vod-card o selo ancoraria num ancestral qualquer, fora do pôster.
+  const rule = html.match(/\n\s*\.vod-card \{[^}]*\}/);
+  assert.ok(rule, "regra .vod-card não encontrada");
+  assert.match(rule[0], /position:\s*relative/);
+});
