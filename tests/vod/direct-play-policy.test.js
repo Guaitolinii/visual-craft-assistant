@@ -28,10 +28,11 @@ test("para de tentar ao chegar no limite de tentativas", () => {
   assert.equal(ctx.shouldRetryDirectPlay({ ...base, attempt: 6 }), false);
 });
 
-test("mensagem de erro explica o limite de telas e mostra o código real", () => {
+test("mensagem de erro do MEDIA_ERR 4 é neutra e mostra o código real", () => {
   const ctx = loadVodHelpers();
   const r = ctx.describeDirectPlayError({ errorName: "NotSupportedError", mediaErrorCode: 4, url: "http://x/movie/u/p/1.mp4", isIOS: true, attempts: 6 });
-  assert.match(r.message, /limite de telas/);
+  assert.match(r.message, /recusou/);
+  assert.match(r.message, /formato/);
   assert.doesNotMatch(r.message, /CORS/);
   assert.equal(r.code, "NotSupportedError · MEDIA_ERR 4 · 6 tentativas");
 });

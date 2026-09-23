@@ -323,6 +323,10 @@
       border: none; border-radius: .5rem; padding: .5rem 1rem;
       font-size: .875rem; margin-top: .25rem;
     }
+    .diag-btn {
+      background: none; border: 1px solid oklch(1 0 0 / 25%); border-radius: .5rem;
+      color: oklch(0.85 0.01 75); padding: .4rem .9rem; font-size: .78rem;
+    }
     /* Controles */
     .player-controls {
       display: flex; height: 4.25rem; align-items: center; gap: .35rem;
@@ -1212,6 +1216,7 @@
         <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
         <p class="player-error-code" id="player-error-code" style="display:none"></p>
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
+        <button class="diag-btn" id="copy-diagnostic-btn" style="display:none">Copiar diagnóstico</button>
       </div>
       <!-- Botão play central -->
       <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
@@ -3226,7 +3231,7 @@ function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attemp
   if (mediaErrorCode === 2) return { message: "A conexão com o servidor caiu enquanto o vídeo carregava.", code };
   if (mediaErrorCode === 3) return { message: "O arquivo do vídeo está corrompido ou usa um formato de áudio/vídeo não suportado.", code };
   if (mediaErrorCode === 4 || errorName === "NotSupportedError") {
-    return { message: "O servidor recusou o vídeo. Isso costuma acontecer quando o limite de telas simultâneas do seu plano está ocupado.", code };
+    return { message: "O servidor recusou o vídeo ou este aparelho não suporta o formato dele.", code };
   }
   return { message: "Não foi possível abrir o vídeo agora.", code };
 }
@@ -3234,6 +3239,75 @@ function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attemp
 // Só retoma do ponto salvo se ele existir e não estiver colado no fim.
 function shouldApplyResume(target, duration) {
   return target > 0 && isFinite(duration) && target < duration - 5;
+}
+
+// ─── Diagnóstico de falha de filme/série (ponto 3 da v7) ───
+// MEDIA_ERR 4 sozinho não diz se o servidor recusou ou se o aparelho não
+// decodifica o formato. Juntamos o detalhe interno do player, a resposta
+// do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
+// que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
+// carregam usuário e senha.
+const APP_VERSION = "v7";
+
+function sanitizeDiagnosticText(text) {
+  return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();
+}
+
+// Tipos testados com video.canPlayType() no aparelho.
+const CODEC_PROBES = [
+  { label: "H.264", type: 'video/mp4; codecs="avc1.640028"' },
+  { label: "HEVC", type: 'video/mp4; codecs="hvc1.1.6.L120.90"' },
+  { label: "AAC", type: 'audio/mp4; codecs="mp4a.40.2"' },
+  { label: "AC3", type: 'audio/mp4; codecs="ac-3"' },
+  { label: "E-AC3", type: 'audio/mp4; codecs="ec-3"' },
+  { label: "MKV", type: "video/x-matroska" },
+];
+
+// canPlay: { [label]: "" | "maybe" | "probably" }
+function describeCodecSupport(canPlay) {
+  return CODEC_PROBES.map(p => `${p.label} ${canPlay[p.label] ? "sim" : "não"}`).join(" · ");
+}
+
+function fileExtFromUrl(url) {
+  const path = String(url || "").split("?")[0];
+  const last = path.split("/").pop() || "";
+  const dot = last.lastIndexOf(".");
+  return dot > 0 ? last.slice(dot + 1).toLowerCase() : "";
+}
+
+function formatBytes(n) {
+  if (!n) return "";
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(n / 1024 ** 2)} MB`;
+}
+
+// Depois da sondagem, separa "servidor recusou" de "aparelho não toca o
+// formato". Sem resposta (ex.: navegador comum bloqueado por CORS), fica a
+// mensagem original.
+function refineDirectPlayErrorMessage({ httpStatus, contentType, baseMessage }) {
+  if (httpStatus >= 400) {
+    return `O servidor recusou o vídeo (HTTP ${httpStatus}). Costuma ser o limite de telas simultâneas do plano ou o login expirado.`;
+  }
+  if (httpStatus >= 200 && httpStatus < 400 && /video|octet-stream|matroska|mp4/i.test(contentType || "")) {
+    return "O servidor enviou o vídeo, mas este aparelho não conseguiu tocar o formato dele (provavelmente áudio Dolby AC3/E-AC3 ou vídeo HEVC).";
+  }
+  return baseMessage;
+}
+
+function buildPlaybackDiagnostic({ appVersion, platform, userAgent, fileExt, errorName, mediaErrorCode, mediaErrorMessage, attempts, httpStatus, contentType, contentLength, probeError, codecSummary }) {
+  const player = [errorName, mediaErrorCode ? `MEDIA_ERR ${mediaErrorCode}` : "", attempts ? `${attempts} tentativa(s)` : ""].filter(Boolean).join(" · ");
+  const lines = [
+    `Sintoniza ${appVersion} · ${platform}`,
+    `Aparelho: ${sanitizeDiagnosticText(userAgent)}`,
+    `Arquivo: .${fileExt || "?"}`,
+    `Player: ${player}`,
+  ];
+  if (mediaErrorMessage) lines.push(`Detalhe do player: ${sanitizeDiagnosticText(mediaErrorMessage)}`);
+  lines.push(httpStatus
+    ? `Servidor: HTTP ${httpStatus}${contentType ? ` · ${contentType}` : ""}${contentLength ? ` · ${formatBytes(contentLength)}` : ""}`
+    : `Servidor: sem resposta${probeError ? ` (${sanitizeDiagnosticText(probeError)})` : ""}`);
+  lines.push(`Formatos do aparelho: ${codecSummary}`);
+  return lines.join("\n");
 }
 
 function isIOSDevice() {
@@ -3300,9 +3374,12 @@ function tryDirectPlay(url, video, attempt, generation) {
       setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen), computeDirectPlayRetryDelayMs(attempt));
       return;
     }
+    // Guarda o detalhe interno antes de soltar o vídeo (release() limpa o erro)
+    const mediaErrorMessage = (video.error && video.error.message) || "";
     releaseVideoElement(video);
     const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
     showPlayerError(message, code);
+    reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts: attempt, baseMessage: message, gen });
   }
 
   video.play().then(() => {
@@ -3320,6 +3397,71 @@ function tryDirectPlay(url, video, attempt, generation) {
     applyPendingResume(video);
     startWatchdog(url);
   }).catch(fail);
+}
+
+// Último diagnóstico de falha (sem URLs), para o botão "Copiar diagnóstico".
+let lastPlaybackDiagnostic = "";
+
+function collectCodecSupport(video) {
+  const out = {};
+  CODEC_PROBES.forEach(p => {
+    try { out[p.label] = video.canPlayType(p.type); } catch (e) { out[p.label] = ""; }
+  });
+  return out;
+}
+
+// Sondagem HEAD: no app nativo o fetch passa pelo HTTP nativo (CapacitorHttp),
+// sem CORS - traz status, tipo e tamanho sem baixar o vídeo. Timeout próprio
+// porque o fetch nativo ignora AbortController.
+async function probeVodUrl(url) {
+  const timeout = new Promise(resolve => setTimeout(() => resolve({ httpStatus: 0, probeError: "tempo esgotado" }), 8000));
+  const request = fetch(url, { method: "HEAD", cache: "no-store" })
+    .then(res => ({
+      httpStatus: res.status,
+      contentType: res.headers.get("content-type") || "",
+      contentLength: Number(res.headers.get("content-length") || 0),
+    }))
+    .catch(e => ({ httpStatus: 0, probeError: (e && e.message) || String(e) }));
+  return Promise.race([request, timeout]);
+}
+
+async function reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts, baseMessage, gen }) {
+  const base = {
+    appVersion: APP_VERSION,
+    platform: (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web",
+    userAgent: navigator.userAgent,
+    fileExt: fileExtFromUrl(url),
+    errorName, mediaErrorCode, mediaErrorMessage, attempts,
+    codecSummary: describeCodecSupport(collectCodecSupport(video)),
+  };
+  lastPlaybackDiagnostic = buildPlaybackDiagnostic({ ...base, httpStatus: 0, contentType: "", contentLength: 0, probeError: "verificando..." });
+  document.getElementById("copy-diagnostic-btn").style.display = "";
+  const probe = await probeVodUrl(url);
+  if (gen !== playbackGeneration) return; // outra reprodução já começou
+  lastPlaybackDiagnostic = buildPlaybackDiagnostic({ ...base, contentType: "", contentLength: 0, probeError: "", ...probe });
+  document.getElementById("player-error-msg").textContent =
+    refineDirectPlayErrorMessage({ httpStatus: probe.httpStatus, contentType: probe.contentType, baseMessage });
+}
+
+// Copia texto; com alternativa para WebViews sem a Clipboard API.
+async function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  return ok;
 }
 
 function stopStream() {
@@ -3399,6 +3541,9 @@ function showPlayerError(msg, code) {
   const codeEl = document.getElementById("player-error-code");
   codeEl.textContent = code || "";
   codeEl.style.display = code ? "" : "none";
+  // O botão de diagnóstico só aparece para falhas de filme/série
+  // (reportDirectPlayFailure o mostra logo depois).
+  document.getElementById("copy-diagnostic-btn").style.display = "none";
   document.getElementById("player-error").classList.add("active");
 }
 function hidePlayerError() {
@@ -5084,6 +5229,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("retry-btn").addEventListener("click", () => {
     const ch = _state.selected;
     if (ch?.url) playStream(ch.url);
+  });
+
+  document.getElementById("copy-diagnostic-btn").addEventListener("click", async () => {
+    const ok = lastPlaybackDiagnostic && await copyTextToClipboard(lastPlaybackDiagnostic);
+    showToast(ok ? "Diagnóstico copiado. Cole no WhatsApp e mande para o suporte." : "Não foi possível copiar o diagnóstico.");
   });
 
   document.getElementById("fit-select").addEventListener("change", e => {
