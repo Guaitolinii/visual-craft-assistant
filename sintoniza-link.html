@@ -2431,7 +2431,6 @@ function escalateBufferStage() {
     currentBufferStageIndex++;
     const stage = BUFFER_STAGES[currentBufferStageIndex];
     console.warn(`[Buffer Progressivo] Travamento detectado. Elevando buffer para ${stage.seconds}s.`);
-    showToast(`Blindagem ativa: Buffer expandido para ${stage.seconds}s`);
     updateDebugOverlay();
   }
 }
@@ -2773,7 +2772,6 @@ function startWatchdog(url) {
         console.warn("[Watchdog N3] Falha contínua de 11s. Recriando player do zero...");
         sessionReconnectCount++;
         escalateBufferStage(); // Sobe mais um degrau até o teto de 60s
-        showToast("Canal instável — reconectando completamente...");
         if (_state.selected) {
           _state.selected.quality_score = Math.max(20, (_state.selected.quality_score || 100) - 15);
           _state.selected.failure_count = (_state.selected.failure_count || 0) + 1;
@@ -2850,10 +2848,6 @@ async function reloadCurrentChannel(isSilent = false) {
 
   const reloadBtn = document.getElementById("reload-stream-btn");
   if (reloadBtn) reloadBtn.classList.add("spinning");
-
-  if (!isSilent) {
-    showToast("Recarregando sinal de " + ch.name + "...");
-  }
 
   try {
     const video = document.getElementById("player-video");
@@ -2939,7 +2933,6 @@ async function playStream(url) {
       const loader = document.getElementById("player-loader");
       if (loader && loader.classList.contains("active") && !isReloadingStream) {
         console.warn(`[Player] Conexão demorou mais de ${Math.round(timeoutMs / 1000)}s. Reestabilizando...`);
-        showToast("Conexão demorando — restabelecendo sinal...");
         escalateBufferStage();
         reloadCurrentChannel(true);
       }

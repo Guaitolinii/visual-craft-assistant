@@ -37,3 +37,9 @@ test("mini-player some enquanto o menu das 3 listras está aberto", () => {
   assert.match(html, /document\.body\.classList\.add\("sidebar-open"\)/);
   assert.match(html, /document\.body\.classList\.remove\("sidebar-open"\)/);
 });
+
+test("sem avisos técnicos de buffer/reconexão na tela", () => {
+  for (const text of ["Blindagem ativa", "Conexão demorando", "Canal instável — reconectando", "Recarregando sinal de"]) {
+    assert.ok(!html.includes(text), `aviso técnico "${text}" ainda existe`);
+  }
+});
