@@ -1,0 +1,59 @@
+name: Atualizar mapa de streaming do catálogo VOD
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 05:00 no horário de Brasília
+  workflow_dispatch:
+
+# O passo final faz push na branch vod-data com o GITHUB_TOKEN: precisa de
+# escrita no conteúdo do repositório (e só disso).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (branch de dados)
+        uses: actions/checkout@v4
+        with:
+          ref: vod-data
+
+      - name: Baixar o script de cruzamento da v9
+        # O script vive em v9 (versionado junto do resto do código); só o
+        # JSON gerado mora em vod-data. Copiamos o script para dentro do
+        # checkout da branch de dados só para rodar aqui, sem commitá-lo.
+        run: |
+          git fetch origin v9 --depth=1
+          git show origin/v9:scripts/vod_providers/build_provider_map.py > build_provider_map.py
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # IMPORTANTE: não adicionar continue-on-error, "|| true" nem
+      # "if: always()" neste passo nem no de commit. O script sai com erro,
+      # SEM gravar vod-providers.json, quando o Xtream ou a TMDB falham como
+      # um todo; é essa falha que impede o passo de commit de rodar e mantém
+      # o último arquivo bom na branch vod-data. Suprimir o erro aqui
+      # deixaria uma execução com falha commitar um mapa vazio/errado.
+      - name: Gerar vod-providers.json
+        env:
+          VOD_XTREAM_BASE: ${{ secrets.VOD_XTREAM_BASE }}
+          VOD_XTREAM_USER: ${{ secrets.VOD_XTREAM_USER }}
+          VOD_XTREAM_PASS: ${{ secrets.VOD_XTREAM_PASS }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: python build_provider_map.py
+
+      - name: Commitar só o JSON (o script baixado não entra na branch de dados)
+        run: |
+          rm -f build_provider_map.py
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add vod-providers.json
+          if git diff --staged --quiet; then
+            echo "Sem mudanças no catálogo de streaming hoje."
+          else
+            git commit -m "chore(vod-data): atualizar mapa de streaming"
+            git push origin vod-data
+          fi
