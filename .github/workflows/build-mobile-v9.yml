@@ -1,0 +1,103 @@
+name: Build Android APK e iOS IPA (v9)
+
+on:
+  push:
+    branches: [v9]
+    paths:
+      - "sintoniza-link.html"
+      - "capacitor.config.ts"
+      - "scripts/prepare-mobile.js"
+      - "android/**"
+      - "ios/**"
+      - ".github/workflows/build-mobile.yml"
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Diagnóstico do ambiente
+        run: |
+          echo "## Diagnóstico (android)" >> "$GITHUB_STEP_SUMMARY"
+          echo "node: $(node --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm: $(npm --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preparar www/
+        run: node scripts/prepare-mobile.js
+
+      - name: Sincronizar Android
+        run: npx cap sync android
+
+      - name: Compilar APK debug
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sintoniza-android-debug-v9
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Diagnóstico do ambiente
+        run: |
+          echo "## Diagnóstico (ios)" >> "$GITHUB_STEP_SUMMARY"
+          echo "node: $(node --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm: $(npm --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preparar www/
+        run: node scripts/prepare-mobile.js
+
+      - name: Sincronizar iOS
+        run: npx cap sync ios
+
+      - name: Arquivar sem assinatura de código
+        working-directory: ios/App
+        run: |
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Empacotar .ipa (não assinado - Sideloadly assina no sideload)
+        working-directory: ios/App
+        run: |
+          mkdir -p build/Payload
+          cp -r build/App.xcarchive/Products/Applications/App.app build/Payload/
+          cd build
+          zip -r sintoniza-ios-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sintoniza-ios-unsigned-v9
+          path: ios/App/build/sintoniza-ios-unsigned.ipa
