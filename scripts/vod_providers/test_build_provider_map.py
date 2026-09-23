@@ -1,5 +1,15 @@
 # scripts/vod_providers/test_build_provider_map.py
+import contextlib
+import io
+import json
+import os
+import tempfile
 import unittest
+import urllib.error
+import urllib.parse
+from unittest import mock
+
+import build_provider_map as bpm
 from build_provider_map import (
     normalize_key, vod_item_year_key, provider_key_for_entry, _parse_json_bytes, PROVIDERS_BR,
 )
@@ -87,6 +97,186 @@ class TestProvidersConfig(unittest.TestCase):
             list(PROVIDERS_BR.values()),
             ["netflix", "prime", "max", "disney", "apple", "paramount", "globoplay"],
         )
+
+
+# ─── main() de ponta a ponta, sem rede ───────────────────────────────────
+# Credenciais falsas (nenhum provedor/TMDB real é tocado): _http_get_json é
+# trocado por um roteador em memória e urlopen explode se algo escapar.
+FAKE_ENV = {
+    "VOD_XTREAM_BASE": "http://xtream.invalid",
+    "VOD_XTREAM_USER": "usuario-falso",
+    "VOD_XTREAM_PASS": "senha-falsa-123",
+    "TMDB_API_KEY": "chave-tmdb-falsa",
+}
+HEALTHY_MOVIES = [
+    {"name": "Filme Netflix", "year": "2024"},
+    {"name": "Filme Duplo", "year": "2023"},
+    {"name": "Filme Sem Streaming", "year": "2020"},
+    {"name": "Nao Existe Na TMDB", "year": "1999"},
+]
+HEALTHY_SERIES = [
+    {"name": "Serie Nula", "releaseDate": None},
+    {"name": "Serie Data", "releaseDate": "2019-05-10"},
+]
+HEALTHY_CATALOGS = {"get_vod_streams": HEALTHY_MOVIES, "get_series": HEALTHY_SERIES}
+SEARCH_IDS = {
+    ("movie", "Filme Netflix"): 1001, ("movie", "Filme Duplo"): 1002,
+    ("movie", "Filme Sem Streaming"): 1003,
+    ("tv", "Serie Nula"): 2001, ("tv", "Serie Data"): 2002,
+}
+DISCOVER_IDS = {
+    ("movie", 8): [1001], ("movie", 337): [1002], ("movie", 1899): [1002],
+    ("tv", 307): [2001], ("tv", 337): [2002],
+}
+TMDB_401 = urllib.error.HTTPError("https://tmdb.invalid", 401, "Unauthorized", None, None)
+
+
+def fake_http(catalogs=None, discover_ids=None, search_ids=None,
+              discover_error=None, search_error=None, search_error_for=()):
+    """Roteador falso no lugar de _http_get_json: responde player_api.php
+    (catálogo Xtream), discover/* e search/* da TMDB a partir de dicionários."""
+    catalogs = HEALTHY_CATALOGS if catalogs is None else catalogs
+    discover_ids = DISCOVER_IDS if discover_ids is None else discover_ids
+    search_ids = SEARCH_IDS if search_ids is None else search_ids
+
+    def _get(url, timeout=15):
+        parsed = urllib.parse.urlparse(url)
+        q = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+        if parsed.path.endswith("/player_api.php"):
+            value = catalogs[q["action"]]
+            if isinstance(value, Exception):
+                raise value
+            return value
+        media = "movie" if parsed.path.endswith("/movie") else "tv"
+        if "/discover/" in parsed.path:
+            if discover_error:
+                raise discover_error
+            ids = discover_ids.get((media, int(q["with_watch_providers"])), [])
+            return {"results": [{"id": i} for i in ids], "total_pages": 1}
+        if search_error or q["query"] in search_error_for:
+            raise search_error or urllib.error.URLError("timed out")
+        tmdb_id = search_ids.get((media, q["query"]))
+        return {"results": [{"id": tmdb_id}] if tmdb_id else []}
+    return _get
+
+
+class TestMainUpstreamGuards(unittest.TestCase):
+    """Falha TOTAL do Xtream/TMDB: sai com erro e NÃO grava o JSON (o passo
+    do workflow falha e o último arquivo bom da branch vod-data fica). Fontes
+    saudáveis com poucos ou zero casamentos: grava normalmente. O arquivo
+    pré-existente simula o checkout da branch vod-data no workflow."""
+
+    LAST_GOOD = '{"generatedAt": "ontem", "movies": {"x|2020": ["netflix"]}, "series": {}}'
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old_cwd = os.getcwd()
+        os.chdir(tmp.name)
+        self.addCleanup(os.chdir, old_cwd)
+        with open("vod-providers.json", "w", encoding="utf-8") as f:
+            f.write(self.LAST_GOOD)
+
+        self.stderr = io.StringIO()
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(mock.patch.dict(os.environ, FAKE_ENV))
+        stack.enter_context(mock.patch("urllib.request.urlopen",
+                                       side_effect=AssertionError("rede real no teste!")))
+        stack.enter_context(mock.patch.object(bpm, "time"))  # time.sleep vira no-op
+        stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        stack.enter_context(contextlib.redirect_stderr(self.stderr))
+
+    def run_main(self, http):
+        with mock.patch.object(bpm, "_http_get_json", http):
+            bpm.main()
+
+    def assert_aborted_without_writing(self, http):
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(http)
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertEqual(cm.exception.code, bpm.EXIT_UPSTREAM_FAILURE)
+        with open("vod-providers.json", encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.LAST_GOOD, "o último arquivo bom foi sobrescrito")
+        return self.stderr.getvalue()
+
+    def read_written(self):
+        with open("vod-providers.json", encoding="utf-8") as f:
+            return json.load(f)
+
+    # (a) catálogo que não é lista -> erro, arquivo intocado
+    def test_catalog_not_a_list_aborts_without_writing(self):
+        err = self.assert_aborted_without_writing(fake_http(
+            catalogs={"get_vod_streams": {"user_info": {"auth": 0}}, "get_series": HEALTHY_SERIES}))
+        self.assertIn("get_vod_streams", err)
+
+    def test_series_catalog_failure_aborts_even_after_movies_succeed(self):
+        # Filmes deram certo, mas gravar só com séries {} apagaria os selos de série.
+        err = self.assert_aborted_without_writing(fake_http(
+            catalogs={"get_vod_streams": HEALTHY_MOVIES, "get_series": None}))
+        self.assertIn("get_series", err)
+
+    def test_empty_catalog_aborts_without_writing(self):
+        # Painel Xtream com login inválido/expirado costuma responder [] em vez de erro.
+        self.assert_aborted_without_writing(fake_http(
+            catalogs={"get_vod_streams": [], "get_series": HEALTHY_SERIES}))
+
+    def test_xtream_request_error_aborts_without_leaking_credentials(self):
+        leaky = ValueError("unknown url type: 'xtream.invalid/player_api.php"
+                           "?username=usuario-falso&password=senha-falsa-123'")
+        err = self.assert_aborted_without_writing(fake_http(
+            catalogs={"get_vod_streams": leaky, "get_series": HEALTHY_SERIES}))
+        self.assertNotIn("senha-falsa-123", err)
+        self.assertNotIn("usuario-falso", err)
+
+    # (b) todos os conjuntos de streaming vazios -> erro, arquivo intocado
+    def test_bad_tmdb_key_empties_every_provider_set_and_aborts(self):
+        err = self.assert_aborted_without_writing(fake_http(discover_error=TMDB_401))
+        self.assertIn("TMDB", err)
+
+    def test_every_provider_set_empty_without_errors_aborts(self):
+        self.assert_aborted_without_writing(fake_http(discover_ids={}))
+
+    def test_search_phase_failing_with_errors_aborts(self):
+        # discover ok, mas toda busca dá erro de rede -> mapa vazio que não é honesto.
+        self.assert_aborted_without_writing(fake_http(search_error=urllib.error.URLError("timed out")))
+
+    # (c) fontes saudáveis, zero casamentos -> grava, exit 0
+    def test_healthy_inputs_with_zero_matches_write_the_file(self):
+        self.run_main(fake_http(discover_ids={("movie", 8): [9001], ("tv", 8): [9002]}))
+        out = self.read_written()
+        self.assertEqual(out["movies"], {})
+        self.assertEqual(out["series"], {})
+        self.assertTrue(out["generatedAt"].endswith("+00:00"))
+
+    def test_healthy_inputs_write_the_expected_map(self):
+        self.run_main(fake_http())
+        out = self.read_written()
+        self.assertEqual(set(out), {"generatedAt", "movies", "series"})
+        self.assertEqual(out["movies"], {"filme netflix|2024": ["netflix"],
+                                         "filme duplo|2023": ["max", "disney"]})
+        self.assertEqual(out["series"], {"serie nula|": ["globoplay"],
+                                         "serie data|2019": ["disney"]})
+
+    def test_some_provider_sets_empty_still_write(self):
+        # Um streaming sem título (id aposentado, página que falhou) só gera aviso.
+        self.run_main(fake_http(discover_ids={("movie", 8): [1001], ("tv", 307): [2001]}))
+        out = self.read_written()
+        self.assertEqual(out["movies"], {"filme netflix|2024": ["netflix"]})
+        self.assertEqual(out["series"], {"serie nula|": ["globoplay"]})
+
+    def test_a_few_search_errors_still_write(self):
+        # 1 de 4 buscas de filme com erro (25%) fica abaixo do limite.
+        self.run_main(fake_http(search_error_for={"Filme Duplo"}))
+        out = self.read_written()
+        self.assertEqual(out["movies"], {"filme netflix|2024": ["netflix"]})
+
+    def test_missing_env_still_exits_before_any_request(self):
+        with mock.patch.dict(os.environ, {"TMDB_API_KEY": ""}):
+            with self.assertRaises(SystemExit) as cm:
+                self.run_main(fake_http())
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("TMDB_API_KEY", self.stderr.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

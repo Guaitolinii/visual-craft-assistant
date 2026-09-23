@@ -22,6 +22,42 @@ from datetime import datetime, timezone
 TMDB_BASE = "https://api.themoviedb.org/3"
 DISCOVER_PAGES_PER_PROVIDER = 5  # ~100 títulos mais populares por streaming
 
+# ─── Proteção contra falha TOTAL do upstream ───
+# Se o Xtream ou a TMDB falharem como um todo, o script sai com erro SEM
+# gravar vod-providers.json: o passo do workflow falha, o commit não roda e
+# o último arquivo bom da branch vod-data continua valendo (senão um mapa
+# vazio apagaria todos os selos do app). Já um resultado honesto pequeno -
+# fontes saudáveis com poucos ou até zero casamentos - é gravado normalmente.
+EXIT_MISSING_ENV = 1
+EXIT_UPSTREAM_FAILURE = 2
+# Catálogo Xtream com menos itens que isso = falha. Painel com login
+# inválido/expirado costuma responder [] (ou um dict) em vez de erro HTTP.
+MIN_CATALOG_ENTRIES = 1
+# Menos streamings com pelo menos 1 título na TMDB que isso = falha: com a
+# chave TMDB inválida/expirada ou sem rede, todo discover falha e todos os
+# conjuntos vêm vazios. Um streaming vazio sozinho (id aposentado, página
+# que falhou) só gera aviso - não é motivo para descartar os outros seis.
+MIN_PROVIDERS_WITH_TITLES = 1
+# Fração máxima das buscas TMDB que podem falhar com ERRO (rede/HTTP) antes
+# de considerar a fase de busca morta. "Busca sem resultado" não é erro e
+# não conta aqui - é o caso honesto de título que a TMDB não conhece.
+MAX_SEARCH_ERROR_RATIO = 0.5
+
+
+class UpstreamFailure(Exception):
+    """Xtream ou TMDB falharam como um todo - o JSON não deve ser gravado."""
+
+
+def _redact(text, *secrets):
+    """Tira usuário/senha do Xtream de uma mensagem de erro antes de
+    imprimir: alguns erros do urllib repetem a URL inteira, que carrega as
+    credenciais na query string (crua ou url-encoded)."""
+    for secret in secrets:
+        if secret:
+            for form in {secret, urllib.parse.quote_plus(secret)}:
+                text = text.replace(form, "***")
+    return text
+
 # id TMDB -> chave curta usada no app (badges de PROVIDERS_BR em sintoniza-link.html).
 # A ordem aqui é a ordem da lista gravada para cada título, e o selo do
 # cartão mostra o primeiro item - por isso segue o PROVIDER_ORDER do app.
@@ -112,10 +148,12 @@ def fetch_provider_id_sets(tmdb_api_key, media_type):
     return result
 
 
-def search_tmdb_id(tmdb_api_key, media_type, name, year):
+def search_tmdb_id(tmdb_api_key, media_type, name, year, error_log=None):
     """Busca o id TMDB de um título do catálogo por nome (+ano quando houver).
     Devolve None se não achar - o item some do mapa (fica sem selo), nunca
-    quebra o restante do processamento."""
+    quebra o restante do processamento. error_log (lista, opcional) recebe
+    cada erro de rede/HTTP, para build_map_for separar "sem resultado"
+    (honesto) de "busca fora do ar" (falha total)."""
     endpoint = "search/movie" if media_type == "movie" else "search/tv"
     year_param = "year" if media_type == "movie" else "first_air_date_year"
     params = {"api_key": tmdb_api_key, "query": name, "language": "pt-BR"}
@@ -125,6 +163,8 @@ def search_tmdb_id(tmdb_api_key, media_type, name, year):
         data = _http_get_json(f"{TMDB_BASE}/{endpoint}?{urllib.parse.urlencode(params)}")
     except Exception as exc:
         print(f"[aviso] busca falhou para '{name}' ({year}): {exc}", file=sys.stderr)
+        if error_log is not None:
+            error_log.append(exc)
         return None
     results = data.get("results") or []
     return results[0]["id"] if results else None
@@ -140,16 +180,39 @@ def fetch_xtream_catalog(base, user, password, action):
 
 
 def build_map_for(base, user, password, tmdb_api_key, xtream_action, media_type):
+    """Mapa chave -> streamings para um tipo de mídia. Levanta
+    UpstreamFailure quando o Xtream ou a TMDB falharam como um todo (ver os
+    limites no topo do arquivo) - nunca devolve um mapa vazio "de mentira"."""
     print(f"[*] Baixando catálogo Xtream ({xtream_action})...")
-    catalog = fetch_xtream_catalog(base, user, password, xtream_action)
+    try:
+        catalog = fetch_xtream_catalog(base, user, password, xtream_action)
+    except Exception as exc:
+        detail = _redact(f"{type(exc).__name__}: {exc}", user, password)
+        raise UpstreamFailure(f"catálogo Xtream ({xtream_action}) falhou: {detail}") from exc
     if not isinstance(catalog, list):
-        print(f"[aviso] resposta inesperada de {xtream_action}, pulando.", file=sys.stderr)
-        return {}
+        # Só o tipo e as chaves: o user_info do Xtream traz usuário e senha.
+        shape = type(catalog).__name__
+        if isinstance(catalog, dict):
+            shape += f" com chaves {sorted(catalog)[:5]}"
+        raise UpstreamFailure(f"catálogo Xtream ({xtream_action}) não veio como lista ({shape}) - "
+                              "login inválido/expirado ou formato inesperado")
+    if len(catalog) < MIN_CATALOG_ENTRIES:
+        raise UpstreamFailure(f"catálogo Xtream ({xtream_action}) veio vazio - "
+                              "painel costuma responder assim para login inválido/expirado")
 
     print(f"[*] Baixando catálogos de streaming BR via TMDB ({media_type})...")
     provider_id_sets = fetch_provider_id_sets(tmdb_api_key, media_type)
+    with_titles = [pid for pid, ids in provider_id_sets.items() if ids]
+    if len(with_titles) < MIN_PROVIDERS_WITH_TITLES:
+        raise UpstreamFailure(f"nenhum streaming trouxe títulos da TMDB ({media_type}) - "
+                              "chave TMDB inválida/expirada ou TMDB/rede fora do ar")
+    empty = [PROVIDERS_BR[pid] for pid, ids in provider_id_sets.items() if not ids]
+    if empty:
+        print(f"[aviso] streamings sem nenhum título na TMDB ({media_type}): {', '.join(empty)}", file=sys.stderr)
 
     out = {}
+    searched = 0
+    search_errors = []
     for entry in catalog:
         # Nome e ano lidos dos mesmos campos que o app usa na chave (ver
         # provider_key_for_entry) - item sem nome nunca teria selo no app.
@@ -157,13 +220,17 @@ def build_map_for(base, user, password, tmdb_api_key, xtream_action, media_type)
         year = vod_item_year_key(entry)
         if not name.strip(_JS_TRIM_CHARS):
             continue
-        tmdb_id = search_tmdb_id(tmdb_api_key, media_type, name, year)
+        searched += 1
+        tmdb_id = search_tmdb_id(tmdb_api_key, media_type, name, year, error_log=search_errors)
         time.sleep(0.05)  # respeita o rate limit da TMDB (~50 req/s)
         if tmdb_id is None:
             continue
         providers = [short for pid, short in PROVIDERS_BR.items() if tmdb_id in provider_id_sets.get(pid, ())]
         if providers:
             out[provider_key_for_entry(entry)] = providers
+    if searched and len(search_errors) / searched > MAX_SEARCH_ERROR_RATIO:
+        raise UpstreamFailure(f"{len(search_errors)}/{searched} buscas na TMDB ({media_type}) falharam com erro - "
+                              "fase de busca fora do ar")
     print(f"[✓] {len(out)}/{len(catalog)} títulos casados com pelo menos um streaming.")
     return out
 
@@ -177,10 +244,17 @@ def main():
                               ("VOD_XTREAM_PASS", password), ("TMDB_API_KEY", tmdb_api_key)] if not v]
     if missing:
         print(f"[erro] variáveis de ambiente ausentes: {', '.join(missing)}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_MISSING_ENV)
 
-    movies = build_map_for(base, user, password, tmdb_api_key, "get_vod_streams", "movie")
-    series = build_map_for(base, user, password, tmdb_api_key, "get_series", "tv")
+    # Os dois mapas são montados ANTES de abrir o arquivo: qualquer falha
+    # total (de filmes ou de séries) sai daqui sem tocar no JSON anterior.
+    try:
+        movies = build_map_for(base, user, password, tmdb_api_key, "get_vod_streams", "movie")
+        series = build_map_for(base, user, password, tmdb_api_key, "get_series", "tv")
+    except UpstreamFailure as exc:
+        print(f"[erro] {exc}", file=sys.stderr)
+        print("[erro] vod-providers.json NÃO foi gravado - o último arquivo bom continua valendo.", file=sys.stderr)
+        sys.exit(EXIT_UPSTREAM_FAILURE)
 
     output = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
