@@ -48,3 +48,14 @@ test("groupItemsByProvider lists a multi-provider title in every matching group"
   assert.equal(groups.find(g => g.providerId === "netflix").items.length, 1);
   assert.equal(groups.find(g => g.providerId === "max").items.length, 1);
 });
+
+test("groupItemsByProvider puts a title whose only providers are outside providerOrder in 'outros' instead of dropping it", () => {
+  const ctx = loadVodHelpers();
+  const items = ctx.attachProviders(
+    [{ name: "A", year: "2020" }, { name: "B", year: "2021" }],
+    { "a|2020": ["netflix"], "b|2021": ["globoplay"] }
+  );
+  const groups = ctx.groupItemsByProvider(items, ["netflix", "max"]);
+  assert.deepEqual(groups.map(g => g.providerId), ["netflix", "outros"]);
+  assert.deepEqual(groups.find(g => g.providerId === "outros").items.map(i => i.name), ["B"]);
+});

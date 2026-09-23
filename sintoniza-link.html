@@ -4683,14 +4683,16 @@ function attachProviders(items, providerMap) {
 
 // Uma fileira por streaming, na ordem dada, só para quem tem pelo menos um
 // título (evita fileira vazia). Título com mais de um streaming aparece em
-// cada fileira correspondente. Fecha com "outros" para quem não bateu com
-// nenhum streaming mapeado - nunca descarta um item do catálogo.
+// cada fileira correspondente. Fecha com "outros" para quem não caiu em
+// nenhuma fileira de providerOrder - inclusive quem só tem streaming fora
+// dessa lista (ex: id novo no mapa gerado que o app ainda não exibe) - e
+// assim nunca descarta um item do catálogo.
 function groupItemsByProvider(items, providerOrder) {
   const groups = providerOrder.map(id => ({
     providerId: id,
     items: items.filter(it => (it.streamingProviders || []).includes(id)),
   })).filter(g => g.items.length > 0);
-  const outros = items.filter(it => !(it.streamingProviders || []).length);
+  const outros = items.filter(it => !providerOrder.some(id => (it.streamingProviders || []).includes(id)));
   if (outros.length) groups.push({ providerId: "outros", items: outros });
   return groups;
 }
