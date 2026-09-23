@@ -809,6 +809,12 @@
       width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
       background: var(--secondary); box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%); margin-bottom: .5rem;
     }
+    .vod-card-placeholder {
+      width: 100%; aspect-ratio: 2/3; border-radius: .5rem; margin-bottom: .5rem;
+      display: grid; place-items: center; color: oklch(0.98 0 0);
+      font-size: 1.4rem; font-weight: 700;
+      box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
+    }
     .vod-card p { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .vod-progress { height: 3px; background: oklch(1 0 0 / 20%); border-radius: 2px; margin: -.4rem 0 .4rem; overflow: hidden; }
     .vod-progress span { display: block; height: 100%; background: var(--primary); }
@@ -3790,6 +3796,9 @@ function xtreamApiUrl(creds, action, extraParams) {
 
 const CONTINUE_KEY = "sint_continue";
 let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
+// Filme/série aberto no modal agora: { item, contType: "vod"|"series" }.
+// Usado pelos episódios (capa/nome da série) e pelo botão Minha Lista.
+let _vodModalItem = null;
 
 // Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
 // - permite a busca filtrar em todas as categorias já carregadas sem refazer
@@ -3883,6 +3892,33 @@ function selectNewestVodItems(items, limit) {
     .slice(0, limit);
 }
 
+// Título exibido para um episódio: "Nome da Série · T1E3". Antes aparecia
+// só o título cru da API (muitas vezes apenas "S01E01").
+function formatEpisodeTitle(seriesName, season, episodeNum) {
+  const s = Number(season) || 1;
+  const code = episodeNum ? `T${s}E${episodeNum}` : `T${s}`;
+  const name = String(seriesName || "").trim();
+  return name ? `${name} · ${code}` : code;
+}
+
+// Cópia enxuta do item da API (filme ou série), guardada no histórico e
+// na Minha Lista para reabrir o título depois sem refazer a busca.
+const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year"];
+function trimVodItem(item) {
+  if (!item) return null;
+  const out = {};
+  VOD_ITEM_FIELDS.forEach(k => { if (item[k] != null && item[k] !== "") out[k] = item[k]; });
+  return out;
+}
+
+// Capa do cartão. Sem imagem, mostra as iniciais do título sobre um fundo
+// colorido em vez de um retângulo em branco.
+function vodCardArtHtml(cover, title) {
+  return cover
+    ? `<img src="${cover}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    : `<div class="vod-card-placeholder logo-c3">${escapeHtmlText(makeInitials(title || "?"))}</div>`;
+}
+
 function saveContinueWatching(entry) {
   const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
   map[entry.id] = { ...entry, ts: Date.now() };
@@ -3920,9 +3956,11 @@ function continueCardHtml(item) {
   const key = `resume-${item.type}-${item.id}`;
   _vodCardsIndex[key] = item;
   const pct = item.duration ? Math.min(100, Math.round((item.progress / item.duration) * 100)) : 0;
+  // Episódio sem capa própria usa a capa da série guardada no histórico.
+  const cover = item.cover || (item.vodItem && (item.vodItem.cover || item.vodItem.stream_icon)) || "";
   return `
     <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" tabindex="0">
-      <img src="${item.cover || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+      ${vodCardArtHtml(cover, item.title)}
       <div class="vod-progress"><span style="width:${pct}%"></span></div>
       <p>${item.title || ""}</p>
     </button>`;
@@ -4158,6 +4196,7 @@ async function loadVodCatalog(vodType, creds) {
 
 async function openVodModal(item, vodType, creds) {
   const isSeries = vodType === "series";
+  _vodModalItem = { item, contType: isSeries ? "series" : "vod" };
   const modal = document.getElementById("vod-modal");
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -4178,7 +4217,7 @@ async function openVodModal(item, vodType, creds) {
     playBtn.querySelector("span").textContent = "Assistir";
     playBtn.onclick = () => playVodSelection(
       buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
+      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item }
     );
     playBtn.focus();
     return;
@@ -4202,7 +4241,7 @@ async function openVodModal(item, vodType, creds) {
 
     epsContainer.innerHTML = episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}" data-series-cover="${(item.stream_icon || item.cover || '').replace(/"/g, "&quot;")}">
+      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
         <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>`;
@@ -4219,9 +4258,18 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-function playEpisode(episodeId, containerExtension, title, creds, cover) {
+// Episódio: título "Série · T1E3" e capa da série (o episódio quase nunca
+// tem capa própria), e guarda a série para a Minha Lista e o histórico.
+function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
-  playVodSelection(url, { id: episodeId, contType: "series", title, cover: cover || null });
+  const seriesName = (series && (series.name || series.title)) || "";
+  playVodSelection(url, {
+    id: episodeId,
+    contType: "series",
+    title: formatEpisodeTitle(seriesName, season, episodeNum),
+    cover: (series && (series.cover || series.stream_icon)) || null,
+    vodItem: series || null,
+  });
 }
 
 // Ponto único de reprodução de VOD: reaproveita o mesmo player (playStream)
@@ -4246,6 +4294,7 @@ function playVodSelection(url, meta) {
     isVod: true,
     vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
     continueId,
+    vodItem: meta.vodItem ? trimVodItem(meta.vodItem) : null, // filme/série de origem
   };
   setState({ selected: pseudo, playing: false });
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4638,7 +4687,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = _vodCardsIndex[card.dataset.vodKey];
     if (!item) return;
     if (card.dataset.vodResume === "1") {
-      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress });
+      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null });
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
@@ -4750,7 +4799,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds, btn.dataset.seriesCover);
+    playEpisode({
+      episodeId: btn.dataset.epId,
+      containerExtension: btn.dataset.epExt,
+      season: btn.dataset.epSeason,
+      episodeNum: btn.dataset.epNum,
+      series: _vodModalItem ? _vodModalItem.item : null,
+      creds,
+    });
   });
 
   // "Continue Assistindo": salva o progresso do que estiver tocando (só para
@@ -4778,6 +4834,7 @@ document.addEventListener("DOMContentLoaded", () => {
       url: ch.url,
       progress: video.currentTime,
       duration: video.duration,
+      vodItem: ch.vodItem || null,
     });
   });
 
