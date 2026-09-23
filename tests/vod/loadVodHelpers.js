@@ -7,6 +7,23 @@ import { extractInlineScriptById } from "../helpers/extractInlineScript.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LINK_HTML_PATH = path.join(__dirname, "..", "..", "sintoniza-link.html");
 
+// Funções puras do script principal usadas pelos testes da v6. As que
+// devolvem objetos/arrays são copiadas para este realm (JSON) antes de
+// voltar para o teste - deepStrictEqual compara protótipos, e objetos
+// criados dentro do vm têm Object/Array.prototype diferentes.
+const PURE_HELPER_NAMES = [
+  "shouldRetryDirectPlay", "describeDirectPlayError", "isContainerUnsupportedOnIOS", "shouldApplyResume",
+  "formatEpisodeTitle", "trimVodItem",
+  "getCatalogTabLayout", "getMobileTabForSection",
+  "computePlayerMode", "isPlayerScrolledAway", "shouldDockSearch",
+  "isInMyList", "toggleMyListEntry", "getMyListItems", "buildMyListEntry",
+  "getCardActions", "computeFsLayout",
+];
+
+function toHostRealm(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
 export function loadVodHelpers() {
   const html = readFileSync(LINK_HTML_PATH, "utf8");
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)];
@@ -74,7 +91,8 @@ export function loadVodHelpers() {
       "\nthis.computeDirectPlayRetryDelayMs = typeof computeDirectPlayRetryDelayMs !== 'undefined' ? computeDirectPlayRetryDelayMs : undefined;" +
       "\nthis.filterVodItemsByQuery = typeof filterVodItemsByQuery !== 'undefined' ? filterVodItemsByQuery : undefined;" +
       "\nthis.dedupeVodItemsByTitle = typeof dedupeVodItemsByTitle !== 'undefined' ? dedupeVodItemsByTitle : undefined;" +
-      "\nthis.selectNewestVodItems = typeof selectNewestVodItems !== 'undefined' ? selectNewestVodItems : undefined;",
+      "\nthis.selectNewestVodItems = typeof selectNewestVodItems !== 'undefined' ? selectNewestVodItems : undefined;" +
+      PURE_HELPER_NAMES.map(n => `\nthis.${n} = typeof ${n} !== 'undefined' ? ${n} : undefined;`).join(""),
     context
   );
 
@@ -130,6 +148,11 @@ export function loadVodHelpers() {
     context.selectNewestVodItems = function(items, limit) {
       return Array.from(originalSelectNewestVodItems(items, limit));
     };
+  }
+
+  for (const name of PURE_HELPER_NAMES) {
+    const fn = context[name];
+    if (typeof fn === "function") context[name] = (...args) => toHostRealm(fn(...args));
   }
 
   return context;

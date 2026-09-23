@@ -298,6 +298,12 @@
     .player-error.active { display: flex; }
     .player-error h3 { font-size: 1rem; font-weight: 600; color: oklch(0.98 0 0); }
     .player-error p  { font-size: .82rem; max-width: 24rem; }
+    /* Código real da falha (ex.: "NotSupportedError · MEDIA_ERR 4") para
+       diagnóstico - em letra pequena, abaixo da explicação. */
+    .player-error .player-error-code {
+      font-size: .68rem; color: oklch(0.6 0.02 75);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     .retry-btn {
       background: var(--primary); color: var(--primary-fg);
       border: none; border-radius: .5rem; padding: .5rem 1rem;
@@ -1123,6 +1129,7 @@
         <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
         <h3>Não foi possível reproduzir</h3>
         <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
+        <p class="player-error-code" id="player-error-code" style="display:none"></p>
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
       </div>
       <!-- Botão play central -->
@@ -1892,6 +1899,7 @@ function selectChannel(ch, autoPlay = true) {
   const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
   localStorage.setItem("sint_recents", JSON.stringify(recents));
+  pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
   stopStream();
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (autoPlay && ch.url) {
@@ -2132,6 +2140,15 @@ let reconnectCircuitBreaker = createReconnectCircuitBreaker();
 let lastMpegBufferedEnd = -1;
 let mpegBufferStallCount = 0;
 let lastMpegBgReconnectTime = 0;
+// Cada reprodução nova (ou parada) incrementa este contador. Retentativas
+// agendadas por uma reprodução antiga comparam o valor que capturaram com o
+// atual e desistem sozinhas. Antes, uma retentativa atrasada podia trocar o
+// src do vídeo que já estava tocando (causa do erro do ponto 3 da v6).
+let playbackGeneration = 0;
+// Pausa pedida pelo usuário num filme/episódio: o watchdog não "despausa".
+let userPausedVod = false;
+// Ponto (s) para retomar quando o próximo filme/episódio começar a tocar.
+let pendingResumeAt = 0;
 
 // ─── EPG (guia de programação) ───
 // Busca o xmltv.php do provedor (formato padrão em painéis Xtream Codes),
@@ -2507,6 +2524,7 @@ function startWatchdog(url) {
 
   watchdogTimer = setInterval(() => {
     if (!_state.playing) return;
+    if (userPausedVod) return; // filme pausado pelo usuário: não despausar
 
     const video = document.getElementById("player-video");
     if (!video) return;
@@ -2701,7 +2719,9 @@ async function reloadCurrentChannel(isSilent = false) {
       console.warn(`[Circuit Breaker] Muitas reconexões automáticas para "${ch.name}". Parando e pedindo ação manual.`);
       stopWatchdog();
       setState({ playing: false });
-      showPlayerError(`Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
+      showPlayerError(ch.isVod
+        ? `"${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`
+        : `Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
       return;
     }
   } else {
@@ -2718,6 +2738,11 @@ async function reloadCurrentChannel(isSilent = false) {
   }
 
   try {
+    const video = document.getElementById("player-video");
+    // Filme/episódio: guarda o ponto atual para retomar dali após a recarga
+    // (antes a recarga automática recomeçava o vídeo do zero).
+    if (ch.isVod && video && video.currentTime > 0) pendingResumeAt = video.currentTime;
+
     if (hlsInstance) {
       try { hlsInstance.stopLoad(); hlsInstance.destroy(); } catch (e) {}
       hlsInstance = null;
@@ -2727,7 +2752,6 @@ async function reloadCurrentChannel(isSilent = false) {
       mpegtsPlayer = null;
     }
 
-    const video = document.getElementById("player-video");
     if (video) {
       video.pause();
       video.removeAttribute("src");
@@ -2747,6 +2771,8 @@ async function reloadCurrentChannel(isSilent = false) {
 // ─── PlayStream com Pré-teste e Engine Otimizado ───
 async function playStream(url) {
   if (!url) { showPlayerError("Canal sem URL de transmissão."); return; }
+  const gen = ++playbackGeneration;
+  userPausedVod = false;
 
   const video = document.getElementById("player-video");
   showPlayerLoader();
@@ -2780,12 +2806,16 @@ async function playStream(url) {
 
   // Detecta formato inteligente & probe HLS
   const streamInfo = await detectStreamType(url);
+  if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
   currentStreamType = streamInfo.type;
   const playUrl = proxyIfInsecure(streamInfo.url);
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
-  if (currentStreamType !== "mpegts") {
+  // Arquivo direto (filme/episódio) fica de fora: tryDirectPlay() já tem
+  // timeout e retentativas próprios - este timeout paralelo disparava uma
+  // recarga que brigava com essas retentativas.
+  if (currentStreamType !== "mpegts" && currentStreamType !== "direct") {
     const timeoutMs = 15000;
     initialLoadTimeout = setTimeout(() => {
       const loader = document.getElementById("player-loader");
@@ -3043,14 +3073,132 @@ async function playStream(url) {
   }
 }
 
+// ─── Filmes/episódios (arquivo direto) ───
+// Servidores Xtream limitam as telas simultâneas por usuário e levam alguns
+// segundos para liberar a vaga da reprodução anterior. Por isso são 6
+// tentativas, com esperas que somam ~15s, sem mostrar erro enquanto isso.
+const DIRECT_PLAY_MAX_ATTEMPTS = 6;
+const DIRECT_PLAY_ATTEMPT_TIMEOUT_MS = 12000;
+
 function computeDirectPlayRetryDelayMs(attempt) {
-  return attempt === 1 ? 800 : 1800;
+  return Math.min(5000, 1000 * attempt);
 }
 
-function tryDirectPlay(url, video, attempt) {
+// Contêineres que o player nativo do iPhone (AVFoundation) nunca reproduz:
+// tentar de novo não adianta.
+function isContainerUnsupportedOnIOS(url) {
+  const clean = String(url || "").split("?")[0].toLowerCase();
+  return /\.(mkv|avi|wmv|flv)$/.test(clean);
+}
+
+function shouldRetryDirectPlay({ errorName, attempt, maxAttempts, url, isIOS }) {
+  if (errorName === "NotAllowedError") return false; // precisa de um toque do usuário
+  if (isIOS && isContainerUnsupportedOnIOS(url)) return false;
+  return attempt < maxAttempts;
+}
+
+// Traduz o motivo real da falha (erro do play() + código do MediaError da
+// tag <video>) numa mensagem em português e num código curto, mostrado em
+// letra pequena na tela de erro para o diagnóstico ficar 100% claro.
+function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attempts }) {
+  const parts = [];
+  if (errorName) parts.push(errorName);
+  if (mediaErrorCode) parts.push(`MEDIA_ERR ${mediaErrorCode}`);
+  if (attempts) parts.push(`${attempts} tentativa${attempts > 1 ? "s" : ""}`);
+  const code = parts.join(" · ");
+
+  if (isIOS && isContainerUnsupportedOnIOS(url)) {
+    const ext = String(url).split("?")[0].split(".").pop().toUpperCase();
+    return { message: `O iPhone não reproduz arquivos ${ext}. Esse título precisa estar em outro formato no seu provedor.`, code };
+  }
+  if (errorName === "timeout") return { message: "O servidor demorou demais para começar a enviar o vídeo.", code };
+  if (mediaErrorCode === 2) return { message: "A conexão com o servidor caiu enquanto o vídeo carregava.", code };
+  if (mediaErrorCode === 3) return { message: "O arquivo do vídeo está corrompido ou usa um formato de áudio/vídeo não suportado.", code };
+  if (mediaErrorCode === 4 || errorName === "NotSupportedError") {
+    return { message: "O servidor recusou o vídeo. Isso costuma acontecer quando o limite de telas simultâneas do seu plano está ocupado.", code };
+  }
+  return { message: "Não foi possível abrir o vídeo agora.", code };
+}
+
+// Só retoma do ponto salvo se ele existir e não estiver colado no fim.
+function shouldApplyResume(target, duration) {
+  return target > 0 && isFinite(duration) && target < duration - 5;
+}
+
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+// Solta o arquivo atual de verdade: sem o load(), o iOS podia manter o
+// download anterior aberto, ocupando a vaga no servidor Xtream.
+function releaseVideoElement(video) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+}
+
+function applyPendingResume(video) {
+  const target = pendingResumeAt;
+  pendingResumeAt = 0;
+  if (!target) return;
+  const seek = () => {
+    if (shouldApplyResume(target, video.duration)) {
+      try { video.currentTime = target; } catch (e) {}
+    }
+  };
+  if (video.readyState >= 1) seek();
+  else video.addEventListener("loadedmetadata", seek, { once: true });
+}
+
+function tryDirectPlay(url, video, attempt, generation) {
   attempt = attempt || 1;
+  const gen = generation != null ? generation : playbackGeneration;
+  if (gen !== playbackGeneration) return; // uma reprodução mais nova assumiu
+
+  const loaderText = document.querySelector("#player-loader p");
+  if (loaderText) {
+    loaderText.textContent = attempt === 1
+      ? "Conectando..."
+      : `Servidor ocupado, tentando de novo (${attempt}/${DIRECT_PLAY_MAX_ATTEMPTS})...`;
+  }
+
+  if (attempt > 1) releaseVideoElement(video);
   video.src = url;
+
+  let settled = false;
+  const attemptTimer = setTimeout(() => fail({ name: "timeout" }), DIRECT_PLAY_ATTEMPT_TIMEOUT_MS);
+
+  function fail(err) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(attemptTimer);
+    if (gen !== playbackGeneration) return;
+    const errorName = (err && err.name) || "Error";
+    const mediaErrorCode = video.error ? video.error.code : null;
+    const ios = isIOSDevice();
+    if (errorName === "NotAllowedError") {
+      // O sistema bloqueou o início automático: mostra o botão de play
+      // (um toque do usuário libera) em vez de uma tela de erro.
+      hidePlayerLoader();
+      showPlayerArt();
+      showToast("Toque em ▶ para começar.");
+      return;
+    }
+    if (shouldRetryDirectPlay({ errorName, attempt, maxAttempts: DIRECT_PLAY_MAX_ATTEMPTS, url, isIOS: ios })) {
+      setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen), computeDirectPlayRetryDelayMs(attempt));
+      return;
+    }
+    releaseVideoElement(video);
+    const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
+    showPlayerError(message, code);
+  }
+
   video.play().then(() => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(attemptTimer);
+    if (gen !== playbackGeneration) return;
     hidePlayerLoader();
     showPlayerVideo();
     setState({ playing: true });
@@ -3058,18 +3206,15 @@ function tryDirectPlay(url, video, attempt) {
     if (playBtn) playBtn.disabled = false;
     const reloadBtn = document.getElementById("reload-stream-btn");
     if (reloadBtn) reloadBtn.disabled = false;
+    applyPendingResume(video);
     startWatchdog(url);
-  }).catch(() => {
-    if (attempt < 3) {
-      setTimeout(() => tryDirectPlay(url, video, attempt + 1), computeDirectPlayRetryDelayMs(attempt));
-      return;
-    }
-    hidePlayerLoader();
-    showPlayerError("Formato não suportado ou erro de conexão (CORS).\nTente abrir o link diretamente ou use um reprodutor como VLC.");
-  });
+  }).catch(fail);
 }
 
 function stopStream() {
+  // Invalida qualquer retentativa pendente da reprodução que está parando.
+  playbackGeneration++;
+  userPausedVod = false;
   releaseScreenWakeLock();
   stopWatchdog();
   const video = document.getElementById("player-video");
@@ -3081,8 +3226,7 @@ function stopStream() {
     try { mpegtsPlayer.pause(); mpegtsPlayer.unload(); mpegtsPlayer.detachMediaElement(); mpegtsPlayer.destroy(); } catch (e) {}
     mpegtsPlayer = null;
   }
-  video.pause();
-  video.removeAttribute("src");
+  releaseVideoElement(video);
   setState({ playing: false }, true);
   showPlayerArt();
   hidePlayerLoader();
@@ -3102,21 +3246,26 @@ function stopStream() {
 }
 
 // ─── Player UI helpers ───
+// Ícones de play/pause num lugar só: barra do player, mini-player e tela cheia.
+function setPlayPauseIcons(isPlaying) {
+  const icon = isPlaying ? "pause" : "play";
+  ["play-pause-icon", "mini-play-icon", "fs-play-icon"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute("data-lucide", icon);
+  });
+  lucide.createIcons();
+}
 function showPlayerArt()  {
   document.getElementById("player-art").classList.remove("hidden");
   document.getElementById("player-video").classList.remove("active");
   document.getElementById("play-center-btn").classList.remove("hidden");
-  document.getElementById("play-pause-icon").setAttribute("data-lucide","play");
-  document.getElementById("mini-play-icon").setAttribute("data-lucide","play");
-  lucide.createIcons();
+  setPlayPauseIcons(false);
 }
 function showPlayerVideo() {
   document.getElementById("player-art").classList.add("hidden");
   document.getElementById("player-video").classList.add("active");
   document.getElementById("play-center-btn").classList.add("hidden");
-  document.getElementById("play-pause-icon").setAttribute("data-lucide","pause");
-  document.getElementById("mini-play-icon").setAttribute("data-lucide","pause");
-  lucide.createIcons();
+  setPlayPauseIcons(true);
 }
 function showPlayerLoader() {
   document.getElementById("player-loader").classList.add("active");
@@ -3126,10 +3275,13 @@ function showPlayerLoader() {
 function hidePlayerLoader() {
   document.getElementById("player-loader").classList.remove("active");
 }
-function showPlayerError(msg) {
+function showPlayerError(msg, code) {
   hidePlayerLoader();
   showPlayerArt();
   document.getElementById("player-error-msg").textContent = msg || "Tente novamente.";
+  const codeEl = document.getElementById("player-error-code");
+  codeEl.textContent = code || "";
+  codeEl.style.display = code ? "" : "none";
   document.getElementById("player-error").classList.add("active");
 }
 function hidePlayerError() {
@@ -4080,6 +4232,8 @@ function playEpisode(episodeId, containerExtension, title, creds, cover) {
 function playVodSelection(url, meta) {
   if (!url) { showToast("Não foi possível obter o link de reprodução."); return; }
   closeVodModal();
+  // "Continue Assistindo": retoma do ponto salvo assim que o vídeo começar.
+  pendingResumeAt = meta.resumeAt > 0 ? meta.resumeAt : 0;
   const continueId = meta.continueId || `resume-${meta.contType}-${meta.id}`;
   const pseudo = {
     id: continueId,
@@ -4303,8 +4457,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // pelo mini-player force essa navegação como efeito colateral.
   function togglePlayPause() {
     const video = document.getElementById("player-video");
+    const ch = _state.selected;
+    // Filme/episódio carregado: pausa e retoma no mesmo ponto (antes o play
+    // recarregava o arquivo e o vídeo voltava para o começo).
+    if (ch && ch.isVod && _state.playing) {
+      if (video.paused) {
+        userPausedVod = false;
+        video.play().catch(() => {});
+        setPlayPauseIcons(true);
+      } else {
+        userPausedVod = true;
+        video.pause();
+        setPlayPauseIcons(false);
+      }
+      return;
+    }
     if (!_state.playing) {
-      const ch = _state.selected;
       if (ch?.url) playStream(ch.url);
     } else {
       if (video.paused) { video.play(); }
@@ -4470,7 +4638,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = _vodCardsIndex[card.dataset.vodKey];
     if (!item) return;
     if (card.dataset.vodResume === "1") {
-      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id });
+      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress });
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
@@ -4617,6 +4785,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // este listener o watchdog (feito para canais ao vivo, que nunca emitem
   // EOF de propósito) trataria isso como um congelamento e reiniciaria o
   // mesmo vídeo do zero uns segundos depois de ele já ter terminado.
+  // Pausa vinda de fora do app (tirar o fone, Central de Controle, tela de
+  // bloqueio) também conta como pausa do usuário num filme: o watchdog não
+  // despausa, e os ícones acompanham.
+  document.getElementById("player-video").addEventListener("pause", () => {
+    const video = document.getElementById("player-video");
+    if (!_state.selected || !_state.selected.isVod || video.ended) return;
+    userPausedVod = true;
+    setPlayPauseIcons(false);
+  });
+  document.getElementById("player-video").addEventListener("play", () => {
+    if (!_state.selected || !_state.selected.isVod) return;
+    userPausedVod = false;
+    setPlayPauseIcons(true);
+  });
+
   document.getElementById("player-video").addEventListener("ended", () => {
     const ch = _state.selected;
     if (!ch || !ch.isVod) return;
