@@ -538,7 +538,8 @@
     body.pip-active #player-screen .player-art, body.pip-active #player-screen .fs-ui,
     body.pip-active #player-screen .player-error, body.pip-active #player-screen .player-loader,
     body.pip-active #player-screen .play-center, body.pip-active #player-screen .mini-play-btn,
-    body.pip-active #player-screen .mini-close-btn { display: none !important; }
+    body.pip-active #player-screen .mini-close-btn, body.pip-active #player-screen .fs-lock-shield,
+    body.pip-active #player-screen .fs-lock-hint { display: none !important; }
     body.pip-active #player-screen {
       position: fixed !important; inset: 0 !important; z-index: 99999 !important;
       width: 100% !important; height: 100% !important; margin: 0 !important;
@@ -2925,7 +2926,7 @@ document.addEventListener("visibilitychange", () => {
   }
   // iOS: minimizou o app com algo tocando - tenta entrar sozinho na janela
   // flutuante (melhor esforço: o iOS pode exigir o toque no botão).
-  if (document.visibilityState === "hidden" && isIOSDevice() && _state.playing) {
+  if (document.visibilityState === "hidden" && isIOSDevice() && isPlayingForPip()) {
     const v = document.getElementById("player-video");
     try { if (v && v.webkitSetPresentationMode && v.webkitPresentationMode !== "picture-in-picture") v.webkitSetPresentationMode("picture-in-picture"); } catch (err) {}
   }
@@ -3946,19 +3947,35 @@ function updateFullscreenBtnIcon() {
 // ─── Janela flutuante / Picture-in-Picture (v8) ───
 // Último valor enviado ao plugin Android (evita chamar a ponte a cada render)
 let _lastAutoPip = null;
+// Android: resposta do SintonizaPip.isSupported (consultada uma vez no boot)
+let _nativePipSupported = false;
+// Android: janela automática suspensa enquanto o app abre outra tela do
+// sistema (compartilhar, escolher arquivo), para não virar PiP sem querer.
+let _autoPipSuspended = false;
+
+// Pergunta ao Android, uma vez, se o aparelho tem janela flutuante.
+function checkNativePipSupport() {
+  const p = callNativePlugin("SintonizaPip", "isSupported");
+  if (!p) return;
+  p.then(r => { _nativePipSupported = !!(r && r.supported); render(); }).catch(() => {});
+}
 
 // Há janela flutuante disponível? (plugin Android, PiP do Safari/iOS ou padrão web)
 function pipSupported() {
+  if (isNativePluginAvailable("SintonizaPip")) return _nativePipSupported;
   const video = document.getElementById("player-video");
-  return isNativePluginAvailable("SintonizaPip")
-    || (video && typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture"))
-    || !!document.pictureInPictureEnabled;
+  return !!((video && typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture"))
+    || document.pictureInPictureEnabled);
 }
 
 // Botão do player: entra na janela flutuante agora (gesto do usuário)
 async function enterPip() {
   const video = document.getElementById("player-video");
-  if (isNativePluginAvailable("SintonizaPip")) { callNativePlugin("SintonizaPip", "enter"); return; }
+  if (isNativePluginAvailable("SintonizaPip")) {
+    const p = callNativePlugin("SintonizaPip", "enter");
+    if (p) p.catch(() => showToast("Janela flutuante indisponível neste aparelho."));
+    return;
+  }
   try {
     if (video.webkitSetPresentationMode) video.webkitSetPresentationMode("picture-in-picture");
     else if (video.requestPictureInPicture) await video.requestPictureInPicture();
@@ -3967,12 +3984,33 @@ async function enterPip() {
   }
 }
 
+// Algo tocando de verdade? (filme pausado pelo usuário não conta)
+function isPlayingForPip() {
+  return !!(_state.selected && _state.playing && !(_state.selected.isVod && userPausedVod));
+}
+
 // Android: liga a janela automática enquanto algo toca de verdade.
 function syncAutoPip() {
-  const active = !!(_state.selected && _state.playing);
+  if (_autoPipSuspended) return;
+  const active = isPlayingForPip();
   if (_lastAutoPip === active) return;
   _lastAutoPip = active;
   callNativePlugin("SintonizaPip", "setAutoEnter", { enabled: active });
+}
+
+// Desliga a janela automática antes de abrir uma tela do sistema.
+function suspendAutoPip() {
+  _autoPipSuspended = true;
+  _lastAutoPip = false;
+  callNativePlugin("SintonizaPip", "setAutoEnter", { enabled: false });
+}
+
+// Voltou da tela do sistema: religa conforme o que está tocando.
+function resumeAutoPip() {
+  if (!_autoPipSuspended) return;
+  _autoPipSuspended = false;
+  _lastAutoPip = null;
+  syncAutoPip();
 }
 
 // Janela fechada no "x" (app continua em segundo plano): pausa.
@@ -5066,7 +5104,10 @@ async function playDownloaded(entry) {
 async function shareDownloaded(entry) {
   const uri = await downloadFileUri(entry);
   if (!uri) { showToast("Arquivo não encontrado."); return; }
+  // A folha de compartilhar é outra tela: sem janela flutuante automática
+  suspendAutoPip();
   try { await callNativePlugin("Share", "share", { title: entry.title, files: [uri] }); } catch (e) {}
+  finally { resumeAutoPip(); }
 }
 
 // Remove da lista e apaga o arquivo (se já foi gravado, mesmo que em parte).
@@ -5819,9 +5860,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Menu aberto esconderia o mini-player dentro da janela: fecha antes
     if (active) closeSidebar();
     document.body.classList.toggle("pip-active", active);
-    // Saiu da janela e o app segue em segundo plano = fechou no "x": pausa
-    if (!active) setTimeout(() => { if (document.visibilityState === "hidden") pauseAfterPipClosed(); }, 400);
+    // O Android informa quando a janela foi fechada no "x" (e não expandida): pausa
+    if (!active && e.closed) pauseAfterPipClosed();
   });
+  // Consulta, uma vez, se o aparelho Android tem janela flutuante
+  checkNativePipSupport();
   document.getElementById("play-pause-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     togglePlayPause();
@@ -6256,6 +6299,10 @@ document.addEventListener("DOMContentLoaded", () => {
     showPlayerArt();
     removeContinueWatching(ch.continueId);
   });
+  // Janela flutuante automática acompanha play/pause (depois dos listeners
+  // acima, que já atualizaram userPausedVod)
+  document.getElementById("player-video").addEventListener("play", () => syncAutoPip());
+  document.getElementById("player-video").addEventListener("pause", () => syncAutoPip());
 
   // ── SETTINGS FORM ──
   document.getElementById("tab-url").addEventListener("click",  () => { setSettingsMode("url");     updateSaveBtn(); });
@@ -6264,7 +6311,13 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("save-indicator").style.display = "none";
     updateSaveBtn();
   });
+  // Seletor de arquivos do sistema: sem janela flutuante automática enquanto
+  // estiver aberto; religa ao escolher, cancelar ou o app voltar ao foco.
+  document.getElementById("file-input").addEventListener("click", () => suspendAutoPip());
+  document.getElementById("file-input").addEventListener("cancel", () => resumeAutoPip());
+  window.addEventListener("focus", () => resumeAutoPip());
   document.getElementById("file-input").addEventListener("change", e => {
+    resumeAutoPip();
     const name = e.target.files?.[0]?.name;
     if (name) document.getElementById("file-name").textContent = name;
     document.getElementById("save-indicator").style.display = "none";

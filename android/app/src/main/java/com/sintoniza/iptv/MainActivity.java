@@ -38,12 +38,58 @@ public class MainActivity extends BridgeActivity {
         if (SintonizaPipPlugin.autoEnter) enterPip(this);
     }
 
-    // Avisa o JS para mostrar só o vídeo dentro da janela (e pausar ao fechar).
+    // Estado para saber se a janela foi fechada no "x" ou expandida de volta:
+    // stopped = Activity parada (onStop sem onStart depois);
+    // wasInPip = estava na janela flutuante e ainda não sabemos como ela saiu.
+    private boolean stopped = false;
+    private boolean wasInPip = false;
+
+    // Avisa o JS para mostrar só o vídeo dentro da janela.
+    // Ao sair: closed=true quando a Activity já parou (janela fechada no "x");
+    // closed=false quando a janela voltou para tela cheia.
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        if (isInPictureInPictureMode) {
+            wasInPip = true;
+            sendPipEvent(true, false);
+        } else if (stopped) {
+            wasInPip = false;
+            sendPipEvent(false, true);
+        } else {
+            // Ainda não parou: se o onStop vier logo em seguida, foi fechada
+            sendPipEvent(false, false);
+        }
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        stopped = false;
+    }
+
+    // Voltou para tela cheia (expandiu a janela): não foi fechamento.
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (!isInPictureInPictureMode()) wasInPip = false;
+    }
+
+    // Janela fechada no "x" em aparelhos que avisam a saída do PiP antes do onStop.
+    @Override
+    public void onStop() {
+        super.onStop();
+        stopped = true;
+        if (wasInPip && !isInPictureInPictureMode()) {
+            wasInPip = false;
+            sendPipEvent(false, true);
+        }
+    }
+
+    // Dispara o evento "sintonizapip" na janela do WebView.
+    private void sendPipEvent(boolean active, boolean closed) {
         if (getBridge() != null) {
-            getBridge().triggerWindowJSEvent("sintonizapip", "{ \"active\": " + isInPictureInPictureMode + " }");
+            getBridge().triggerWindowJSEvent("sintonizapip", "{ \"active\": " + active + ", \"closed\": " + closed + " }");
         }
     }
 }

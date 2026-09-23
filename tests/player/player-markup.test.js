@@ -80,3 +80,21 @@ test("janela flutuante: botão, modo PiP e ligação com o Android", () => {
   assert.match(html, /addEventListener\("sintonizapip"/);
   assert.match(html, /callNativePlugin\("SintonizaPip", "setAutoEnter"/);
 });
+
+test("janela flutuante: pausa só no fechamento nativo, suspende ao compartilhar e respeita filme pausado", () => {
+  // Pausa pelo aviso "closed" do Android, sem a corrida do setTimeout
+  assert.match(html, /!active && e\.closed\) pauseAfterPipClosed\(\)/);
+  assert.doesNotMatch(html, /setTimeout\(\(\) => \{ if \(document\.visibilityState === "hidden"\) pauseAfterPipClosed/);
+  // Compartilhar e escolher arquivo desligam a janela automática
+  const share = html.match(/async function shareDownloaded[\s\S]*?\n\}/);
+  assert.ok(share, "shareDownloaded não encontrada");
+  assert.match(share[0], /suspendAutoPip\(\)[\s\S]*callNativePlugin\("Share"[\s\S]*resumeAutoPip\(\)/);
+  assert.match(html, /getElementById\("file-input"\)\.addEventListener\("click", \(\) => suspendAutoPip\(\)\)/);
+  // Filme pausado pelo usuário não conta como "tocando"
+  assert.match(html, /_state\.playing && !\(_state\.selected\.isVod && userPausedVod\)/);
+  // Suporte real consultado no Android
+  assert.match(html, /callNativePlugin\("SintonizaPip", "isSupported"\)/);
+  // Trava da tela cheia some dentro da janela
+  assert.match(html, /body\.pip-active #player-screen \.fs-lock-shield/);
+  assert.match(html, /body\.pip-active #player-screen \.fs-lock-hint/);
+});
