@@ -272,45 +272,6 @@
       pointer-events: none;
     }
     .player-video.active { opacity: 1; pointer-events: auto; }
-    /* Telemetria / Monitor Panel */
-    .player-debug-overlay {
-      position: absolute; top: 1rem; left: 1rem; z-index: 7;
-      background: oklch(0.08 0.015 65 / 88%);
-      backdrop-filter: blur(8px);
-      border: 1px solid oklch(1 0 0 / 15%);
-      border-radius: .5rem;
-      padding: .75rem 1rem;
-      color: oklch(0.95 0.01 75);
-      font-size: .75rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      pointer-events: none;
-      box-shadow: 0 8px 24px oklch(0 0 0 / 40%);
-      max-width: 22rem;
-      transition: opacity 200ms;
-    }
-    .debug-header {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem; margin-bottom: .5rem; border-bottom: 1px solid oklch(1 0 0 / 12%);
-      padding-bottom: .35rem; font-weight: 600;
-    }
-    .debug-badge {
-      background: oklch(0.62 0.16 145 / 25%);
-      color: oklch(0.75 0.18 145);
-      padding: .15rem .45rem; border-radius: .25rem; font-size: .65rem;
-    }
-    .debug-badge.warning {
-      background: oklch(0.7 0.16 65 / 25%);
-      color: oklch(0.8 0.18 65);
-    }
-    .debug-badge.danger {
-      background: oklch(0.55 0.18 20 / 25%);
-      color: oklch(0.7 0.2 20);
-    }
-    .debug-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem;
-    }
-    .debug-grid div span { color: oklch(0.65 0.02 75); }
-    .debug-grid div b { color: oklch(0.98 0 0); }
     /* Spinner de carregamento */
     .player-loader {
       position: absolute; top: 50%; left: 50%;
@@ -376,14 +337,19 @@
       text-align: center; font-variant-numeric: tabular-nums;
     }
     .vod-seek-bar { flex: 1; accent-color: var(--primary); cursor: pointer; }
-    /* Botões de voltar/avançar 10s (só VOD) reaproveitam .ctrl-btn - o selo
-       "10" sobre o ícone circular evita confundi-los com #reload-stream-btn,
-       que já usa o mesmo desenho (rotate-cw) para "recarregar transmissão". */
-    .ctrl-btn-skip { position: relative; }
-    .skip-badge {
-      position: absolute; bottom: .3rem; left: 50%; transform: translateX(-50%);
-      font-size: .5rem; font-weight: 700; line-height: 1; pointer-events: none;
+    /* Ícones de ±10s desenhados à mão: seta circular com o "10" dentro do
+       próprio círculo (antes o número era um selo sobreposto que sumia no
+       meio do ícone). */
+    .skip-icon {
+      width: 26px; height: 26px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
     }
+    .skip-icon text {
+      fill: currentColor; stroke: none; font-size: 8.5px; font-weight: 700;
+      text-anchor: middle; font-family: 'Outfit', sans-serif;
+    }
+    /* Empurra enquadramento + tela cheia para a direita da barra. */
+    .player-controls-spacer { flex: 1; }
 
     /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
        para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
@@ -542,38 +508,10 @@
     #player-screen.player-hidden {
       display: none;
     }
-    .live-line {
-      height: 3px; flex: 1; min-width: 3rem; border-radius: 9px;
-      background: oklch(0.3 0.02 65); overflow: hidden; position: relative;
-    }
-    .live-bar {
-      position: absolute; inset: 0; border-radius: 9px; background: var(--primary);
-      animation: live-pulse 2s ease-in-out infinite;
-    }
-    .progress-fill {
-      position: absolute; top: 0; left: 0; bottom: 0; border-radius: 9px;
-      background: var(--primary); transition: width 400ms ease;
-    }
-    @keyframes live-pulse {
-      0%   { transform: scaleX(0); transform-origin: left; opacity: 1; }
-      70%  { transform: scaleX(1); transform-origin: left; opacity: 1; }
-      100% { transform: scaleX(1); transform-origin: left; opacity: 0; }
-    }
-    .live-label     { font-size: .75rem; font-weight: 500; color: var(--primary); white-space: nowrap; }
-    .progress-label { font-size: .75rem; color: var(--muted-fg); white-space: nowrap; }
     .ctrl-select {
       border: 1px solid oklch(1 0 0 / 12%); border-radius: .35rem;
       background: oklch(0.16 0.015 65); color: oklch(0.92 0.01 75);
       padding: .35rem .55rem; font-size: .75rem; max-width: 7rem;
-    }
-    .vol-slider {
-      -webkit-appearance: none; appearance: none;
-      width: 5rem; height: 3px; border-radius: 9px;
-      background: oklch(0.3 0.02 65); outline: none; cursor: pointer;
-    }
-    .vol-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      border-radius: 999px; background: var(--primary); cursor: pointer;
     }
 
     /* ════════════ ON NOW ════════════ */
@@ -1057,7 +995,6 @@
       .mobile-tabs svg { width: 1.2rem; height: 1.2rem; }
       .mobile-tabs .active { color: var(--primary); }
       .settings-content { padding: 1.5rem 1rem 0; }
-      .vol-slider { width: 3.5rem; }
       .ctrl-select { max-width: 5rem; font-size: .65rem; }
       .vod-hero { height: 16rem; padding: 1.25rem; }
       .vod-hero-copy h2 { font-size: 1.5rem; }
@@ -1070,7 +1007,7 @@
       .welcome-row h1 { font-size: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
-      *, .live-bar, .spinner { animation: none !important; transition-duration: .01ms !important; }
+      *, .spinner { animation: none !important; transition-duration: .01ms !important; }
     }
   </style>
 </head>
@@ -1188,21 +1125,6 @@
         <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
       </div>
-      <!-- Monitor Panel / Telemetria -->
-      <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
-        <div class="debug-header">
-          <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
-          <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
-        </div>
-        <div class="debug-grid">
-          <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
-          <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
-          <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
-          <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
-          <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
-          <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
-        </div>
-      </div>
       <!-- Botão play central -->
       <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
         <i data-lucide="play" style="width:28px;height:28px"></i>
@@ -1217,32 +1139,19 @@
       <span class="vod-seek-time" id="vod-seek-duration">0:00</span>
     </div>
     <div class="player-controls">
-      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
-        <i data-lucide="rotate-ccw" style="width:20px;height:20px"></i>
-        <span class="skip-badge">10</span>
+      <button class="ctrl-btn" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
+        <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><text x="12" y="15.5">10</text></svg>
       </button>
       <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
         <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
       </button>
-      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
-        <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
-        <span class="skip-badge">10</span>
+      <button class="ctrl-btn" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
+        <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><text x="12" y="15.5">10</text></svg>
       </button>
       <button class="ctrl-btn" id="reload-stream-btn" aria-label="Recarregar canal" title="Recarregar transmissão atual" disabled>
         <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
       </button>
-      <button class="ctrl-btn" id="debug-toggle-btn" aria-label="Estatísticas do Stream" title="Painel de Monitoramento / Telemetria">
-        <i data-lucide="activity" style="width:20px;height:20px"></i>
-      </button>
-      <button class="ctrl-btn" id="mute-btn" aria-label="Silenciar/Dessilenciar">
-        <i data-lucide="volume-2" style="width:20px;height:20px" id="mute-icon"></i>
-      </button>
-      <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
-      <div class="live-line">
-        <div class="live-bar" id="live-bar" style="display:none"></div>
-        <div class="progress-fill" id="progress-fill" style="width:0;display:none"></div>
-      </div>
-      <span id="live-label" class="live-label"></span>
+      <div class="player-controls-spacer"></div>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
         <option value="contain">Original</option>
         <option value="cover">Preencher</option>
@@ -1508,14 +1417,6 @@
               <option value="contain">Original</option>
               <option value="cover">Preencher</option>
               <option value="fill">Esticar</option>
-            </select>
-          </div>
-          <div class="pref-row">
-            <span class="pref-label">Volume padrão</span>
-            <select class="pref-select" id="pref-vol">
-              <option value="1">100%</option>
-              <option value="0.7">70%</option>
-              <option value="0.5">50%</option>
             </select>
           </div>
         </div>
@@ -1948,7 +1849,6 @@ let _state = {
   favorites: JSON.parse(localStorage.getItem("sint_fav") || "[]"),
   selected:  null,
   playing:   false,
-  muted:     false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
   recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]").map((item, i) =>
     typeof item === "string" ? { id: item, type: "channel", ts: Date.now() - i * 1000 } : item
@@ -2222,7 +2122,6 @@ let isReloadingStream = false;
 let initialLoadTimeout = null;
 let currentStreamType = "unknown";
 let sessionReconnectCount = 0;
-let isDebugOverlayVisible = false;
 let mpegPrebufferTimer = null;
 let mpegPrebufferTimeout = null;
 let hlsNetworkRetryAttempt = 0;
@@ -2923,7 +2822,6 @@ async function playStream(url) {
         hidePlayerLoader();
         showPlayerVideo();
         setState({ playing: true });
-        enableLiveBar();
         startWatchdog(url);
       });
 
@@ -2969,7 +2867,6 @@ async function playStream(url) {
         hidePlayerLoader();
         showPlayerVideo();
         setState({ playing: true });
-        enableLiveBar();
         startWatchdog(url);
       }).catch(err => showPlayerError(err.message));
     } else {
@@ -3084,7 +2981,6 @@ async function playStream(url) {
             if (playBtn) playBtn.disabled = false;
             const reloadBtn = document.getElementById('reload-stream-btn');
             if (reloadBtn) reloadBtn.disabled = false;
-            enableLiveBar();
             startWatchdog(url);
             requestScreenWakeLock();
           }).catch(err => {
@@ -3162,7 +3058,6 @@ function tryDirectPlay(url, video, attempt) {
     if (playBtn) playBtn.disabled = false;
     const reloadBtn = document.getElementById("reload-stream-btn");
     if (reloadBtn) reloadBtn.disabled = false;
-    enableLiveBar();
     startWatchdog(url);
   }).catch(() => {
     if (attempt < 3) {
@@ -3192,9 +3087,6 @@ function stopStream() {
   showPlayerArt();
   hidePlayerLoader();
   hidePlayerError();
-  document.getElementById("live-bar").style.display = "none";
-  document.getElementById("progress-fill").style.display = "none";
-  document.getElementById("live-label").textContent = "";
   // Zera a seek bar do VOD para não deixar a posição/tempo do vídeo
   // anterior visível por um instante enquanto o próximo carrega.
   document.getElementById("vod-seek-bar").value = 0;
@@ -3264,24 +3156,12 @@ function releaseScreenWakeLock() {
   }
 }
 
-function enableLiveBar() {
-  // Filmes/episódios (VOD) não são "ao vivo" - o rótulo some nesse caso em
-  // vez de mostrar uma etiqueta errada sobre o conteúdo sob demanda.
-  const isVod = _state.selected && _state.selected.isVod;
-  document.getElementById("live-bar").style.display = "block";
-  document.getElementById("live-label").textContent = isVod ? "" : "AO VIVO";
-  document.getElementById("live-label").className = "live-label";
-}
-
 // ─── Volume ───
-function applyVolume(v) {
+// Sempre no máximo: quem regula o volume é o botão físico do aparelho.
+function forceMaxVolume() {
   const video = document.getElementById("player-video");
-  video.volume = v;
-  video.muted  = _state.muted;
-  document.getElementById("vol-slider").value = v;
-  const icon = document.getElementById("mute-icon");
-  icon.setAttribute("data-lucide", v === 0 || _state.muted ? "volume-x" : v < 0.5 ? "volume-1" : "volume-2");
-  lucide.createIcons();
+  video.volume = 1;
+  video.muted = false;
 }
 
 // ─── Tela cheia ───
@@ -3706,7 +3586,7 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
 
 function parseXtreamCredentials(m3uUrl) {
   let url;
@@ -4223,14 +4103,12 @@ function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
-  const vol  = localStorage.getItem(LS.VOL)  || "1";
   const proxy = localStorage.getItem(LS.PROXY) || "";
   const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
   const vodUrl = localStorage.getItem(LS.VOD_URL) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
-  document.getElementById("pref-vol").value  = vol;
   document.getElementById("proxy-url").value = proxy;
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   document.getElementById("epg-url").value = epgUrl;
@@ -4312,9 +4190,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("fit-select").value = savedFit;
   document.getElementById("player-video").style.objectFit = savedFit;
 
-  // Volume salvo
-  const savedVol = parseFloat(localStorage.getItem(LS.VOL) || "1");
-  applyVolume(savedVol);
+  // Volume sempre no máximo (o aparelho regula)
+  forceMaxVolume();
 
   // ─── Link compartilhável: ?lista=<url> ───
   // Abrir este arquivo com ?lista=<url-da-playlist> (codificada) carrega essa
@@ -4456,36 +4333,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const debugBtn = document.getElementById("debug-toggle-btn");
-  if (debugBtn) {
-    debugBtn.addEventListener("click", () => {
-      isDebugOverlayVisible = !isDebugOverlayVisible;
-      const overlay = document.getElementById("player-debug-overlay");
-      if (overlay) {
-        overlay.style.display = isDebugOverlayVisible ? "block" : "none";
-        if (isDebugOverlayVisible) updateDebugOverlay();
-      }
-      debugBtn.style.color = isDebugOverlayVisible ? "var(--primary)" : "";
-      showToast(isDebugOverlayVisible ? "Telemetria ativada" : "Telemetria oculta");
-    });
-  }
-
   document.getElementById("retry-btn").addEventListener("click", () => {
     const ch = _state.selected;
     if (ch?.url) playStream(ch.url);
-  });
-
-  document.getElementById("mute-btn").addEventListener("click", () => {
-    const v = !_state.muted;
-    setState({ muted: v }, true);
-    applyVolume(parseFloat(document.getElementById("vol-slider").value));
-  });
-
-  document.getElementById("vol-slider").addEventListener("input", e => {
-    const v = parseFloat(e.target.value);
-    setState({ muted: v === 0 }, true);
-    applyVolume(v);
-    localStorage.setItem(LS.VOL, v);
   });
 
   document.getElementById("fit-select").addEventListener("change", e => {
@@ -4905,10 +4755,6 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(LS.FIT, e.target.value);
     document.getElementById("fit-select").value = e.target.value;
     document.getElementById("player-video").style.objectFit = e.target.value;
-  });
-  document.getElementById("pref-vol").addEventListener("change", e => {
-    localStorage.setItem(LS.VOL, e.target.value);
-    applyVolume(parseFloat(e.target.value));
   });
 });
 </script>
