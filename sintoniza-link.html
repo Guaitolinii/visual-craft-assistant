@@ -362,50 +362,86 @@
     /* Empurra enquadramento + tela cheia para a direita da barra. */
     .player-controls-spacer { flex: 1; }
 
-    /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
-       para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
-       de uma WKWebView no iOS, dispara o aviso do sistema "capacitor://
-       localhost is in full screen. Swipe down to exit", que não faz
-       sentido pra quem está usando um app instalado. No navegador comum
-       (GitHub Pages) o comportamento não muda - continua usando a
+    /* ── Tela cheia do app nativo (pontos 1 e 10 da v6) ──
+       Feita em CSS (sem a Fullscreen API, que no iOS mostra o aviso
+       "capacitor://localhost is in full screen"). Cobre a tela inteira,
+       inclusive a área da barra de status. Abre em pé; o botão de girar
+       deita. Sem o plugin nativo de orientação, o player inteiro (vídeo +
+       controles) é girado 90° via CSS. No navegador comum continua a
        Fullscreen API de verdade. */
     #player-screen.pseudo-fullscreen {
       position: fixed; inset: 0; z-index: 9999; background: #000;
-      /* The base #player-screen rule (card framing) sets a margin and rounded
-         corners meant for the full-size card - both must be cleared here so
-         the fixed inset:0 box truly covers the whole screen edge-to-edge. */
+      /* Tira a moldura do card grande (margem/cantos/sombra). */
       margin: 0; border-radius: 0; box-shadow: none;
     }
-    /* .player-controls/.vod-seek-row now live inside #player-screen (see
-       markup) - hidden here to preserve the pre-existing pseudo-fullscreen
-       behavior (video only + the floating .fs-overlay-controls exit button),
-       same as before they were moved in. */
     #player-screen.pseudo-fullscreen .player-controls,
     #player-screen.pseudo-fullscreen .vod-seek-row {
       display: none !important;
     }
-    #player-screen.pseudo-fullscreen #player-video {
-      width: 100%; height: 100%; object-fit: contain;
-    }
-    #player-screen.pseudo-fullscreen.rotated #player-video {
-      position: absolute; top: 50%; left: 50%;
+    #player-screen.pseudo-fullscreen .player-media { min-height: 0; background: #000; }
+    /* A tela cheia tem título e play próprios (.fs-ui): o texto do cartaz e o
+       play central do card grande ficariam por baixo dos controles. */
+    #player-screen.pseudo-fullscreen .player-copy,
+    #player-screen.pseudo-fullscreen .play-center { display: none !important; }
+    #player-screen.pseudo-fullscreen.rotated {
+      inset: auto; top: 50%; left: 50%;
       width: 100vh; height: 100vw;
       transform: translate(-50%, -50%) rotate(90deg);
     }
-    .fs-overlay-controls {
-      position: fixed; inset: 0 0 auto 0; z-index: 10000;
-      display: none; justify-content: flex-end; gap: .6rem;
-      padding: 1rem; opacity: 0; pointer-events: none;
-      transition: opacity 220ms;
+    body.fs-open { overflow: hidden; }
+    .fs-ui, .fs-lock-shield { display: none; }
+    #player-screen.pseudo-fullscreen .fs-ui {
+      position: absolute; inset: 0; z-index: 8;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+               max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+      background: linear-gradient(to bottom, oklch(0 0 0 / 55%), transparent 25%, transparent 70%, oklch(0 0 0 / 65%));
+      opacity: 0; transition: opacity 220ms; touch-action: none;
     }
-    #player-screen.pseudo-fullscreen .fs-overlay-controls { display: flex; }
-    .fs-overlay-controls.visible { opacity: 1; pointer-events: auto; }
-    .fs-overlay-btn {
-      width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none;
+    /* Girado via CSS: o entalhe fica à esquerda e a barra de início à
+       direita de quem assiste. */
+    #player-screen.pseudo-fullscreen.rotated .fs-ui {
+      padding: 1rem max(1rem, env(safe-area-inset-bottom)) 1rem max(1rem, env(safe-area-inset-top));
+    }
+    #player-screen.pseudo-fullscreen .fs-ui.visible { opacity: 1; }
+    /* Escondidos, os botões não recebem toque; só a camada, que traz tudo de volta. */
+    .fs-ui:not(.visible) .fs-btn, .fs-ui:not(.visible) input { pointer-events: none; }
+    .fs-top, .fs-center, .fs-actions { display: flex; align-items: center; gap: .75rem; }
+    .fs-title {
+      flex: 1; min-width: 0; color: oklch(0.98 0 0); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .fs-center { justify-content: center; gap: 2.5rem; }
+    .fs-bottom { display: flex; align-items: center; gap: 1rem; }
+    .fs-seek { flex: 1; min-width: 0; display: flex; align-items: center; gap: .6rem; }
+    .fs-time {
+      color: oklch(0.9 0.01 75); font-size: .8rem; min-width: 2.75rem;
+      text-align: center; font-variant-numeric: tabular-nums;
+    }
+    .fs-actions { margin-left: auto; }
+    .fs-btn {
+      width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
-      background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
+      background: oklch(0.1 0.01 65 / 55%); color: oklch(0.98 0 0);
       backdrop-filter: blur(8px);
     }
+    .fs-btn-lg { width: 3.5rem; height: 3.5rem; }
+    .fs-btn-lg .skip-icon { width: 30px; height: 30px; }
+    .fs-btn-xl { width: 4.5rem; height: 4.5rem; background: var(--primary); color: var(--primary-fg); }
+    #player-screen:not(.is-vod) .fs-vod-only { display: none !important; }
+    #player-screen.pseudo-fullscreen.fs-locked .fs-ui { display: none; }
+    #player-screen.pseudo-fullscreen.fs-locked .fs-lock-shield {
+      position: absolute; inset: 0; z-index: 9; touch-action: none;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fs-lock-hint {
+      display: flex; flex-direction: column; align-items: center; gap: .75rem;
+      max-width: 16rem; padding: 1rem 1.25rem; border-radius: 1rem;
+      background: oklch(0.1 0.01 65 / 70%); color: oklch(0.98 0 0);
+      font-size: .9rem; text-align: center;
+      opacity: 0; transition: opacity 200ms; pointer-events: none;
+    }
+    .fs-lock-hint.visible { opacity: 1; pointer-events: auto; }
     /* Mini-player (pontos 6/7 da v6): barra compacta acima das abas, só
        quando algo toca e o player grande saiu da tela (ou em Configurações). */
     #player-screen.mini-player {
@@ -749,6 +785,7 @@
       display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem;
     }
     .home-recents-grid .vod-card { min-width: 0; width: 100%; }
+    #home-mylist .vod-row { margin-top: 1.75rem; }
     /* Canal na grade: logo inteira (contain) sobre a cor do canal, no mesmo
        formato 2:3 dos pôsteres para as linhas ficarem alinhadas. */
     .vod-card-logo {
@@ -1097,13 +1134,42 @@
          below. #player-screen itself carries the card framing (radius/
          shadow/margin) and stacks .player-media above the controls. -->
     <div class="player-media">
-      <!-- Controle único de tela cheia "de mentira" (só usado dentro do app
-           nativo) - mesmo botão/ícone do #fullscreen-btn compacto: sai da tela
-           cheia e desgira num só toque (ver toggleFullscreen()/Step 5 da task). -->
-      <div class="fs-overlay-controls" id="fs-overlay-controls">
-        <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
-          <i data-lucide="minimize" style="width:20px;height:20px"></i>
-        </button>
+      <!-- Controles da tela cheia (app nativo, pontos 1 e 10 da v6): somem
+           após 5s sem toque; um toque na tela traz de volta. -->
+      <div class="fs-ui" id="fs-ui">
+        <div class="fs-top">
+          <p class="fs-title" id="fs-title"></p>
+          <button class="fs-btn" id="fs-lock-btn" aria-label="Bloquear a tela"><i data-lucide="lock" style="width:20px;height:20px"></i></button>
+          <button class="fs-btn" id="fs-exit-btn" aria-label="Sair da tela cheia"><i data-lucide="minimize" style="width:20px;height:20px"></i></button>
+        </div>
+        <div class="fs-center">
+          <button class="fs-btn fs-btn-lg fs-vod-only" id="fs-skip-back-btn" aria-label="Voltar 10 segundos">
+            <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><text x="12" y="15.5">10</text></svg>
+          </button>
+          <button class="fs-btn fs-btn-xl" id="fs-play-btn" aria-label="Reproduzir/Pausar"><i data-lucide="pause" id="fs-play-icon" style="width:30px;height:30px"></i></button>
+          <button class="fs-btn fs-btn-lg fs-vod-only" id="fs-skip-fwd-btn" aria-label="Adiantar 10 segundos">
+            <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><text x="12" y="15.5">10</text></svg>
+          </button>
+        </div>
+        <div class="fs-bottom">
+          <div class="fs-seek fs-vod-only">
+            <span class="fs-time" id="fs-seek-current">0:00</span>
+            <input type="range" class="vod-seek-bar" id="fs-seek-bar" min="0" max="100" value="0" step="0.1" aria-label="Progresso do vídeo" />
+            <span class="fs-time" id="fs-seek-duration">0:00</span>
+          </div>
+          <div class="fs-actions">
+            <button class="fs-btn" id="fs-fit-btn" aria-label="Preencher a tela"><i data-lucide="expand" style="width:20px;height:20px"></i></button>
+            <button class="fs-btn" id="fs-rotate-btn" aria-label="Girar para a horizontal"><i data-lucide="rectangle-horizontal" style="width:20px;height:20px"></i></button>
+          </div>
+        </div>
+      </div>
+      <!-- Tela bloqueada: engole todos os toques. Um toque mostra o cadeado e
+           a instrução de como desbloquear por alguns segundos. -->
+      <div class="fs-lock-shield" id="fs-lock-shield">
+        <div class="fs-lock-hint" id="fs-lock-hint">
+          <button class="fs-btn fs-btn-lg" id="fs-unlock-btn" aria-label="Desbloquear a tela"><i data-lucide="lock-open" style="width:24px;height:24px"></i></button>
+          <p>Tela bloqueada. Toque no cadeado para desbloquear.</p>
+        </div>
       </div>
       <!-- Art (visível antes de reproduzir) -->
       <div class="player-art" id="player-art">
@@ -3310,6 +3376,12 @@ function hidePlayerLoader() {
   document.getElementById("player-loader").classList.remove("active");
 }
 function showPlayerError(msg, code) {
+  // Erro na tela cheia: sai dela (e destrava), para o "Tentar novamente"
+  // ficar alcançável.
+  if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
+    exitPseudoFullscreen();
+    updateFullscreenBtnIcon();
+  }
   hidePlayerLoader();
   showPlayerArt();
   document.getElementById("player-error-msg").textContent = msg || "Tente novamente.";
@@ -3363,28 +3435,165 @@ function isNativeApp() {
     || (location.protocol === "http:" && location.hostname === "localhost");
 }
 
-let fsControlsHideTimer = null;
+// ─── Tela cheia do app nativo (pontos 1 e 10 da v6) ───
+// Abre em pé; o botão de girar deita o vídeo. Com o plugin oficial
+// @capacitor/screen-orientation instalado, quem gira é o próprio sistema (e
+// o iOS esconde a barra de status sozinho na horizontal). Sem ele, o player
+// inteiro gira via CSS. Com @capacitor/status-bar instalado, a barra de
+// status também some na tela cheia em pé. Os controles somem após 5s sem
+// toque, e o cadeado bloqueia os toques até ser desbloqueado.
+const FS_CONTROLS_HIDE_MS = 5000;
+const FS_LOCK_HINT_MS = 3000;
+const FS_DOUBLE_TAP_MS = 350;
+const _fs = { wantLandscape: false, locked: false, hideTimer: null, hintTimer: null, lastTapTs: 0 };
+
+function isNativePluginAvailable(pluginName) {
+  const cap = window.Capacitor;
+  if (!cap || !isNativeApp()) return false;
+  if (typeof cap.isPluginAvailable === "function") return cap.isPluginAvailable(pluginName);
+  return Array.isArray(cap.PluginHeaders) && cap.PluginHeaders.some(h => h.name === pluginName);
+}
+
+// Chama um método de plugin nativo do Capacitor, se ele estiver instalado.
+// Devolve a Promise da chamada, ou null quando o plugin não existe; nesse
+// caso quem chamou segue pelo caminho alternativo.
+function callNativePlugin(pluginName, method, options) {
+  if (!isNativePluginAvailable(pluginName)) return null;
+  const cap = window.Capacitor;
+  let result = null;
+  try {
+    if (typeof cap.nativePromise === "function") {
+      result = cap.nativePromise(pluginName, method, options || {});
+    } else {
+      const plugin = cap.Plugins && cap.Plugins[pluginName];
+      if (plugin && typeof plugin[method] === "function") result = plugin[method](options || {});
+    }
+  } catch (e) {
+    console.warn(`[native] ${pluginName}.${method} falhou:`, e);
+    return null;
+  }
+  if (result && typeof result.catch === "function") {
+    result.catch(e => console.warn(`[native] ${pluginName}.${method} falhou:`, e));
+  }
+  return result;
+}
+
+// Como montar a tela cheia a cada mudança (girar, ou o aparelho girar
+// sozinho com a rotação automática ligada).
+function computeFsLayout({ wantLandscape, viewportLandscape, nativeOrientation }) {
+  if (viewportLandscape) {
+    return { cssRotate: false, showRotateBtn: nativeOrientation, rotateIcon: "rectangle-vertical" };
+  }
+  if (wantLandscape && !nativeOrientation) {
+    return { cssRotate: true, showRotateBtn: true, rotateIcon: "rectangle-vertical" };
+  }
+  return { cssRotate: false, showRotateBtn: true, rotateIcon: wantLandscape ? "rectangle-vertical" : "rectangle-horizontal" };
+}
+
+function applyFsLayout() {
+  const el = document.getElementById("player-screen");
+  if (!el.classList.contains("pseudo-fullscreen")) return;
+  const layout = computeFsLayout({
+    wantLandscape: _fs.wantLandscape,
+    viewportLandscape: window.innerWidth > window.innerHeight,
+    nativeOrientation: isNativePluginAvailable("ScreenOrientation"),
+  });
+  el.classList.toggle("rotated", layout.cssRotate);
+  const rotateBtn = document.getElementById("fs-rotate-btn");
+  rotateBtn.style.display = layout.showRotateBtn ? "" : "none";
+  rotateBtn.innerHTML = `<i data-lucide="${layout.rotateIcon}" style="width:20px;height:20px"></i>`;
+  rotateBtn.setAttribute("aria-label", layout.rotateIcon === "rectangle-vertical" ? "Voltar para a vertical" : "Girar para a horizontal");
+  lucide.createIcons();
+}
+
 function showFsControls() {
-  const controls = document.getElementById("fs-overlay-controls");
-  controls.classList.add("visible");
-  clearTimeout(fsControlsHideTimer);
-  fsControlsHideTimer = setTimeout(() => controls.classList.remove("visible"), 5000);
+  const ui = document.getElementById("fs-ui");
+  ui.classList.add("visible");
+  clearTimeout(_fs.hideTimer);
+  const video = document.getElementById("player-video");
+  // Filme pausado: os controles ficam na tela, como nos apps de streaming.
+  if (video.paused && _state.selected && _state.selected.isVod) return;
+  _fs.hideTimer = setTimeout(() => ui.classList.remove("visible"), FS_CONTROLS_HIDE_MS);
+}
+
+function hideFsControls() {
+  clearTimeout(_fs.hideTimer);
+  document.getElementById("fs-ui").classList.remove("visible");
+}
+
+function setFsLocked(locked) {
+  _fs.locked = locked;
+  document.getElementById("player-screen").classList.toggle("fs-locked", locked);
+  clearTimeout(_fs.hintTimer);
+  document.getElementById("fs-lock-hint").classList.remove("visible");
+  if (locked) hideFsControls();
+}
+
+// Mostra o cadeado + a instrução de desbloqueio por alguns segundos.
+function flashFsLockHint() {
+  const hint = document.getElementById("fs-lock-hint");
+  hint.classList.add("visible");
+  clearTimeout(_fs.hintTimer);
+  _fs.hintTimer = setTimeout(() => hint.classList.remove("visible"), FS_LOCK_HINT_MS);
+}
+
+function syncFsFitButton() {
+  const fit = document.getElementById("player-video").style.objectFit || "contain";
+  const filling = fit !== "contain";
+  const btn = document.getElementById("fs-fit-btn");
+  btn.innerHTML = `<i data-lucide="${filling ? "shrink" : "expand"}" style="width:20px;height:20px"></i>`;
+  btn.setAttribute("aria-label", filling ? "Mostrar o vídeo inteiro" : "Preencher a tela");
+  lucide.createIcons();
+}
+
+// Alterna entre vídeo inteiro (com faixas pretas) e tela preenchida.
+function toggleFsFit() {
+  const video = document.getElementById("player-video");
+  const next = (video.style.objectFit || "contain") === "contain" ? "cover" : "contain";
+  video.style.objectFit = next;
+  localStorage.setItem(LS.FIT, next);
+  document.getElementById("fit-select").value = next;
+  syncFsFitButton();
 }
 
 function enterPseudoFullscreen() {
-  document.getElementById("player-screen").classList.add("pseudo-fullscreen", "rotated");
+  const el = document.getElementById("player-screen");
+  if (_state.section !== "settings" && !el.classList.contains("mini-player")) lockPlayerAnchor();
+  _fs.wantLandscape = false;
+  setFsLocked(false);
+  el.classList.add("pseudo-fullscreen");
+  document.body.classList.add("fs-open");
+  document.getElementById("fs-title").textContent = _state.selected ? _state.selected.name : "";
+  callNativePlugin("StatusBar", "hide");
+  applyFsLayout();
+  setPlayerMode();
+  syncFsFitButton();
   showFsControls();
 }
 
 function exitPseudoFullscreen() {
-  document.getElementById("player-screen").classList.remove("pseudo-fullscreen", "rotated");
-  clearTimeout(fsControlsHideTimer);
-  document.getElementById("fs-overlay-controls").classList.remove("visible");
+  const el = document.getElementById("player-screen");
+  setFsLocked(false);
+  hideFsControls();
+  el.classList.remove("pseudo-fullscreen", "rotated");
+  document.body.classList.remove("fs-open");
+  // Com o plugin, devolve o app para a vertical (a interface do app não
+  // foi desenhada para a horizontal no celular).
+  if (_fs.wantLandscape) callNativePlugin("ScreenOrientation", "lock", { orientation: "portrait" });
+  _fs.wantLandscape = false;
+  callNativePlugin("StatusBar", "show");
+  setPlayerMode();
+  scheduleDockingUpdate();
 }
 
-// Único botão (estilo YouTube) que entra em tela cheia E gira para paisagem
-// num só toque, e sai da tela cheia E desgira num só toque no sentido
-// inverso. Reflete o estado atual trocando o ícone maximize <-> minimize.
+function toggleFsRotation() {
+  _fs.wantLandscape = !_fs.wantLandscape;
+  callNativePlugin("ScreenOrientation", "lock", { orientation: _fs.wantLandscape ? "landscape" : "portrait" });
+  applyFsLayout();
+}
+
+// Botão de tela cheia da barra: entra/sai (sempre abrindo em pé) e reflete
+// o estado atual trocando o ícone maximize <-> minimize.
 function updateFullscreenBtnIcon() {
   const btn = document.getElementById("fullscreen-btn");
   if (!btn) return;
@@ -3415,6 +3624,31 @@ function formatSeekTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Atualiza as duas linhas do tempo (barra do player + tela cheia).
+function syncSeekUi(video) {
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  const pct = (video.currentTime / video.duration) * 100;
+  const cur = formatSeekTime(video.currentTime);
+  const dur = formatSeekTime(video.duration);
+  [["vod-seek-bar", "vod-seek-current", "vod-seek-duration"], ["fs-seek-bar", "fs-seek-current", "fs-seek-duration"]].forEach(([barId, curId, durId]) => {
+    document.getElementById(barId).value = pct;
+    document.getElementById(curId).textContent = cur;
+    document.getElementById(durId).textContent = dur;
+  });
+}
+
+function seekToPercent(pct) {
+  const video = document.getElementById("player-video");
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = (pct / 100) * video.duration;
+}
+
+function skipBy(seconds) {
+  const video = document.getElementById("player-video");
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + seconds));
+}
+
 // Mostra a faixa de progresso + botões de 10s só para filmes/séries -
 // canais ao vivo não têm duração total, então nunca fazem sentido aqui.
 // Chamada de dentro de renderPlayerInfo(), toda vez que _state.selected muda.
@@ -3426,6 +3660,8 @@ function updateVodSeekVisibility() {
   if (row) row.style.display = isVod ? "flex" : "none";
   if (backBtn) backBtn.style.display = isVod ? "flex" : "none";
   if (fwdBtn) fwdBtn.style.display = isVod ? "flex" : "none";
+  // Na tela cheia, a linha do tempo e os ±10s também são só de VOD.
+  document.getElementById("player-screen").classList.toggle("is-vod", isVod);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3438,6 +3674,7 @@ function renderPlayerInfo() {
   const nowPlaying = getNowPlayingTitle(ch);
   document.getElementById("player-monogram").textContent = ch.initials;
   document.getElementById("player-name").textContent     = ch.name;
+  document.getElementById("fs-title").textContent        = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
   updateVodSeekVisibility();
@@ -4833,29 +5070,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // com os elementos ocultos (ex.: arrasto residual) - por isso cada handler
   // confere video.duration antes de mexer em currentTime.
   document.getElementById("player-video").addEventListener("timeupdate", () => {
-    const video = document.getElementById("player-video");
-    const bar = document.getElementById("vod-seek-bar");
-    if (!bar || !isFinite(video.duration) || video.duration <= 0) return;
-    bar.value = (video.currentTime / video.duration) * 100;
-    document.getElementById("vod-seek-current").textContent = formatSeekTime(video.currentTime);
-    document.getElementById("vod-seek-duration").textContent = formatSeekTime(video.duration);
+    syncSeekUi(document.getElementById("player-video"));
   });
-
-  document.getElementById("vod-seek-bar").addEventListener("input", e => {
-    const video = document.getElementById("player-video");
-    if (!isFinite(video.duration) || video.duration <= 0) return;
-    video.currentTime = (Number(e.target.value) / 100) * video.duration;
-  });
-
-  document.getElementById("vod-skip-back-btn").addEventListener("click", () => {
-    const video = document.getElementById("player-video");
-    video.currentTime = Math.max(0, video.currentTime - 10);
-  });
-
-  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => {
-    const video = document.getElementById("player-video");
-    if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
-  });
+  document.getElementById("vod-seek-bar").addEventListener("input", e => seekToPercent(Number(e.target.value)));
+  document.getElementById("vod-skip-back-btn").addEventListener("click", () => skipBy(-10));
+  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => skipBy(10));
 
   // Duplo clique no vídeo = fullscreen
   let _lastVideoTapTs = 0;
@@ -4875,13 +5094,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // (ex.: tecla Esc), já que nesse caminho não passamos por toggleFullscreen.
   document.addEventListener("fullscreenchange", updateFullscreenBtnIcon);
 
-  // Tocar na tela em modo tela-cheia-de-mentira reexibe os controles
-  document.getElementById("player-screen").addEventListener("click", () => {
-    if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
-      showFsControls();
-    }
-  });
-
   // Tocar no mini-player volta ao player grande: nas abas principais ele
   // fica no topo da própria página (basta rolar). Em Configurações, que não
   // tem player grande, volta para o catálogo.
@@ -4896,14 +5108,38 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("scroll", scheduleDockingUpdate, { passive: true });
   window.addEventListener("resize", scheduleDockingUpdate);
 
-  // #fs-exit-btn só fica visível enquanto .pseudo-fullscreen está ativo
-  // (regra CSS de .fs-overlay-controls), então passar por toggleFullscreen()
-  // sempre cai no ramo de saída - e já desgira e sincroniza o ícone do botão
-  // único (#fullscreen-btn), que fica coberto pelo overlay em tela cheia.
-  document.getElementById("fs-exit-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    toggleFullscreen();
+  // ── TELA CHEIA (pontos 1 e 10 da v6) ──
+  // Toque na camada: mostra/esconde os controles. Dois toques: sai.
+  document.getElementById("fs-ui").addEventListener("click", e => {
+    if (e.target.closest("button, input")) { showFsControls(); return; } // mexeu num controle: mantém visível
+    const now = Date.now();
+    if (now - _fs.lastTapTs < FS_DOUBLE_TAP_MS) {
+      _fs.lastTapTs = 0;
+      toggleFullscreen();
+      return;
+    }
+    _fs.lastTapTs = now;
+    if (document.getElementById("fs-ui").classList.contains("visible")) hideFsControls();
+    else showFsControls();
   });
+  // #fs-exit-btn só existe na tela cheia, então toggleFullscreen() sempre
+  // cai no ramo de saída (e já sincroniza o ícone do #fullscreen-btn).
+  document.getElementById("fs-exit-btn").addEventListener("click", e => { e.stopPropagation(); toggleFullscreen(); });
+  document.getElementById("fs-lock-btn").addEventListener("click", e => { e.stopPropagation(); setFsLocked(true); flashFsLockHint(); });
+  document.getElementById("fs-rotate-btn").addEventListener("click", toggleFsRotation);
+  document.getElementById("fs-fit-btn").addEventListener("click", toggleFsFit);
+  document.getElementById("fs-play-btn").addEventListener("click", togglePlayPause);
+  document.getElementById("fs-skip-back-btn").addEventListener("click", () => skipBy(-10));
+  document.getElementById("fs-skip-fwd-btn").addEventListener("click", () => skipBy(10));
+  document.getElementById("fs-seek-bar").addEventListener("input", e => { seekToPercent(Number(e.target.value)); showFsControls(); });
+  // Tela bloqueada: só o cadeado desbloqueia; qualquer outro toque mostra a instrução.
+  document.getElementById("fs-lock-shield").addEventListener("click", e => {
+    e.stopPropagation();
+    if (e.target.closest("#fs-unlock-btn")) { setFsLocked(false); showFsControls(); return; }
+    flashFsLockHint();
+  });
+  // Girou o aparelho (ou o plugin girou): reaplica o layout da tela cheia.
+  window.addEventListener("resize", applyFsLayout);
 
   // ── VIEW TOGGLE ──
   document.getElementById("view-grid-btn").addEventListener("click", () => {

@@ -19,6 +19,13 @@ test("player não tem mais volume, barra ao vivo nem telemetria", () => {
   }
 });
 
+test("tela cheia tem linha do tempo, ±10s, girar, bloquear e sair", () => {
+  for (const id of ["fs-ui", "fs-seek-bar", "fs-skip-back-btn", "fs-skip-fwd-btn", "fs-play-btn", "fs-rotate-btn", "fs-fit-btn", "fs-lock-btn", "fs-exit-btn", "fs-lock-shield", "fs-unlock-btn"]) {
+    assert.ok(html.includes(`id="${id}"`), `id="${id}" não existe`);
+  }
+  assert.match(html, /Toque no cadeado para desbloquear/);
+});
+
 test("botões de ±10s desenham o número 10 dentro do próprio ícone", () => {
   for (const id of ["vod-skip-back-btn", "vod-skip-fwd-btn"]) {
     assert.match(buttonHtml(id), /<svg[\s\S]*<text[^>]*>10<\/text>[\s\S]*<\/svg>/);
