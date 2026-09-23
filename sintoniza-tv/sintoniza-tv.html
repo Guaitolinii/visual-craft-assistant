@@ -465,6 +465,19 @@ function makeInitials(name) {
   return name.substring(0, Math.min(3, name.length)).toUpperCase();
 }
 
+// ─── Textos vindos do provedor (lista M3U) ───
+// Entram no HTML da tela; um nome como <img onerror=...> rodaria código
+// com acesso ao bridge nativo do app. Limpamos na entrada: rótulo sem
+// < > " e imagem só http(s) sem aspas/espaços (v8, correção da v7.1).
+function sanitizeLabel(text) {
+  return String(text == null ? '' : text).replace(/[<>"]/g, '').trim();
+}
+
+function sanitizeImageUrl(url) {
+  const u = String(url || '').trim();
+  return /^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : '';
+}
+
 function parseM3U(text) {
   const lines = text.split(/\r?\n/);
   const channels = [];
@@ -477,9 +490,9 @@ function parseM3U(text) {
       const commaIdx   = line.lastIndexOf(',');
       const displayName = commaIdx >= 0 ? line.slice(commaIdx + 1).trim() : 'Canal';
       extinf = {
-        name:     displayName || 'Canal',
-        logo:     logoMatch  ? logoMatch[1].trim()  : null,
-        category: groupMatch ? groupMatch[1].trim() : 'Geral',
+        name:     sanitizeLabel(displayName) || 'Canal',
+        logo:     logoMatch  ? (sanitizeImageUrl(logoMatch[1]) || null) : null,
+        category: groupMatch ? (sanitizeLabel(groupMatch[1]) || 'Geral') : 'Geral',
       };
     } else if (!line.startsWith('#') && line.length > 0 && extinf) {
       const lower = extinf.name.trim().toLowerCase();
