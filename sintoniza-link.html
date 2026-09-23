@@ -121,11 +121,16 @@
       color: var(--foreground); font-size: .9rem;
     }
     .search-clear { background: none; border: none; color: var(--muted-fg); display: flex; }
-    .sticky-search-container {
-      position: sticky; top: calc(5rem + env(safe-area-inset-top)); z-index: 25;
-      background: var(--background); padding: 1rem 0; margin: 0;
+    /* Lugar da busca no conteúdo. Ao rolar, a caixa sai daqui e se encaixa
+       na topbar, entre o menu e o sininho (ponto 5 da v6). O lugar mantém a
+       altura para a página não pular. */
+    .search-dock-slot { height: 2.6rem; margin: 1.25rem 0; }
+    .search-dock-slot .search-box { max-width: 28rem; }
+    .search-box.docked {
+      position: fixed; z-index: 31; max-width: none;
+      top: calc(env(safe-area-inset-top) + 1.2rem);
+      left: calc(var(--sidebar-w) + 2rem); right: 4.75rem;
     }
-    .sticky-search-container .search-box { margin: 0; max-width: 28rem; }
     .category-pills {
       display: flex; gap: .5rem; overflow-x: auto; margin-bottom: 1rem;
       padding-bottom: .25rem; scrollbar-width: none;
@@ -710,7 +715,6 @@
     .view.hidden { display: none; }
 
     /* ════════════ VOD VIEW (Filmes/Séries) ════════════ */
-    .vod-search-box { max-width: 28rem; margin: 1.25rem 0 0; }
     .vod-row { margin-bottom: 2rem; }
     .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
     .vod-row-header {
@@ -916,7 +920,7 @@
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
       .topbar { height: calc(4.3rem + env(safe-area-inset-top)); padding: calc(0px + env(safe-area-inset-top)) .8rem 0 .8rem; }
-      .sticky-search-container { top: calc(4.3rem + env(safe-area-inset-top)); }
+      .search-box.docked { top: calc(env(safe-area-inset-top) + .85rem); left: 3.75rem; right: 3.6rem; }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
@@ -1154,7 +1158,7 @@
         </div>
       </section>
 
-      <div class="sticky-search-container" id="catalog-search-slot">
+      <div class="search-dock-slot" id="catalog-search-slot">
         <label class="search-box" for="search-input">
           <i data-lucide="search" style="width:19px;height:19px"></i>
           <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
@@ -1238,8 +1242,8 @@
         </div>
       </section>
 
-      <div class="sticky-search-container">
-        <label class="search-box vod-search-box" for="vod-search-input">
+      <div class="search-dock-slot">
+        <label class="search-box" for="vod-search-input">
           <i data-lucide="search" style="width:18px;height:18px"></i>
           <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
           <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
@@ -3701,6 +3705,12 @@ function isPlayerScrolledAway(anchorBottom, topbarBottom) {
   return anchorBottom - topbarBottom < PLAYER_VISIBLE_MIN_PX;
 }
 
+// A caixa de busca se encaixa na topbar quando o lugar dela no conteúdo
+// passa por baixo da topbar.
+function shouldDockSearch(slotTop, topbarBottom) {
+  return slotTop < topbarBottom;
+}
+
 let _playerScrolledAway = false;
 
 // Enquanto o player está fora do fluxo (mini ou tela cheia), a âncora
@@ -3746,6 +3756,13 @@ function updateDocking() {
   const topbarBottom = topbar.getBoundingClientRect().bottom;
   _playerScrolledAway = isPlayerScrolledAway(anchor.getBoundingClientRect().bottom, topbarBottom);
   setPlayerMode();
+
+  document.querySelectorAll(".search-dock-slot").forEach(slot => {
+    const box = slot.querySelector(".search-box");
+    if (!box) return;
+    const inActiveView = slot.offsetParent !== null; // view ou aba escondida → null
+    box.classList.toggle("docked", inActiveView && shouldDockSearch(slot.getBoundingClientRect().top, topbarBottom));
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

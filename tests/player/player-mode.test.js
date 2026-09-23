@@ -26,6 +26,12 @@ test("tela cheia sempre vence", () => {
   assert.equal(ctx.computePlayerMode({ section: "settings", hasActiveMedia: true, playerScrolledAway: true, isFullscreen: true }), "full");
 });
 
+test("busca se encaixa na topbar quando o lugar dela passa por baixo da topbar", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.shouldDockSearch(90, 100), true);
+  assert.equal(ctx.shouldDockSearch(120, 100), false);
+});
+
 test("player conta como fora da tela com menos de 48px visíveis abaixo da topbar", () => {
   const ctx = loadVodHelpers();
   assert.equal(ctx.isPlayerScrolledAway(200, 100), false);
