@@ -121,11 +121,16 @@
       color: var(--foreground); font-size: .9rem;
     }
     .search-clear { background: none; border: none; color: var(--muted-fg); display: flex; }
-    .sticky-search-container {
-      position: sticky; top: calc(5rem + env(safe-area-inset-top)); z-index: 25;
-      background: var(--background); padding: 1rem 0; margin: 0;
+    /* Lugar da busca no conteúdo. Ao rolar, a caixa sai daqui e se encaixa
+       na topbar, entre o menu e o sininho (ponto 5 da v6). O lugar mantém a
+       altura para a página não pular. */
+    .search-dock-slot { height: 2.6rem; margin: 1.25rem 0; }
+    .search-dock-slot .search-box { max-width: 28rem; }
+    .search-box.docked {
+      position: fixed; z-index: 31; max-width: none;
+      top: calc(env(safe-area-inset-top) + 1.2rem);
+      left: calc(var(--sidebar-w) + 2rem); right: 4.75rem;
     }
-    .sticky-search-container .search-box { margin: 0; max-width: 28rem; }
     .category-pills {
       display: flex; gap: .5rem; overflow-x: auto; margin-bottom: 1rem;
       padding-bottom: .25rem; scrollbar-width: none;
@@ -272,45 +277,6 @@
       pointer-events: none;
     }
     .player-video.active { opacity: 1; pointer-events: auto; }
-    /* Telemetria / Monitor Panel */
-    .player-debug-overlay {
-      position: absolute; top: 1rem; left: 1rem; z-index: 7;
-      background: oklch(0.08 0.015 65 / 88%);
-      backdrop-filter: blur(8px);
-      border: 1px solid oklch(1 0 0 / 15%);
-      border-radius: .5rem;
-      padding: .75rem 1rem;
-      color: oklch(0.95 0.01 75);
-      font-size: .75rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      pointer-events: none;
-      box-shadow: 0 8px 24px oklch(0 0 0 / 40%);
-      max-width: 22rem;
-      transition: opacity 200ms;
-    }
-    .debug-header {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem; margin-bottom: .5rem; border-bottom: 1px solid oklch(1 0 0 / 12%);
-      padding-bottom: .35rem; font-weight: 600;
-    }
-    .debug-badge {
-      background: oklch(0.62 0.16 145 / 25%);
-      color: oklch(0.75 0.18 145);
-      padding: .15rem .45rem; border-radius: .25rem; font-size: .65rem;
-    }
-    .debug-badge.warning {
-      background: oklch(0.7 0.16 65 / 25%);
-      color: oklch(0.8 0.18 65);
-    }
-    .debug-badge.danger {
-      background: oklch(0.55 0.18 20 / 25%);
-      color: oklch(0.7 0.2 20);
-    }
-    .debug-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem;
-    }
-    .debug-grid div span { color: oklch(0.65 0.02 75); }
-    .debug-grid div b { color: oklch(0.98 0 0); }
     /* Spinner de carregamento */
     .player-loader {
       position: absolute; top: 50%; left: 50%;
@@ -337,6 +303,12 @@
     .player-error.active { display: flex; }
     .player-error h3 { font-size: 1rem; font-weight: 600; color: oklch(0.98 0 0); }
     .player-error p  { font-size: .82rem; max-width: 24rem; }
+    /* Código real da falha (ex.: "NotSupportedError · MEDIA_ERR 4") para
+       diagnóstico - em letra pequena, abaixo da explicação. */
+    .player-error .player-error-code {
+      font-size: .68rem; color: oklch(0.6 0.02 75);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     .retry-btn {
       background: var(--primary); color: var(--primary-fg);
       border: none; border-radius: .5rem; padding: .5rem 1rem;
@@ -376,131 +348,140 @@
       text-align: center; font-variant-numeric: tabular-nums;
     }
     .vod-seek-bar { flex: 1; accent-color: var(--primary); cursor: pointer; }
-    /* Botões de voltar/avançar 10s (só VOD) reaproveitam .ctrl-btn - o selo
-       "10" sobre o ícone circular evita confundi-los com #reload-stream-btn,
-       que já usa o mesmo desenho (rotate-cw) para "recarregar transmissão". */
-    .ctrl-btn-skip { position: relative; }
-    .skip-badge {
-      position: absolute; bottom: .3rem; left: 50%; transform: translateX(-50%);
-      font-size: .5rem; font-weight: 700; line-height: 1; pointer-events: none;
+    /* Ícones de ±10s desenhados à mão: seta circular com o "10" dentro do
+       próprio círculo (antes o número era um selo sobreposto que sumia no
+       meio do ícone). */
+    .skip-icon {
+      width: 26px; height: 26px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
     }
+    .skip-icon text {
+      fill: currentColor; stroke: none; font-size: 8.5px; font-weight: 700;
+      text-anchor: middle; font-family: 'Outfit', sans-serif;
+    }
+    /* Empurra enquadramento + tela cheia para a direita da barra. */
+    .player-controls-spacer { flex: 1; }
 
-    /* Tela cheia "de mentira" (CSS, sem a Fullscreen API do navegador) só
-       para dentro do app nativo (Capacitor) - a Fullscreen API real, dentro
-       de uma WKWebView no iOS, dispara o aviso do sistema "capacitor://
-       localhost is in full screen. Swipe down to exit", que não faz
-       sentido pra quem está usando um app instalado. No navegador comum
-       (GitHub Pages) o comportamento não muda - continua usando a
+    /* ── Tela cheia do app nativo (pontos 1 e 10 da v6) ──
+       Feita em CSS (sem a Fullscreen API, que no iOS mostra o aviso
+       "capacitor://localhost is in full screen"). Cobre a tela inteira,
+       inclusive a área da barra de status. Abre em pé; o botão de girar
+       deita. Sem o plugin nativo de orientação, o player inteiro (vídeo +
+       controles) é girado 90° via CSS. No navegador comum continua a
        Fullscreen API de verdade. */
     #player-screen.pseudo-fullscreen {
       position: fixed; inset: 0; z-index: 9999; background: #000;
-      /* The base #player-screen rule (card framing) sets a margin and rounded
-         corners meant for the full-size card - both must be cleared here so
-         the fixed inset:0 box truly covers the whole screen edge-to-edge. */
+      /* Tira a moldura do card grande (margem/cantos/sombra). */
       margin: 0; border-radius: 0; box-shadow: none;
     }
-    /* .player-controls/.vod-seek-row now live inside #player-screen (see
-       markup) - hidden here to preserve the pre-existing pseudo-fullscreen
-       behavior (video only + the floating .fs-overlay-controls exit button),
-       same as before they were moved in. */
     #player-screen.pseudo-fullscreen .player-controls,
     #player-screen.pseudo-fullscreen .vod-seek-row {
       display: none !important;
     }
-    #player-screen.pseudo-fullscreen #player-video {
-      width: 100%; height: 100%; object-fit: contain;
-    }
-    #player-screen.pseudo-fullscreen.rotated #player-video {
-      position: absolute; top: 50%; left: 50%;
+    #player-screen.pseudo-fullscreen .player-media { min-height: 0; background: #000; }
+    /* A tela cheia tem título e play próprios (.fs-ui): o texto do cartaz e o
+       play central do card grande ficariam por baixo dos controles. */
+    #player-screen.pseudo-fullscreen .player-copy,
+    #player-screen.pseudo-fullscreen .play-center { display: none !important; }
+    #player-screen.pseudo-fullscreen.rotated {
+      inset: auto; top: 50%; left: 50%;
       width: 100vh; height: 100vw;
       transform: translate(-50%, -50%) rotate(90deg);
     }
-    .fs-overlay-controls {
-      position: fixed; inset: 0 0 auto 0; z-index: 10000;
-      display: none; justify-content: flex-end; gap: .6rem;
-      padding: 1rem; opacity: 0; pointer-events: none;
-      transition: opacity 220ms;
+    body.fs-open { overflow: hidden; }
+    .fs-ui, .fs-lock-shield { display: none; }
+    #player-screen.pseudo-fullscreen .fs-ui {
+      position: absolute; inset: 0; z-index: 8;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+               max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+      background: linear-gradient(to bottom, oklch(0 0 0 / 55%), transparent 25%, transparent 70%, oklch(0 0 0 / 65%));
+      opacity: 0; transition: opacity 220ms; touch-action: none;
     }
-    #player-screen.pseudo-fullscreen .fs-overlay-controls { display: flex; }
-    .fs-overlay-controls.visible { opacity: 1; pointer-events: auto; }
-    .fs-overlay-btn {
-      width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none;
+    /* Girado via CSS: o entalhe fica à esquerda e a barra de início à
+       direita de quem assiste. */
+    #player-screen.pseudo-fullscreen.rotated .fs-ui {
+      padding: 1rem max(1rem, env(safe-area-inset-bottom)) 1rem max(1rem, env(safe-area-inset-top));
+    }
+    #player-screen.pseudo-fullscreen .fs-ui.visible { opacity: 1; }
+    /* Escondidos, os botões não recebem toque; só a camada, que traz tudo de volta. */
+    .fs-ui:not(.visible) .fs-btn, .fs-ui:not(.visible) input { pointer-events: none; }
+    .fs-top, .fs-center, .fs-actions { display: flex; align-items: center; gap: .75rem; }
+    .fs-title {
+      flex: 1; min-width: 0; color: oklch(0.98 0 0); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .fs-center { justify-content: center; gap: 2.5rem; }
+    .fs-bottom { display: flex; align-items: center; gap: 1rem; }
+    .fs-seek { flex: 1; min-width: 0; display: flex; align-items: center; gap: .6rem; }
+    .fs-time {
+      color: oklch(0.9 0.01 75); font-size: .8rem; min-width: 2.75rem;
+      text-align: center; font-variant-numeric: tabular-nums;
+    }
+    .fs-actions { margin-left: auto; }
+    .fs-btn {
+      width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
-      background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
+      background: oklch(0.1 0.01 65 / 55%); color: oklch(0.98 0 0);
       backdrop-filter: blur(8px);
     }
-    /* Mini-player: quando algo está tocando mas a seção ativa não é "catalog" */
+    .fs-btn-lg { width: 3.5rem; height: 3.5rem; }
+    .fs-btn-lg .skip-icon { width: 30px; height: 30px; }
+    .fs-btn-xl { width: 4.5rem; height: 4.5rem; background: var(--primary); color: var(--primary-fg); }
+    #player-screen:not(.is-vod) .fs-vod-only { display: none !important; }
+    #player-screen.pseudo-fullscreen.fs-locked .fs-ui { display: none; }
+    #player-screen.pseudo-fullscreen.fs-locked .fs-lock-shield {
+      position: absolute; inset: 0; z-index: 9; touch-action: none;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fs-lock-hint {
+      display: flex; flex-direction: column; align-items: center; gap: .75rem;
+      max-width: 16rem; padding: 1rem 1.25rem; border-radius: 1rem;
+      background: oklch(0.1 0.01 65 / 70%); color: oklch(0.98 0 0);
+      font-size: .9rem; text-align: center;
+      opacity: 0; transition: opacity 200ms; pointer-events: none;
+    }
+    .fs-lock-hint.visible { opacity: 1; pointer-events: auto; }
+    /* Mini-player (pontos 6/7 da v6): barra compacta acima das abas, só
+       quando algo toca e o player grande saiu da tela (ou em Configurações). */
     #player-screen.mini-player {
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      z-index: 500;
-      height: 4.5rem;
-      /* .player-media's base rule (and its 768px/480px breakpoint variants)
-         sets min-height: 26rem/18rem/14rem, which acts as a floor over the
-         `height` above - without clearing it here, the mini-player rendered
-         3-6x too tall and intercepted taps across the whole covered area. */
-      min-height: 0;
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: .75rem;
-      padding: 0 1rem;
-      background: var(--card);
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 500;
+      /* min-height: 0 anula o piso de altura do card grande (.player-media
+         tem 26rem/18rem/14rem), que deixava a barra alta demais. */
+      height: 4.5rem; min-height: 0;
+      display: flex; flex-direction: row; align-items: center;
+      padding: 0 .75rem 0 1rem;
+      background: var(--card); color: var(--foreground);
       border-top: 1px solid var(--border);
       box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
-      /* Clear the full-size card's framing (margin/rounded corners) so the
-         mini-player stays a flat, edge-to-edge docked bar. */
       margin: 0; border-radius: 0;
     }
+    /* A área de mídia vira uma linha: miniatura, título e play/pause. Antes
+       elas empilhavam e a miniatura ficava cortada embaixo do título. */
     #player-screen.mini-player .player-media {
-      /* .player-media's base rule sets min-height:26rem, flex:1 and its own
-         dark background - all sized for the full-size video card. Now that
-         .player-controls/.vod-seek-row are #player-screen's siblings of
-         .player-media (not .player-media's own siblings), .player-media is
-         the flex item taking the mini bar's remaining row space - without
-         resetting these, it stretched full-width as a tall dark rectangle,
-         the same class of bug already fixed once below for .player-video-wrap. */
-      position: relative;
-      min-height: 0;
-      flex: 0 0 auto;
-      background: transparent;
-      overflow: visible;
+      position: relative; min-height: 0; flex: 1; min-width: 0;
+      display: flex; align-items: center; gap: .75rem;
+      background: transparent; overflow: visible;
     }
+    /* position: relative só aqui: confina o <video> (inset: 0) na miniatura.
+       No player grande o wrap não tem tamanho próprio e não pode ter isso. */
     #player-screen.mini-player .player-video-wrap {
-      /* Scoped to mini-player only (not a global .player-video-wrap rule):
-         this also establishes the positioning context so the absolutely
-         positioned <video> (inset:0) is confined to this 3.5rem box instead
-         of resolving against .player-media/#player-screen. Giving
-         .player-video-wrap position:relative unconditionally would collapse
-         it to 0 height in the full-size player (it has no in-flow content
-         and no explicit size outside this mini-player rule), hiding the
-         video entirely. */
-      position: relative;
-      width: 3.5rem; height: 3.5rem; flex-shrink: 0; border-radius: .5rem; overflow: hidden;
+      order: -1; position: relative;
+      width: 4.5rem; height: 2.55rem; flex-shrink: 0;
+      border-radius: .4rem; overflow: hidden; background: #000;
     }
     #player-screen.mini-player .player-controls,
     #player-screen.mini-player .vod-seek-row,
     #player-screen.mini-player .player-loader,
+    #player-screen.mini-player .player-error,
     #player-screen.mini-player .play-center {
-      /* .play-center (the 4.5rem/72px central play button) is full-size-only
-         UI, same as the three from the brief - confirmed via live rendering
-         (agent-browser screenshot): with only those three hidden, the 72px
-         play-center button exactly filled the 72px-tall mini bar, since
-         neither of its dimensions is otherwise constrained here.
-         !important on all of these: .vod-seek-row/.player-controls are
-         toggled via inline style (element.style.display) elsewhere, which
-         otherwise wins over this rule regardless of source order. */
+      /* !important: .vod-seek-row/.player-controls recebem display inline via JS */
       display: none !important;
     }
     #player-screen.mini-player .player-art {
-      display: flex !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      position: static;
-      flex: 1;
-      padding: 0;
-      background: none;
-      align-items: center;
+      display: flex !important; opacity: 1 !important; pointer-events: auto !important;
+      position: static; flex: 1; min-width: 0;
+      padding: 0; background: none; align-items: center;
     }
     #player-screen.mini-player .signal-lines,
     #player-screen.mini-player .channel-monogram,
@@ -508,18 +489,13 @@
       display: none !important;
     }
     #player-screen.mini-player .player-copy {
-      display: flex !important;
-      flex-direction: column;
-      justify-content: center;
-      overflow: hidden;
-      margin-left: .75rem;
+      display: flex !important; flex-direction: column; justify-content: center;
+      flex: 1; min-width: 0; overflow: hidden; color: var(--foreground);
     }
+    /* Texto escuro sobre a barra clara (antes: branco sobre branco). */
     #player-screen.mini-player .player-copy h2 {
-      font-size: .85rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin: 0;
+      font-size: .85rem; margin: 0; color: var(--foreground);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #player-screen.mini-player .player-copy p,
     #player-screen.mini-player .live-badge {
@@ -527,53 +503,18 @@
     }
     .mini-play-btn { display: none; }
     #player-screen.mini-player .mini-play-btn {
-      display: flex !important;
-      align-items: center;
-      justify-content: center;
-      width: 3rem;
-      height: 3rem;
-      background: none;
-      border: none;
-      color: white;
-      margin-left: auto;
-      margin-right: .5rem;
-      cursor: pointer;
+      display: flex !important; align-items: center; justify-content: center;
+      width: 2.75rem; height: 2.75rem; flex-shrink: 0;
+      background: none; border: none; color: var(--foreground); cursor: pointer;
     }
-    #player-screen.player-hidden {
-      display: none;
-    }
-    .live-line {
-      height: 3px; flex: 1; min-width: 3rem; border-radius: 9px;
-      background: oklch(0.3 0.02 65); overflow: hidden; position: relative;
-    }
-    .live-bar {
-      position: absolute; inset: 0; border-radius: 9px; background: var(--primary);
-      animation: live-pulse 2s ease-in-out infinite;
-    }
-    .progress-fill {
-      position: absolute; top: 0; left: 0; bottom: 0; border-radius: 9px;
-      background: var(--primary); transition: width 400ms ease;
-    }
-    @keyframes live-pulse {
-      0%   { transform: scaleX(0); transform-origin: left; opacity: 1; }
-      70%  { transform: scaleX(1); transform-origin: left; opacity: 1; }
-      100% { transform: scaleX(1); transform-origin: left; opacity: 0; }
-    }
-    .live-label     { font-size: .75rem; font-weight: 500; color: var(--primary); white-space: nowrap; }
-    .progress-label { font-size: .75rem; color: var(--muted-fg); white-space: nowrap; }
+    #player-screen.player-hidden { display: none; }
+    /* flow-root: a margem do player fica dentro da âncora, e a altura medida
+       ao virar mini-player/tela cheia bate com o espaço que ele ocupava. */
+    #player-anchor { display: flow-root; }
     .ctrl-select {
       border: 1px solid oklch(1 0 0 / 12%); border-radius: .35rem;
       background: oklch(0.16 0.015 65); color: oklch(0.92 0.01 75);
       padding: .35rem .55rem; font-size: .75rem; max-width: 7rem;
-    }
-    .vol-slider {
-      -webkit-appearance: none; appearance: none;
-      width: 5rem; height: 3px; border-radius: 9px;
-      background: oklch(0.3 0.02 65); outline: none; cursor: pointer;
-    }
-    .vol-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      border-radius: 999px; background: var(--primary); cursor: pointer;
     }
 
     /* ════════════ ON NOW ════════════ */
@@ -810,29 +751,6 @@
     .view.hidden { display: none; }
 
     /* ════════════ VOD VIEW (Filmes/Séries) ════════════ */
-    .vod-hero {
-      position: relative; width: 100%; height: 22rem; border-radius: .75rem;
-      overflow: hidden; margin: 1.5rem 0 2rem; background: oklch(0.12 0.01 65);
-      display: flex; flex-direction: column; justify-content: flex-end;
-      padding: 2rem; box-shadow: 0 20px 40px oklch(0.1 0.01 65 / 25%);
-    }
-    .vod-hero-bg {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      object-fit: cover; opacity: .55;
-      mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
-      -webkit-mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
-    }
-    .vod-hero-scrim {
-      position: absolute; inset: 0;
-      background: linear-gradient(to top, oklch(0.05 0.01 65) 15%, transparent 65%);
-    }
-    .vod-hero-copy { position: relative; z-index: 2; max-width: 36rem; color: oklch(0.98 0 0); }
-    .vod-hero-copy h2 { font-size: 2.1rem; font-weight: 700; text-shadow: 0 2px 10px oklch(0 0 0 / 50%); margin-bottom: .6rem; }
-    .vod-hero-copy p {
-      font-size: 1rem; color: oklch(0.85 0.01 75); line-height: 1.5; margin-bottom: 1.25rem;
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .vod-search-box { max-width: 28rem; margin: 1.25rem 0 0; }
     .vod-row { margin-bottom: 2rem; }
     .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
     .vod-row-header {
@@ -860,10 +778,36 @@
       color: inherit; transition: transform 180ms;
     }
     .vod-carousel-grid .vod-card { min-width: 0; width: 100%; }
+    /* Recém-assistidos do Início: grade (3 por linha no celular) em vez de
+       uma coluna só - antes o minmax(14rem) inline dava 1 coluna numa tela
+       de celular e cada cartão ficava sozinho numa linha. */
+    .home-recents-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem;
+    }
+    .home-recents-grid .vod-card { min-width: 0; width: 100%; }
+    #home-mylist .vod-row { margin-top: 1.75rem; }
+    /* Canal na grade: logo inteira (contain) sobre a cor do canal, no mesmo
+       formato 2:3 dos pôsteres para as linhas ficarem alinhadas. */
+    .vod-card-logo {
+      width: 100%; aspect-ratio: 2/3; border-radius: .5rem; margin-bottom: .5rem;
+      display: grid; place-items: center; overflow: hidden;
+      color: oklch(0.98 0 0); font-size: 1.2rem; font-weight: 700;
+      box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
+    }
+    .vod-card .vod-card-logo img {
+      width: 80%; height: auto; aspect-ratio: auto; object-fit: contain;
+      margin: 0; box-shadow: none; background: none; border-radius: 0;
+    }
     .vod-card:hover { transform: translateY(-4px); }
     .vod-card img {
       width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .5rem;
       background: var(--secondary); box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%); margin-bottom: .5rem;
+    }
+    .vod-card-placeholder {
+      width: 100%; aspect-ratio: 2/3; border-radius: .5rem; margin-bottom: .5rem;
+      display: grid; place-items: center; color: oklch(0.98 0 0);
+      font-size: 1.4rem; font-weight: 700;
+      box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
     }
     .vod-card p { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .vod-progress { height: 3px; background: oklch(1 0 0 / 20%); border-radius: 2px; margin: -.4rem 0 .4rem; overflow: hidden; }
@@ -914,7 +858,40 @@
     }
     .ep-btn:hover { border-color: var(--primary); }
     .ep-btn span { font-size: .85rem; font-weight: 500; }
-    #vod-hero-play, #vod-modal-play { align-items: center; gap: .5rem; }
+    #vod-modal-play { align-items: center; gap: .5rem; }
+    #vod-modal-mylist { display: inline-flex; align-items: center; gap: .5rem; }
+
+    /* ════════════ MENU DE AÇÕES (segurar em cima de um cartão) ════════════ */
+    .action-sheet {
+      position: fixed; inset: 0; z-index: 10001;
+      display: flex; align-items: flex-end; justify-content: center;
+      background: oklch(0.05 0.01 65 / 55%);
+      padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    }
+    .action-sheet.hidden { display: none !important; }
+    .action-sheet-card {
+      width: 100%; max-width: 26rem; background: var(--card);
+      border-radius: 1rem; padding: 1rem;
+      display: flex; flex-direction: column; gap: .5rem;
+      box-shadow: 0 20px 50px oklch(0.1 0.01 65 / 40%);
+    }
+    .action-sheet-title {
+      font-weight: 600; font-size: .95rem; padding: .25rem .25rem .6rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .action-sheet-actions { display: flex; flex-direction: column; gap: .35rem; }
+    .action-sheet-btn, .action-sheet-cancel {
+      display: flex; align-items: center; gap: .6rem; width: 100%;
+      padding: .85rem 1rem; border-radius: .6rem; border: none;
+      background: var(--secondary); color: var(--foreground);
+      font-size: .9rem; font-weight: 500; text-align: left;
+    }
+    .action-sheet-btn.danger { color: var(--error); }
+    .action-sheet-cancel { justify-content: center; background: none; border: 1px solid var(--border); margin-top: .25rem; }
+    /* Sem o menu nativo do iOS (salvar imagem/seleção de texto) ao segurar. */
+    [data-lp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    [data-lp] img { -webkit-user-drag: none; pointer-events: none; }
 
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
@@ -1013,7 +990,7 @@
       .sidebar-close-btn { display: flex; }
       .page-shell { padding-left: 0; padding-bottom: 4.5rem; }
       .topbar { height: calc(4.3rem + env(safe-area-inset-top)); padding: calc(0px + env(safe-area-inset-top)) .8rem 0 .8rem; }
-      .sticky-search-container { top: calc(4.3rem + env(safe-area-inset-top)); }
+      .search-box.docked { top: calc(env(safe-area-inset-top) + .85rem); left: 3.75rem; right: 3.6rem; }
       .menu-btn { display: flex; }
       .content-shell { padding: 1.5rem 1rem 3rem; }
       .welcome-row { align-items: flex-start; }
@@ -1057,11 +1034,9 @@
       .mobile-tabs svg { width: 1.2rem; height: 1.2rem; }
       .mobile-tabs .active { color: var(--primary); }
       .settings-content { padding: 1.5rem 1rem 0; }
-      .vol-slider { width: 3.5rem; }
       .ctrl-select { max-width: 5rem; font-size: .65rem; }
-      .vod-hero { height: 16rem; padding: 1.25rem; }
-      .vod-hero-copy h2 { font-size: 1.5rem; }
       .vod-card { min-width: 7.5rem; width: 7.5rem; }
+      .home-recents-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
       .vod-modal-hero { height: 11rem; }
     }
     @media (max-width: 480px) {
@@ -1070,7 +1045,7 @@
       .welcome-row h1 { font-size: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
-      *, .live-bar, .spinner { animation: none !important; transition-duration: .01ms !important; }
+      *, .spinner { animation: none !important; transition-duration: .01ms !important; }
     }
   </style>
 </head>
@@ -1094,6 +1069,12 @@
   <nav class="sidebar-nav" aria-label="Navegação principal">
     <span class="nav-label">CATÁLOGO</span>
     <button class="nav-item active" data-section="Início">
+      <i data-lucide="home" style="width:19px;height:19px"></i><span>Início</span>
+    </button>
+    <button class="nav-item" data-section="Favoritos">
+      <i data-lucide="heart" style="width:19px;height:19px"></i><span>Favoritos</span>
+    </button>
+    <button class="nav-item" data-section="Todos os canais">
       <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
 
@@ -1142,6 +1123,9 @@
   </header>
 
   <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
+  <!-- #player-anchor: guarda o lugar do player grande no topo da página
+       enquanto ele vira mini-player ou tela cheia (sem a página "pular"). -->
+  <div id="player-anchor">
   <div id="player-screen">
     <!-- .player-media: video area only (art/video/loader/error/debug/play
          button) - kept separate from #player-screen so the absolutely
@@ -1150,13 +1134,42 @@
          below. #player-screen itself carries the card framing (radius/
          shadow/margin) and stacks .player-media above the controls. -->
     <div class="player-media">
-      <!-- Controle único de tela cheia "de mentira" (só usado dentro do app
-           nativo) - mesmo botão/ícone do #fullscreen-btn compacto: sai da tela
-           cheia e desgira num só toque (ver toggleFullscreen()/Step 5 da task). -->
-      <div class="fs-overlay-controls" id="fs-overlay-controls">
-        <button class="fs-overlay-btn" id="fs-exit-btn" aria-label="Sair da tela cheia">
-          <i data-lucide="minimize" style="width:20px;height:20px"></i>
-        </button>
+      <!-- Controles da tela cheia (app nativo, pontos 1 e 10 da v6): somem
+           após 5s sem toque; um toque na tela traz de volta. -->
+      <div class="fs-ui" id="fs-ui">
+        <div class="fs-top">
+          <p class="fs-title" id="fs-title"></p>
+          <button class="fs-btn" id="fs-lock-btn" aria-label="Bloquear a tela"><i data-lucide="lock" style="width:20px;height:20px"></i></button>
+          <button class="fs-btn" id="fs-exit-btn" aria-label="Sair da tela cheia"><i data-lucide="minimize" style="width:20px;height:20px"></i></button>
+        </div>
+        <div class="fs-center">
+          <button class="fs-btn fs-btn-lg fs-vod-only" id="fs-skip-back-btn" aria-label="Voltar 10 segundos">
+            <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><text x="12" y="15.5">10</text></svg>
+          </button>
+          <button class="fs-btn fs-btn-xl" id="fs-play-btn" aria-label="Reproduzir/Pausar"><i data-lucide="pause" id="fs-play-icon" style="width:30px;height:30px"></i></button>
+          <button class="fs-btn fs-btn-lg fs-vod-only" id="fs-skip-fwd-btn" aria-label="Adiantar 10 segundos">
+            <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><text x="12" y="15.5">10</text></svg>
+          </button>
+        </div>
+        <div class="fs-bottom">
+          <div class="fs-seek fs-vod-only">
+            <span class="fs-time" id="fs-seek-current">0:00</span>
+            <input type="range" class="vod-seek-bar" id="fs-seek-bar" min="0" max="100" value="0" step="0.1" aria-label="Progresso do vídeo" />
+            <span class="fs-time" id="fs-seek-duration">0:00</span>
+          </div>
+          <div class="fs-actions">
+            <button class="fs-btn" id="fs-fit-btn" aria-label="Preencher a tela"><i data-lucide="expand" style="width:20px;height:20px"></i></button>
+            <button class="fs-btn" id="fs-rotate-btn" aria-label="Girar para a horizontal"><i data-lucide="rectangle-horizontal" style="width:20px;height:20px"></i></button>
+          </div>
+        </div>
+      </div>
+      <!-- Tela bloqueada: engole todos os toques. Um toque mostra o cadeado e
+           a instrução de como desbloquear por alguns segundos. -->
+      <div class="fs-lock-shield" id="fs-lock-shield">
+        <div class="fs-lock-hint" id="fs-lock-hint">
+          <button class="fs-btn fs-btn-lg" id="fs-unlock-btn" aria-label="Desbloquear a tela"><i data-lucide="lock-open" style="width:24px;height:24px"></i></button>
+          <p>Tela bloqueada. Toque no cadeado para desbloquear.</p>
+        </div>
       </div>
       <!-- Art (visível antes de reproduzir) -->
       <div class="player-art" id="player-art">
@@ -1186,22 +1199,8 @@
         <i data-lucide="wifi-off" style="width:2rem;height:2rem;color:var(--muted-fg)"></i>
         <h3>Não foi possível reproduzir</h3>
         <p id="player-error-msg">O canal pode estar fora do ar ou sem suporte no navegador.</p>
+        <p class="player-error-code" id="player-error-code" style="display:none"></p>
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
-      </div>
-      <!-- Monitor Panel / Telemetria -->
-      <div class="player-debug-overlay" id="player-debug-overlay" style="display:none">
-        <div class="debug-header">
-          <span><i data-lucide="activity" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></i> Telemetria</span>
-          <span id="dbg-quality-badge" class="debug-badge">100% Estável</span>
-        </div>
-        <div class="debug-grid">
-          <div><span>Canal:</span> <b id="dbg-channel">-</b></div>
-          <div><span>Tipo:</span> <b id="dbg-type">-</b></div>
-          <div><span>Buffer:</span> <b id="dbg-buffer">0.0s</b></div>
-          <div><span>Stash:</span> <b id="dbg-stash">512 KB</b></div>
-          <div><span>Status:</span> <b id="dbg-status">Desconectado</b></div>
-          <div><span>Reconexões:</span> <b id="dbg-reconnects">0</b></div>
-        </div>
       </div>
       <!-- Botão play central -->
       <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
@@ -1217,32 +1216,19 @@
       <span class="vod-seek-time" id="vod-seek-duration">0:00</span>
     </div>
     <div class="player-controls">
-      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
-        <i data-lucide="rotate-ccw" style="width:20px;height:20px"></i>
-        <span class="skip-badge">10</span>
+      <button class="ctrl-btn" id="vod-skip-back-btn" aria-label="Voltar 10 segundos" title="Voltar 10 segundos" style="display:none">
+        <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><text x="12" y="15.5">10</text></svg>
       </button>
       <button class="ctrl-btn" id="play-pause-btn" aria-label="Reproduzir/Pausar" disabled>
         <i data-lucide="play" style="width:20px;height:20px" id="play-pause-icon"></i>
       </button>
-      <button class="ctrl-btn ctrl-btn-skip" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
-        <i data-lucide="rotate-cw" style="width:20px;height:20px"></i>
-        <span class="skip-badge">10</span>
+      <button class="ctrl-btn" id="vod-skip-fwd-btn" aria-label="Adiantar 10 segundos" title="Adiantar 10 segundos" style="display:none">
+        <svg class="skip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><text x="12" y="15.5">10</text></svg>
       </button>
       <button class="ctrl-btn" id="reload-stream-btn" aria-label="Recarregar canal" title="Recarregar transmissão atual" disabled>
         <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
       </button>
-      <button class="ctrl-btn" id="debug-toggle-btn" aria-label="Estatísticas do Stream" title="Painel de Monitoramento / Telemetria">
-        <i data-lucide="activity" style="width:20px;height:20px"></i>
-      </button>
-      <button class="ctrl-btn" id="mute-btn" aria-label="Silenciar/Dessilenciar">
-        <i data-lucide="volume-2" style="width:20px;height:20px" id="mute-icon"></i>
-      </button>
-      <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
-      <div class="live-line">
-        <div class="live-bar" id="live-bar" style="display:none"></div>
-        <div class="progress-fill" id="progress-fill" style="width:0;display:none"></div>
-      </div>
-      <span id="live-label" class="live-label"></span>
+      <div class="player-controls-spacer"></div>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
         <option value="contain">Original</option>
         <option value="cover">Preencher</option>
@@ -1253,6 +1239,7 @@
       </button>
     </div>
   </div><!-- /player-screen -->
+  </div><!-- /player-anchor -->
 
   <!-- ══ CATALOG VIEW ══ -->
   <div class="view" id="catalog-view">
@@ -1270,7 +1257,7 @@
         </div>
       </section>
 
-      <div class="sticky-search-container">
+      <div class="search-dock-slot" id="catalog-search-slot">
         <label class="search-box" for="search-input">
           <i data-lucide="search" style="width:19px;height:19px"></i>
           <input type="text" id="search-input" placeholder="Buscar canais..." aria-label="Buscar catálogo" />
@@ -1281,7 +1268,7 @@
       </div>
 
       <!-- FEATURE LAYOUT -->
-      <section class="feature-layout">
+      <section class="feature-layout" id="feature-layout">
         <!-- PLAYER: #player-screen now renders above (persistent sibling) -
              .player-stage is a permanently empty placeholder, kept only so
              .on-now still lands in the grid's second column (see the
@@ -1301,23 +1288,30 @@
         </aside>
       </section>
 
-      <!-- HOME RECENTS -->
-      <section id="home-recents-section" style="display:none; padding-top: 1rem;">
-        <div class="section-heading" style="margin-bottom: 1rem;">
-          <div>
-            <p class="eyebrow">CONTINUE ASSISTINDO</p>
-            <h2>Acessados Recentemente</h2>
+      <!-- LISTAS PESSOAIS DO INÍCIO (Minha Lista + recém-assistidos) -->
+      <div id="home-lists">
+        <div id="home-mylist"></div>
+        <section id="home-recents-section" style="display:none; padding-top: 1rem;">
+          <div class="section-heading" style="margin-bottom: 1rem;">
+            <div>
+              <p class="eyebrow">CONTINUE ASSISTINDO</p>
+              <h2>Acessados Recentemente</h2>
+            </div>
           </div>
+          <div id="home-recents-list" class="home-recents-grid"></div>
+        </section>
+        <div class="empty-state" id="home-empty" style="display:none">
+          <i data-lucide="clock-3" style="width:2rem;height:2rem"></i>
+          <h3>Nada assistido ainda</h3>
+          <p>Os canais, filmes e séries que você assistir aparecem aqui.</p>
         </div>
-        <div id="home-recents-list" style="display:grid; gap:.75rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));">
-        </div>
-      </section>
+      </div>
 
       <!-- CATALOG -->
-      <section class="catalog-section">
+      <section class="catalog-section" id="catalog-section">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">EXPLORE</p>
+            <p class="eyebrow" id="catalog-eyebrow">EXPLORE</p>
             <h2 id="catalog-title">Início</h2>
           </div>
           <div class="section-controls">
@@ -1347,8 +1341,8 @@
         </div>
       </section>
 
-      <div class="sticky-search-container">
-        <label class="search-box vod-search-box" for="vod-search-input">
+      <div class="search-dock-slot">
+        <label class="search-box" for="vod-search-input">
           <i data-lucide="search" style="width:18px;height:18px"></i>
           <input type="text" id="vod-search-input" placeholder="Buscar..." aria-label="Buscar catálogo de VOD" />
           <button class="search-clear" id="vod-search-clear" style="display:none" aria-label="Limpar busca">
@@ -1357,17 +1351,6 @@
         </label>
       </div>
 
-      <section class="vod-hero" id="vod-hero" style="display:none">
-        <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
-        <div class="vod-hero-scrim"></div>
-        <div class="vod-hero-copy">
-          <h2 id="vod-hero-title"></h2>
-          <p id="vod-hero-desc"></p>
-          <button class="btn-primary" id="vod-hero-play" style="display:none">
-            <i data-lucide="play" style="width:18px;height:18px"></i> Assistir
-          </button>
-        </div>
-      </section>
 
       <div class="vod-carousel-grid" id="vod-search-results" style="display:none"></div>
       <div id="vod-carousels"></div>
@@ -1510,14 +1493,6 @@
               <option value="fill">Esticar</option>
             </select>
           </div>
-          <div class="pref-row">
-            <span class="pref-label">Volume padrão</span>
-            <select class="pref-select" id="pref-vol">
-              <option value="1">100%</option>
-              <option value="0.7">70%</option>
-              <option value="0.5">50%</option>
-            </select>
-          </div>
         </div>
       </div>
     </div>
@@ -1554,6 +1529,15 @@
   <div class="epg-popover-time" id="epg-popover-time"></div>
 </div>
 
+<!-- MENU DE AÇÕES: aberto ao segurar em cima de um cartão (ponto 8 da v6) -->
+<div id="action-sheet" class="action-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="action-sheet-card">
+    <p class="action-sheet-title" id="action-sheet-title"></p>
+    <div class="action-sheet-actions" id="action-sheet-actions"></div>
+    <button class="action-sheet-cancel" id="action-sheet-cancel">Cancelar</button>
+  </div>
+</div>
+
 <!-- VOD MODAL: detalhes de um filme/série + lista de episódios -->
 <div id="vod-modal" class="hidden" role="dialog" aria-modal="true" aria-hidden="true">
   <div class="vod-modal-card">
@@ -1576,6 +1560,9 @@
       <div id="vod-modal-actions">
         <button class="btn-primary" id="vod-modal-play">
           <i data-lucide="play" style="width:18px;height:18px"></i> <span>Assistir</span>
+        </button>
+        <button class="btn-ghost" id="vod-modal-mylist">
+          <i data-lucide="plus" style="width:18px;height:18px"></i> <span>Minha Lista</span>
         </button>
       </div>
 
@@ -1948,7 +1935,6 @@ let _state = {
   favorites: JSON.parse(localStorage.getItem("sint_fav") || "[]"),
   selected:  null,
   playing:   false,
-  muted:     false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
   recents:   JSON.parse(localStorage.getItem("sint_recents") || "[]").map((item, i) =>
     typeof item === "string" ? { id: item, type: "channel", ts: Date.now() - i * 1000 } : item
@@ -1992,6 +1978,7 @@ function selectChannel(ch, autoPlay = true) {
   const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
   localStorage.setItem("sint_recents", JSON.stringify(recents));
+  pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
   stopStream();
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (autoPlay && ch.url) {
@@ -2057,10 +2044,31 @@ function visibleChannels() {
       else if (active === "Favoritos") matchS = isFav(ch);
       else                             matchS = ch.category === active;
     } else {
-      matchS = true; // busca sempre mostra tudo
+      // Na aba Favoritos a busca fica restrita aos favoritos; nas outras
+      // abas de canais ela procura em todos.
+      matchS = active === "Favoritos" ? isFav(ch) : true;
     }
     return matchQ && matchS;
   });
+}
+
+// O que cada aba do catálogo mostra (ponto 9 da v6): Início só as listas
+// pessoais (Minha Lista + recém-assistidos), Favoritos só os canais
+// favoritos, e Canais a grade completa com as categorias.
+function getCatalogTabLayout(active) {
+  if (active === "Início") {
+    return { showHomeLists: true, showSearch: false, showCatalog: false, showPills: false, showOnNow: false, searchPlaceholder: "", eyebrow: "" };
+  }
+  if (active === "Favoritos") {
+    return { showHomeLists: false, showSearch: true, showCatalog: true, showPills: false, showOnNow: false, searchPlaceholder: "Buscar nos favoritos...", eyebrow: "SEUS FAVORITOS" };
+  }
+  return { showHomeLists: false, showSearch: true, showCatalog: true, showPills: true, showOnNow: true, searchPlaceholder: "Buscar canais...", eyebrow: "EXPLORE" };
+}
+
+// "Todos os canais" e qualquer categoria pertencem à aba Canais.
+function getMobileTabForSection(active) {
+  if (active === "Início" || active === "Favoritos") return active;
+  return "Todos os canais";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2222,7 +2230,6 @@ let isReloadingStream = false;
 let initialLoadTimeout = null;
 let currentStreamType = "unknown";
 let sessionReconnectCount = 0;
-let isDebugOverlayVisible = false;
 let mpegPrebufferTimer = null;
 let mpegPrebufferTimeout = null;
 let hlsNetworkRetryAttempt = 0;
@@ -2233,6 +2240,15 @@ let reconnectCircuitBreaker = createReconnectCircuitBreaker();
 let lastMpegBufferedEnd = -1;
 let mpegBufferStallCount = 0;
 let lastMpegBgReconnectTime = 0;
+// Cada reprodução nova (ou parada) incrementa este contador. Retentativas
+// agendadas por uma reprodução antiga comparam o valor que capturaram com o
+// atual e desistem sozinhas. Antes, uma retentativa atrasada podia trocar o
+// src do vídeo que já estava tocando (causa do erro do ponto 3 da v6).
+let playbackGeneration = 0;
+// Pausa pedida pelo usuário num filme/episódio: o watchdog não "despausa".
+let userPausedVod = false;
+// Ponto (s) para retomar quando o próximo filme/episódio começar a tocar.
+let pendingResumeAt = 0;
 
 // ─── EPG (guia de programação) ───
 // Busca o xmltv.php do provedor (formato padrão em painéis Xtream Codes),
@@ -2608,6 +2624,7 @@ function startWatchdog(url) {
 
   watchdogTimer = setInterval(() => {
     if (!_state.playing) return;
+    if (userPausedVod) return; // filme pausado pelo usuário: não despausar
 
     const video = document.getElementById("player-video");
     if (!video) return;
@@ -2802,7 +2819,9 @@ async function reloadCurrentChannel(isSilent = false) {
       console.warn(`[Circuit Breaker] Muitas reconexões automáticas para "${ch.name}". Parando e pedindo ação manual.`);
       stopWatchdog();
       setState({ playing: false });
-      showPlayerError(`Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
+      showPlayerError(ch.isVod
+        ? `"${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`
+        : `Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
       return;
     }
   } else {
@@ -2819,6 +2838,11 @@ async function reloadCurrentChannel(isSilent = false) {
   }
 
   try {
+    const video = document.getElementById("player-video");
+    // Filme/episódio: guarda o ponto atual para retomar dali após a recarga
+    // (antes a recarga automática recomeçava o vídeo do zero).
+    if (ch.isVod && video && video.currentTime > 0) pendingResumeAt = video.currentTime;
+
     if (hlsInstance) {
       try { hlsInstance.stopLoad(); hlsInstance.destroy(); } catch (e) {}
       hlsInstance = null;
@@ -2828,7 +2852,6 @@ async function reloadCurrentChannel(isSilent = false) {
       mpegtsPlayer = null;
     }
 
-    const video = document.getElementById("player-video");
     if (video) {
       video.pause();
       video.removeAttribute("src");
@@ -2848,6 +2871,8 @@ async function reloadCurrentChannel(isSilent = false) {
 // ─── PlayStream com Pré-teste e Engine Otimizado ───
 async function playStream(url) {
   if (!url) { showPlayerError("Canal sem URL de transmissão."); return; }
+  const gen = ++playbackGeneration;
+  userPausedVod = false;
 
   const video = document.getElementById("player-video");
   showPlayerLoader();
@@ -2881,12 +2906,16 @@ async function playStream(url) {
 
   // Detecta formato inteligente & probe HLS
   const streamInfo = await detectStreamType(url);
+  if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
   currentStreamType = streamInfo.type;
   const playUrl = proxyIfInsecure(streamInfo.url);
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
-  if (currentStreamType !== "mpegts") {
+  // Arquivo direto (filme/episódio) fica de fora: tryDirectPlay() já tem
+  // timeout e retentativas próprios - este timeout paralelo disparava uma
+  // recarga que brigava com essas retentativas.
+  if (currentStreamType !== "mpegts" && currentStreamType !== "direct") {
     const timeoutMs = 15000;
     initialLoadTimeout = setTimeout(() => {
       const loader = document.getElementById("player-loader");
@@ -2923,7 +2952,6 @@ async function playStream(url) {
         hidePlayerLoader();
         showPlayerVideo();
         setState({ playing: true });
-        enableLiveBar();
         startWatchdog(url);
       });
 
@@ -2969,7 +2997,6 @@ async function playStream(url) {
         hidePlayerLoader();
         showPlayerVideo();
         setState({ playing: true });
-        enableLiveBar();
         startWatchdog(url);
       }).catch(err => showPlayerError(err.message));
     } else {
@@ -3084,7 +3111,6 @@ async function playStream(url) {
             if (playBtn) playBtn.disabled = false;
             const reloadBtn = document.getElementById('reload-stream-btn');
             if (reloadBtn) reloadBtn.disabled = false;
-            enableLiveBar();
             startWatchdog(url);
             requestScreenWakeLock();
           }).catch(err => {
@@ -3147,14 +3173,132 @@ async function playStream(url) {
   }
 }
 
+// ─── Filmes/episódios (arquivo direto) ───
+// Servidores Xtream limitam as telas simultâneas por usuário e levam alguns
+// segundos para liberar a vaga da reprodução anterior. Por isso são 6
+// tentativas, com esperas que somam ~15s, sem mostrar erro enquanto isso.
+const DIRECT_PLAY_MAX_ATTEMPTS = 6;
+const DIRECT_PLAY_ATTEMPT_TIMEOUT_MS = 12000;
+
 function computeDirectPlayRetryDelayMs(attempt) {
-  return attempt === 1 ? 800 : 1800;
+  return Math.min(5000, 1000 * attempt);
 }
 
-function tryDirectPlay(url, video, attempt) {
+// Contêineres que o player nativo do iPhone (AVFoundation) nunca reproduz:
+// tentar de novo não adianta.
+function isContainerUnsupportedOnIOS(url) {
+  const clean = String(url || "").split("?")[0].toLowerCase();
+  return /\.(mkv|avi|wmv|flv)$/.test(clean);
+}
+
+function shouldRetryDirectPlay({ errorName, attempt, maxAttempts, url, isIOS }) {
+  if (errorName === "NotAllowedError") return false; // precisa de um toque do usuário
+  if (isIOS && isContainerUnsupportedOnIOS(url)) return false;
+  return attempt < maxAttempts;
+}
+
+// Traduz o motivo real da falha (erro do play() + código do MediaError da
+// tag <video>) numa mensagem em português e num código curto, mostrado em
+// letra pequena na tela de erro para o diagnóstico ficar 100% claro.
+function describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS, attempts }) {
+  const parts = [];
+  if (errorName) parts.push(errorName);
+  if (mediaErrorCode) parts.push(`MEDIA_ERR ${mediaErrorCode}`);
+  if (attempts) parts.push(`${attempts} tentativa${attempts > 1 ? "s" : ""}`);
+  const code = parts.join(" · ");
+
+  if (isIOS && isContainerUnsupportedOnIOS(url)) {
+    const ext = String(url).split("?")[0].split(".").pop().toUpperCase();
+    return { message: `O iPhone não reproduz arquivos ${ext}. Esse título precisa estar em outro formato no seu provedor.`, code };
+  }
+  if (errorName === "timeout") return { message: "O servidor demorou demais para começar a enviar o vídeo.", code };
+  if (mediaErrorCode === 2) return { message: "A conexão com o servidor caiu enquanto o vídeo carregava.", code };
+  if (mediaErrorCode === 3) return { message: "O arquivo do vídeo está corrompido ou usa um formato de áudio/vídeo não suportado.", code };
+  if (mediaErrorCode === 4 || errorName === "NotSupportedError") {
+    return { message: "O servidor recusou o vídeo. Isso costuma acontecer quando o limite de telas simultâneas do seu plano está ocupado.", code };
+  }
+  return { message: "Não foi possível abrir o vídeo agora.", code };
+}
+
+// Só retoma do ponto salvo se ele existir e não estiver colado no fim.
+function shouldApplyResume(target, duration) {
+  return target > 0 && isFinite(duration) && target < duration - 5;
+}
+
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+// Solta o arquivo atual de verdade: sem o load(), o iOS podia manter o
+// download anterior aberto, ocupando a vaga no servidor Xtream.
+function releaseVideoElement(video) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+}
+
+function applyPendingResume(video) {
+  const target = pendingResumeAt;
+  pendingResumeAt = 0;
+  if (!target) return;
+  const seek = () => {
+    if (shouldApplyResume(target, video.duration)) {
+      try { video.currentTime = target; } catch (e) {}
+    }
+  };
+  if (video.readyState >= 1) seek();
+  else video.addEventListener("loadedmetadata", seek, { once: true });
+}
+
+function tryDirectPlay(url, video, attempt, generation) {
   attempt = attempt || 1;
+  const gen = generation != null ? generation : playbackGeneration;
+  if (gen !== playbackGeneration) return; // uma reprodução mais nova assumiu
+
+  const loaderText = document.querySelector("#player-loader p");
+  if (loaderText) {
+    loaderText.textContent = attempt === 1
+      ? "Conectando..."
+      : `Servidor ocupado, tentando de novo (${attempt}/${DIRECT_PLAY_MAX_ATTEMPTS})...`;
+  }
+
+  if (attempt > 1) releaseVideoElement(video);
   video.src = url;
+
+  let settled = false;
+  const attemptTimer = setTimeout(() => fail({ name: "timeout" }), DIRECT_PLAY_ATTEMPT_TIMEOUT_MS);
+
+  function fail(err) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(attemptTimer);
+    if (gen !== playbackGeneration) return;
+    const errorName = (err && err.name) || "Error";
+    const mediaErrorCode = video.error ? video.error.code : null;
+    const ios = isIOSDevice();
+    if (errorName === "NotAllowedError") {
+      // O sistema bloqueou o início automático: mostra o botão de play
+      // (um toque do usuário libera) em vez de uma tela de erro.
+      hidePlayerLoader();
+      showPlayerArt();
+      showToast("Toque em ▶ para começar.");
+      return;
+    }
+    if (shouldRetryDirectPlay({ errorName, attempt, maxAttempts: DIRECT_PLAY_MAX_ATTEMPTS, url, isIOS: ios })) {
+      setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen), computeDirectPlayRetryDelayMs(attempt));
+      return;
+    }
+    releaseVideoElement(video);
+    const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
+    showPlayerError(message, code);
+  }
+
   video.play().then(() => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(attemptTimer);
+    if (gen !== playbackGeneration) return;
     hidePlayerLoader();
     showPlayerVideo();
     setState({ playing: true });
@@ -3162,19 +3306,15 @@ function tryDirectPlay(url, video, attempt) {
     if (playBtn) playBtn.disabled = false;
     const reloadBtn = document.getElementById("reload-stream-btn");
     if (reloadBtn) reloadBtn.disabled = false;
-    enableLiveBar();
+    applyPendingResume(video);
     startWatchdog(url);
-  }).catch(() => {
-    if (attempt < 3) {
-      setTimeout(() => tryDirectPlay(url, video, attempt + 1), computeDirectPlayRetryDelayMs(attempt));
-      return;
-    }
-    hidePlayerLoader();
-    showPlayerError("Formato não suportado ou erro de conexão (CORS).\nTente abrir o link diretamente ou use um reprodutor como VLC.");
-  });
+  }).catch(fail);
 }
 
 function stopStream() {
+  // Invalida qualquer retentativa pendente da reprodução que está parando.
+  playbackGeneration++;
+  userPausedVod = false;
   releaseScreenWakeLock();
   stopWatchdog();
   const video = document.getElementById("player-video");
@@ -3186,15 +3326,11 @@ function stopStream() {
     try { mpegtsPlayer.pause(); mpegtsPlayer.unload(); mpegtsPlayer.detachMediaElement(); mpegtsPlayer.destroy(); } catch (e) {}
     mpegtsPlayer = null;
   }
-  video.pause();
-  video.removeAttribute("src");
+  releaseVideoElement(video);
   setState({ playing: false }, true);
   showPlayerArt();
   hidePlayerLoader();
   hidePlayerError();
-  document.getElementById("live-bar").style.display = "none";
-  document.getElementById("progress-fill").style.display = "none";
-  document.getElementById("live-label").textContent = "";
   // Zera a seek bar do VOD para não deixar a posição/tempo do vídeo
   // anterior visível por um instante enquanto o próximo carrega.
   document.getElementById("vod-seek-bar").value = 0;
@@ -3210,21 +3346,26 @@ function stopStream() {
 }
 
 // ─── Player UI helpers ───
+// Ícones de play/pause num lugar só: barra do player, mini-player e tela cheia.
+function setPlayPauseIcons(isPlaying) {
+  const icon = isPlaying ? "pause" : "play";
+  ["play-pause-icon", "mini-play-icon", "fs-play-icon"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute("data-lucide", icon);
+  });
+  lucide.createIcons();
+}
 function showPlayerArt()  {
   document.getElementById("player-art").classList.remove("hidden");
   document.getElementById("player-video").classList.remove("active");
   document.getElementById("play-center-btn").classList.remove("hidden");
-  document.getElementById("play-pause-icon").setAttribute("data-lucide","play");
-  document.getElementById("mini-play-icon").setAttribute("data-lucide","play");
-  lucide.createIcons();
+  setPlayPauseIcons(false);
 }
 function showPlayerVideo() {
   document.getElementById("player-art").classList.add("hidden");
   document.getElementById("player-video").classList.add("active");
   document.getElementById("play-center-btn").classList.add("hidden");
-  document.getElementById("play-pause-icon").setAttribute("data-lucide","pause");
-  document.getElementById("mini-play-icon").setAttribute("data-lucide","pause");
-  lucide.createIcons();
+  setPlayPauseIcons(true);
 }
 function showPlayerLoader() {
   document.getElementById("player-loader").classList.add("active");
@@ -3234,10 +3375,19 @@ function showPlayerLoader() {
 function hidePlayerLoader() {
   document.getElementById("player-loader").classList.remove("active");
 }
-function showPlayerError(msg) {
+function showPlayerError(msg, code) {
+  // Erro na tela cheia: sai dela (e destrava), para o "Tentar novamente"
+  // ficar alcançável.
+  if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
+    exitPseudoFullscreen();
+    updateFullscreenBtnIcon();
+  }
   hidePlayerLoader();
   showPlayerArt();
   document.getElementById("player-error-msg").textContent = msg || "Tente novamente.";
+  const codeEl = document.getElementById("player-error-code");
+  codeEl.textContent = code || "";
+  codeEl.style.display = code ? "" : "none";
   document.getElementById("player-error").classList.add("active");
 }
 function hidePlayerError() {
@@ -3264,24 +3414,12 @@ function releaseScreenWakeLock() {
   }
 }
 
-function enableLiveBar() {
-  // Filmes/episódios (VOD) não são "ao vivo" - o rótulo some nesse caso em
-  // vez de mostrar uma etiqueta errada sobre o conteúdo sob demanda.
-  const isVod = _state.selected && _state.selected.isVod;
-  document.getElementById("live-bar").style.display = "block";
-  document.getElementById("live-label").textContent = isVod ? "" : "AO VIVO";
-  document.getElementById("live-label").className = "live-label";
-}
-
 // ─── Volume ───
-function applyVolume(v) {
+// Sempre no máximo: quem regula o volume é o botão físico do aparelho.
+function forceMaxVolume() {
   const video = document.getElementById("player-video");
-  video.volume = v;
-  video.muted  = _state.muted;
-  document.getElementById("vol-slider").value = v;
-  const icon = document.getElementById("mute-icon");
-  icon.setAttribute("data-lucide", v === 0 || _state.muted ? "volume-x" : v < 0.5 ? "volume-1" : "volume-2");
-  lucide.createIcons();
+  video.volume = 1;
+  video.muted = false;
 }
 
 // ─── Tela cheia ───
@@ -3297,28 +3435,165 @@ function isNativeApp() {
     || (location.protocol === "http:" && location.hostname === "localhost");
 }
 
-let fsControlsHideTimer = null;
+// ─── Tela cheia do app nativo (pontos 1 e 10 da v6) ───
+// Abre em pé; o botão de girar deita o vídeo. Com o plugin oficial
+// @capacitor/screen-orientation instalado, quem gira é o próprio sistema (e
+// o iOS esconde a barra de status sozinho na horizontal). Sem ele, o player
+// inteiro gira via CSS. Com @capacitor/status-bar instalado, a barra de
+// status também some na tela cheia em pé. Os controles somem após 5s sem
+// toque, e o cadeado bloqueia os toques até ser desbloqueado.
+const FS_CONTROLS_HIDE_MS = 5000;
+const FS_LOCK_HINT_MS = 3000;
+const FS_DOUBLE_TAP_MS = 350;
+const _fs = { wantLandscape: false, locked: false, hideTimer: null, hintTimer: null, lastTapTs: 0 };
+
+function isNativePluginAvailable(pluginName) {
+  const cap = window.Capacitor;
+  if (!cap || !isNativeApp()) return false;
+  if (typeof cap.isPluginAvailable === "function") return cap.isPluginAvailable(pluginName);
+  return Array.isArray(cap.PluginHeaders) && cap.PluginHeaders.some(h => h.name === pluginName);
+}
+
+// Chama um método de plugin nativo do Capacitor, se ele estiver instalado.
+// Devolve a Promise da chamada, ou null quando o plugin não existe; nesse
+// caso quem chamou segue pelo caminho alternativo.
+function callNativePlugin(pluginName, method, options) {
+  if (!isNativePluginAvailable(pluginName)) return null;
+  const cap = window.Capacitor;
+  let result = null;
+  try {
+    if (typeof cap.nativePromise === "function") {
+      result = cap.nativePromise(pluginName, method, options || {});
+    } else {
+      const plugin = cap.Plugins && cap.Plugins[pluginName];
+      if (plugin && typeof plugin[method] === "function") result = plugin[method](options || {});
+    }
+  } catch (e) {
+    console.warn(`[native] ${pluginName}.${method} falhou:`, e);
+    return null;
+  }
+  if (result && typeof result.catch === "function") {
+    result.catch(e => console.warn(`[native] ${pluginName}.${method} falhou:`, e));
+  }
+  return result;
+}
+
+// Como montar a tela cheia a cada mudança (girar, ou o aparelho girar
+// sozinho com a rotação automática ligada).
+function computeFsLayout({ wantLandscape, viewportLandscape, nativeOrientation }) {
+  if (viewportLandscape) {
+    return { cssRotate: false, showRotateBtn: nativeOrientation, rotateIcon: "rectangle-vertical" };
+  }
+  if (wantLandscape && !nativeOrientation) {
+    return { cssRotate: true, showRotateBtn: true, rotateIcon: "rectangle-vertical" };
+  }
+  return { cssRotate: false, showRotateBtn: true, rotateIcon: wantLandscape ? "rectangle-vertical" : "rectangle-horizontal" };
+}
+
+function applyFsLayout() {
+  const el = document.getElementById("player-screen");
+  if (!el.classList.contains("pseudo-fullscreen")) return;
+  const layout = computeFsLayout({
+    wantLandscape: _fs.wantLandscape,
+    viewportLandscape: window.innerWidth > window.innerHeight,
+    nativeOrientation: isNativePluginAvailable("ScreenOrientation"),
+  });
+  el.classList.toggle("rotated", layout.cssRotate);
+  const rotateBtn = document.getElementById("fs-rotate-btn");
+  rotateBtn.style.display = layout.showRotateBtn ? "" : "none";
+  rotateBtn.innerHTML = `<i data-lucide="${layout.rotateIcon}" style="width:20px;height:20px"></i>`;
+  rotateBtn.setAttribute("aria-label", layout.rotateIcon === "rectangle-vertical" ? "Voltar para a vertical" : "Girar para a horizontal");
+  lucide.createIcons();
+}
+
 function showFsControls() {
-  const controls = document.getElementById("fs-overlay-controls");
-  controls.classList.add("visible");
-  clearTimeout(fsControlsHideTimer);
-  fsControlsHideTimer = setTimeout(() => controls.classList.remove("visible"), 5000);
+  const ui = document.getElementById("fs-ui");
+  ui.classList.add("visible");
+  clearTimeout(_fs.hideTimer);
+  const video = document.getElementById("player-video");
+  // Filme pausado: os controles ficam na tela, como nos apps de streaming.
+  if (video.paused && _state.selected && _state.selected.isVod) return;
+  _fs.hideTimer = setTimeout(() => ui.classList.remove("visible"), FS_CONTROLS_HIDE_MS);
+}
+
+function hideFsControls() {
+  clearTimeout(_fs.hideTimer);
+  document.getElementById("fs-ui").classList.remove("visible");
+}
+
+function setFsLocked(locked) {
+  _fs.locked = locked;
+  document.getElementById("player-screen").classList.toggle("fs-locked", locked);
+  clearTimeout(_fs.hintTimer);
+  document.getElementById("fs-lock-hint").classList.remove("visible");
+  if (locked) hideFsControls();
+}
+
+// Mostra o cadeado + a instrução de desbloqueio por alguns segundos.
+function flashFsLockHint() {
+  const hint = document.getElementById("fs-lock-hint");
+  hint.classList.add("visible");
+  clearTimeout(_fs.hintTimer);
+  _fs.hintTimer = setTimeout(() => hint.classList.remove("visible"), FS_LOCK_HINT_MS);
+}
+
+function syncFsFitButton() {
+  const fit = document.getElementById("player-video").style.objectFit || "contain";
+  const filling = fit !== "contain";
+  const btn = document.getElementById("fs-fit-btn");
+  btn.innerHTML = `<i data-lucide="${filling ? "shrink" : "expand"}" style="width:20px;height:20px"></i>`;
+  btn.setAttribute("aria-label", filling ? "Mostrar o vídeo inteiro" : "Preencher a tela");
+  lucide.createIcons();
+}
+
+// Alterna entre vídeo inteiro (com faixas pretas) e tela preenchida.
+function toggleFsFit() {
+  const video = document.getElementById("player-video");
+  const next = (video.style.objectFit || "contain") === "contain" ? "cover" : "contain";
+  video.style.objectFit = next;
+  localStorage.setItem(LS.FIT, next);
+  document.getElementById("fit-select").value = next;
+  syncFsFitButton();
 }
 
 function enterPseudoFullscreen() {
-  document.getElementById("player-screen").classList.add("pseudo-fullscreen", "rotated");
+  const el = document.getElementById("player-screen");
+  if (_state.section !== "settings" && !el.classList.contains("mini-player")) lockPlayerAnchor();
+  _fs.wantLandscape = false;
+  setFsLocked(false);
+  el.classList.add("pseudo-fullscreen");
+  document.body.classList.add("fs-open");
+  document.getElementById("fs-title").textContent = _state.selected ? _state.selected.name : "";
+  callNativePlugin("StatusBar", "hide");
+  applyFsLayout();
+  setPlayerMode();
+  syncFsFitButton();
   showFsControls();
 }
 
 function exitPseudoFullscreen() {
-  document.getElementById("player-screen").classList.remove("pseudo-fullscreen", "rotated");
-  clearTimeout(fsControlsHideTimer);
-  document.getElementById("fs-overlay-controls").classList.remove("visible");
+  const el = document.getElementById("player-screen");
+  setFsLocked(false);
+  hideFsControls();
+  el.classList.remove("pseudo-fullscreen", "rotated");
+  document.body.classList.remove("fs-open");
+  // Com o plugin, devolve o app para a vertical (a interface do app não
+  // foi desenhada para a horizontal no celular).
+  if (_fs.wantLandscape) callNativePlugin("ScreenOrientation", "lock", { orientation: "portrait" });
+  _fs.wantLandscape = false;
+  callNativePlugin("StatusBar", "show");
+  setPlayerMode();
+  scheduleDockingUpdate();
 }
 
-// Único botão (estilo YouTube) que entra em tela cheia E gira para paisagem
-// num só toque, e sai da tela cheia E desgira num só toque no sentido
-// inverso. Reflete o estado atual trocando o ícone maximize <-> minimize.
+function toggleFsRotation() {
+  _fs.wantLandscape = !_fs.wantLandscape;
+  callNativePlugin("ScreenOrientation", "lock", { orientation: _fs.wantLandscape ? "landscape" : "portrait" });
+  applyFsLayout();
+}
+
+// Botão de tela cheia da barra: entra/sai (sempre abrindo em pé) e reflete
+// o estado atual trocando o ícone maximize <-> minimize.
 function updateFullscreenBtnIcon() {
   const btn = document.getElementById("fullscreen-btn");
   if (!btn) return;
@@ -3349,6 +3624,31 @@ function formatSeekTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Atualiza as duas linhas do tempo (barra do player + tela cheia).
+function syncSeekUi(video) {
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  const pct = (video.currentTime / video.duration) * 100;
+  const cur = formatSeekTime(video.currentTime);
+  const dur = formatSeekTime(video.duration);
+  [["vod-seek-bar", "vod-seek-current", "vod-seek-duration"], ["fs-seek-bar", "fs-seek-current", "fs-seek-duration"]].forEach(([barId, curId, durId]) => {
+    document.getElementById(barId).value = pct;
+    document.getElementById(curId).textContent = cur;
+    document.getElementById(durId).textContent = dur;
+  });
+}
+
+function seekToPercent(pct) {
+  const video = document.getElementById("player-video");
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = (pct / 100) * video.duration;
+}
+
+function skipBy(seconds) {
+  const video = document.getElementById("player-video");
+  if (!isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + seconds));
+}
+
 // Mostra a faixa de progresso + botões de 10s só para filmes/séries -
 // canais ao vivo não têm duração total, então nunca fazem sentido aqui.
 // Chamada de dentro de renderPlayerInfo(), toda vez que _state.selected muda.
@@ -3360,6 +3660,8 @@ function updateVodSeekVisibility() {
   if (row) row.style.display = isVod ? "flex" : "none";
   if (backBtn) backBtn.style.display = isVod ? "flex" : "none";
   if (fwdBtn) fwdBtn.style.display = isVod ? "flex" : "none";
+  // Na tela cheia, a linha do tempo e os ±10s também são só de VOD.
+  document.getElementById("player-screen").classList.toggle("is-vod", isVod);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3372,6 +3674,7 @@ function renderPlayerInfo() {
   const nowPlaying = getNowPlayingTitle(ch);
   document.getElementById("player-monogram").textContent = ch.initials;
   document.getElementById("player-name").textContent     = ch.name;
+  document.getElementById("fs-title").textContent        = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
   updateVodSeekVisibility();
@@ -3463,10 +3766,13 @@ function renderOnNow() {
 function renderNav() {
   const { active, recents, section, vodType } = _state;
 
-  document.querySelectorAll(".nav-item[data-section]").forEach(el => {
-    el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
+  // Abas (sidebar + barra de baixo): uma categoria acende a aba Canais.
+  const tab = getMobileTabForSection(active);
+  document.querySelectorAll(".sidebar-nav .nav-item[data-section], .mobile-tab[data-section]").forEach(el => {
+    el.classList.toggle("active", section === "catalog" && el.dataset.section === tab);
   });
-  document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
+  // Pílulas de categoria: acende exatamente a categoria ativa.
+  document.querySelectorAll("#category-pills .nav-item[data-section]").forEach(el => {
     el.classList.toggle("active", section === "catalog" && el.dataset.section === active);
   });
   document.querySelectorAll(".nav-item[data-vod-view]").forEach(el => {
@@ -3499,8 +3805,10 @@ function renderCategoryNav() {
   const nav = document.getElementById("category-pills");
   if (!nav) return;
   if (!cats.length) { nav.innerHTML = ""; return; }
-  nav.innerHTML = cats.map(cat => `
-    <button class="nav-item" data-section="${cat}"><span>${cat}</span></button>`).join("");
+  // "Todos" primeiro: volta para a grade completa sem sair da aba Canais.
+  nav.innerHTML = [`<button class="nav-item" data-section="Todos os canais"><span>Todos</span></button>`]
+    .concat(cats.map(cat => `
+    <button class="nav-item" data-section="${cat}"><span>${cat}</span></button>`)).join("");
   nav.querySelectorAll(".nav-item[data-section]").forEach(el => {
     el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); });
   });
@@ -3515,6 +3823,12 @@ function renderCatalog() {
   const container = document.getElementById("channel-container");
   document.getElementById("catalog-title").textContent =
     query ? `Resultados para "${query}"` : active;
+
+  // Aba sem grade de canais (Início): não monta milhares de cartões escondidos.
+  if (!getCatalogTabLayout(active).showCatalog) {
+    container.innerHTML = "";
+    return;
+  }
 
   // Skeleton enquanto carrega
   if (loadingPlaylist) {
@@ -3656,29 +3970,81 @@ function renderPageSection() {
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
 }
 
-// #player-screen agora é um irmão persistente de #catalog-view/#vod-view/
-// #settings-view (nunca mais fica dentro de uma view que pode ser
-// escondida) - sua visibilidade não depende mais da seção ativa, e sim de
-// se algo está tocando. Na seção "catalog" ele sempre aparece em tamanho
-// cheio (igual sempre foi, canal pausado/parado incluso - não escondemos
-// o player ao pausar um canal, só quando saímos da tela de Canais); fora
-// dela, vira uma barra compacta (mini-player) só enquanto algo está
-// tocando, e some de vez quando não há nada tocando.
+// Como o player aparece (pontos 6/7 da v6): grande no topo de todas as
+// abas (#player-screen é irmão persistente das views e fica acima delas).
+// Vira mini-player só quando algo está tocando e o player grande saiu da
+// tela na rolagem. Em Configurações nunca fica grande.
+function computePlayerMode({ section, hasActiveMedia, playerScrolledAway, isFullscreen }) {
+  if (isFullscreen) return "full";
+  if (section === "settings") return hasActiveMedia ? "mini" : "hidden";
+  return hasActiveMedia && playerScrolledAway ? "mini" : "full";
+}
+
+// O player grande conta como "fora da tela" quando sobram menos de 48px
+// dele visíveis abaixo da topbar fixa.
+const PLAYER_VISIBLE_MIN_PX = 48;
+function isPlayerScrolledAway(anchorBottom, topbarBottom) {
+  return anchorBottom - topbarBottom < PLAYER_VISIBLE_MIN_PX;
+}
+
+// A caixa de busca se encaixa na topbar quando o lugar dela no conteúdo
+// passa por baixo da topbar.
+function shouldDockSearch(slotTop, topbarBottom) {
+  return slotTop < topbarBottom;
+}
+
+let _playerScrolledAway = false;
+
+// Enquanto o player está fora do fluxo (mini ou tela cheia), a âncora
+// guarda a altura dele para a página não "pular" para cima.
+function lockPlayerAnchor() {
+  const anchor = document.getElementById("player-anchor");
+  if (anchor && !anchor.style.height) anchor.style.height = `${anchor.offsetHeight}px`;
+}
+function unlockPlayerAnchor() {
+  const anchor = document.getElementById("player-anchor");
+  if (anchor) anchor.style.height = "";
+}
+
 function setPlayerMode() {
   const el = document.getElementById("player-screen");
   if (!el) return;
-  if (_state.section === "catalog") {
-    el.classList.remove("player-hidden", "mini-player");
-    return;
-  }
-  const isPlaying = !!(_state.selected && (_state.playing || _state.selected.isVod));
-  if (!isPlaying) {
-    el.classList.remove("mini-player");
-    el.classList.add("player-hidden");
-    return;
-  }
-  el.classList.remove("player-hidden");
-  el.classList.add("mini-player");
+  const isFullscreen = el.classList.contains("pseudo-fullscreen");
+  const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
+  const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
+  const mode = computePlayerMode({ section: _state.section, hasActiveMedia, playerScrolledAway: _playerScrolledAway, isFullscreen });
+  const keepSlot = _state.section !== "settings" && (mode === "mini" || isFullscreen);
+  if (keepSlot && !wasOutOfFlow) lockPlayerAnchor(); // mede antes de sair do fluxo
+  if (!keepSlot) unlockPlayerAnchor();
+  el.classList.toggle("mini-player", mode === "mini");
+  el.classList.toggle("player-hidden", mode === "hidden");
+}
+
+// Rolagem: decide o mini-player (e o encaixe da busca na topbar). Roda no
+// máximo uma vez por quadro.
+let _dockingRaf = 0;
+function scheduleDockingUpdate() {
+  if (_dockingRaf) return;
+  _dockingRaf = requestAnimationFrame(() => {
+    _dockingRaf = 0;
+    updateDocking();
+  });
+}
+
+function updateDocking() {
+  const topbar = document.querySelector(".topbar");
+  const anchor = document.getElementById("player-anchor");
+  if (!topbar || !anchor) return;
+  const topbarBottom = topbar.getBoundingClientRect().bottom;
+  _playerScrolledAway = isPlayerScrolledAway(anchor.getBoundingClientRect().bottom, topbarBottom);
+  setPlayerMode();
+
+  document.querySelectorAll(".search-dock-slot").forEach(slot => {
+    const box = slot.querySelector(".search-box");
+    if (!box) return;
+    const inActiveView = slot.offsetParent !== null; // view ou aba escondida → null
+    box.classList.toggle("docked", inActiveView && shouldDockSearch(slot.getBoundingClientRect().top, topbarBottom));
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3706,7 +4072,7 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", VOL:"sint_vol", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
 
 function parseXtreamCredentials(m3uUrl) {
   let url;
@@ -3758,6 +4124,9 @@ function xtreamApiUrl(creds, action, extraParams) {
 
 const CONTINUE_KEY = "sint_continue";
 let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
+// Filme/série aberto no modal agora: { item, contType: "vod"|"series" }.
+// Usado pelos episódios (capa/nome da série) e pelo botão Minha Lista.
+let _vodModalItem = null;
 
 // Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
 // - permite a busca filtrar em todas as categorias já carregadas sem refazer
@@ -3766,14 +4135,9 @@ let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carros
 // reentrada na view).
 let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {} };
 
-// Estado do debounce da busca de VOD (ver listener de #vod-search-input) -
-// _vodSearchDebounceTimer guarda o setTimeout pendente do achatar+dedupe+
-// filtrar+renderizar (o trabalho caro), _vodSearchActive/
-// _vodHeroVisibleBeforeSearch controlam esconder/restaurar o #vod-hero
-// exatamente uma vez por busca (não a cada tecla).
+// Debounce da busca de VOD (ver listener de #vod-search-input): guarda o
+// setTimeout pendente do achatar+dedupe+filtrar+renderizar (o trabalho caro).
 let _vodSearchDebounceTimer = null;
-let _vodSearchActive = false;
-let _vodHeroVisibleBeforeSearch = false;
 
 // Ordena por mais recente e filtra por tipo — pura, sem DOM/rede, por isso
 // testável isoladamente (tests/vod/continue-watching.test.js).
@@ -3851,6 +4215,33 @@ function selectNewestVodItems(items, limit) {
     .slice(0, limit);
 }
 
+// Título exibido para um episódio: "Nome da Série · T1E3". Antes aparecia
+// só o título cru da API (muitas vezes apenas "S01E01").
+function formatEpisodeTitle(seriesName, season, episodeNum) {
+  const s = Number(season) || 1;
+  const code = episodeNum ? `T${s}E${episodeNum}` : `T${s}`;
+  const name = String(seriesName || "").trim();
+  return name ? `${name} · ${code}` : code;
+}
+
+// Cópia enxuta do item da API (filme ou série), guardada no histórico e
+// na Minha Lista para reabrir o título depois sem refazer a busca.
+const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year"];
+function trimVodItem(item) {
+  if (!item) return null;
+  const out = {};
+  VOD_ITEM_FIELDS.forEach(k => { if (item[k] != null && item[k] !== "") out[k] = item[k]; });
+  return out;
+}
+
+// Capa do cartão. Sem imagem, mostra as iniciais do título sobre um fundo
+// colorido em vez de um retângulo em branco.
+function vodCardArtHtml(cover, title) {
+  return cover
+    ? `<img src="${cover}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    : `<div class="vod-card-placeholder logo-c3">${escapeHtmlText(makeInitials(title || "?"))}</div>`;
+}
+
 function saveContinueWatching(entry) {
   const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
   map[entry.id] = { ...entry, ts: Date.now() };
@@ -3863,6 +4254,185 @@ function removeContinueWatching(id) {
     delete map[id];
     localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
   }
+}
+
+// ─── Minha Lista (ponto 8 da v6) ───
+// Filmes e séries marcados pelo usuário. Viram a primeira faixa do Início
+// (tudo) e de Filmes/Séries (só o tipo da aba) e somem quando a lista está
+// vazia. Entrada: { type: "vod"|"series", id, title, cover, item, ts }.
+const MYLIST_KEY = "sint_mylist";
+
+function loadMyList() {
+  try { return JSON.parse(localStorage.getItem(MYLIST_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveMyList(list) {
+  localStorage.setItem(MYLIST_KEY, JSON.stringify(list));
+}
+
+function isInMyList(list, type, id) {
+  return list.some(e => e.type === type && String(e.id) === String(id));
+}
+
+function toggleMyListEntry(list, entry, nowMs) {
+  if (isInMyList(list, entry.type, entry.id)) {
+    return list.filter(e => !(e.type === entry.type && String(e.id) === String(entry.id)));
+  }
+  return [{ ...entry, ts: nowMs }, ...list];
+}
+
+function getMyListItems(list, type) {
+  return list.filter(e => !type || e.type === type).sort((a, b) => b.ts - a.ts);
+}
+
+function buildMyListEntry(rawItem, contType) {
+  const item = trimVodItem(rawItem);
+  return {
+    type: contType,
+    id: contType === "series" ? item.series_id : item.stream_id,
+    title: item.name || item.title || "Sem título",
+    cover: item.stream_icon || item.cover || "",
+    item,
+  };
+}
+
+function myListCardHtml(entry) {
+  const key = `mylist-${entry.type}-${entry.id}`;
+  _vodCardsIndex[key] = entry.item;
+  return `
+    <button class="vod-card" data-vod-key="${key}" data-vod-type="${entry.type === "series" ? "series" : "movies"}" data-lp="mylist" tabindex="0">
+      ${vodCardArtHtml(entry.cover, entry.title)}
+      <p>${escapeHtmlText(entry.title)}</p>
+    </button>`;
+}
+
+// contType null = todos os tipos (Início).
+function myListRowHtml(contType) {
+  const items = getMyListItems(loadMyList(), contType);
+  if (!items.length) return "";
+  return `
+    <div class="vod-row" data-cat-id="mylist">
+      <h2>Minha Lista</h2>
+      <div class="vod-carousel">${items.map(myListCardHtml).join("")}</div>
+    </div>`;
+}
+
+// Recria só as faixas pessoais (Minha Lista / Continue Assistindo) da aba
+// Filmes/Séries aberta, sem refazer as requisições do catálogo.
+function refreshVodPersonalRows() {
+  const carouselsEl = document.getElementById("vod-carousels");
+  if (!carouselsEl || _state.section !== "vod") return;
+  const contType = _state.vodType === "series" ? "series" : "vod";
+  carouselsEl.querySelectorAll('.vod-row[data-cat-id="mylist"], .vod-row[data-cat-id="continue"]').forEach(row => row.remove());
+  carouselsEl.insertAdjacentHTML("afterbegin", myListRowHtml(contType) + continueWatchingRowHtml(contType));
+}
+
+function refreshPersonalLists() {
+  renderHomeLists();
+  refreshVodPersonalRows();
+}
+
+function toggleMyListFor(rawItem, contType) {
+  const entry = buildMyListEntry(rawItem, contType);
+  const wasIn = isInMyList(loadMyList(), entry.type, entry.id);
+  saveMyList(toggleMyListEntry(loadMyList(), entry, Date.now()));
+  showToast(wasIn ? "Removido da Minha Lista" : "Adicionado à Minha Lista");
+  refreshPersonalLists();
+}
+
+// ─── Segurar em cima de um cartão (ponto 8 da v6) ───
+// Opções do menu por tipo de cartão.
+function getCardActions({ kind, inMyList, canUseMyList }) {
+  const myListAction = inMyList
+    ? { id: "mylist-remove", label: "Remover da Minha Lista", icon: "minus-circle", danger: false }
+    : { id: "mylist-add", label: "Adicionar à Minha Lista", icon: "plus-circle", danger: false };
+  const removeRecent = { id: "recent-remove", label: "Remover dos recentes", icon: "trash-2", danger: true };
+  if (kind === "channel-recent") return [removeRecent];
+  if (kind === "mylist") return [{ id: "mylist-remove", label: "Remover da Minha Lista", icon: "minus-circle", danger: true }];
+  if (kind === "continue") return canUseMyList ? [myListAction, removeRecent] : [removeRecent];
+  if (kind === "vod") return [myListAction];
+  return [];
+}
+
+let _actionSheetContext = null;
+
+// Descobre o que é o cartão pressionado e com quais dados agir.
+function resolveCardContext(card) {
+  const kind = card.dataset.lp;
+  if (kind === "channel-recent") {
+    const ch = getChannels().find(c => c.id === +card.dataset.channelId);
+    return ch ? { kind, title: ch.name, channelId: ch.id } : null;
+  }
+  const item = _vodCardsIndex[card.dataset.vodKey];
+  if (!item) return null;
+  if (kind === "continue") {
+    // Histórico antigo (antes da v6) não guardava a série/filme de origem:
+    // sem rawItem, o menu oferece só "Remover".
+    return { kind, title: item.title || "", recentId: item.id, rawItem: item.vodItem || null, contType: item.type === "series" ? "series" : "vod" };
+  }
+  const contType = kind === "mylist"
+    ? (card.dataset.vodType === "series" ? "series" : "vod")
+    : (_vodCatalogCache.vodType === "series" ? "series" : "vod");
+  return { kind, title: item.name || item.title || "", rawItem: item, contType };
+}
+
+function openCardActions(card) {
+  const ctx = resolveCardContext(card);
+  if (!ctx) return;
+  let inMyList = false;
+  if (ctx.rawItem) {
+    const entry = buildMyListEntry(ctx.rawItem, ctx.contType);
+    inMyList = isInMyList(loadMyList(), entry.type, entry.id);
+  }
+  const actions = getCardActions({ kind: ctx.kind, inMyList, canUseMyList: !!ctx.rawItem });
+  if (!actions.length) return;
+  _actionSheetContext = ctx;
+  document.getElementById("action-sheet-title").textContent = ctx.title;
+  document.getElementById("action-sheet-actions").innerHTML = actions.map(a => `
+    <button class="action-sheet-btn${a.danger ? " danger" : ""}" data-action="${a.id}">
+      <i data-lucide="${a.icon}" style="width:18px;height:18px"></i><span>${a.label}</span>
+    </button>`).join("");
+  const sheet = document.getElementById("action-sheet");
+  sheet.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+  lucide.createIcons();
+}
+
+function closeCardActions() {
+  const sheet = document.getElementById("action-sheet");
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+  _actionSheetContext = null;
+}
+
+function runCardAction(actionId) {
+  const ctx = _actionSheetContext;
+  closeCardActions();
+  if (!ctx) return;
+  if (actionId === "mylist-add" || actionId === "mylist-remove") {
+    if (ctx.rawItem) toggleMyListFor(ctx.rawItem, ctx.contType);
+    return;
+  }
+  if (actionId === "recent-remove") {
+    if (ctx.channelId != null) {
+      const recents = _state.recents.filter(r => r.id !== ctx.channelId);
+      localStorage.setItem("sint_recents", JSON.stringify(recents));
+      setState({ recents });
+    } else if (ctx.recentId) {
+      removeContinueWatching(ctx.recentId);
+      refreshPersonalLists();
+    }
+    showToast("Removido dos recentes");
+  }
+}
+
+// Botão "Minha Lista" do modal do filme/série: reflete se já está na lista.
+function updateModalMyListButton() {
+  const btn = document.getElementById("vod-modal-mylist");
+  if (!btn || !_vodModalItem) return;
+  const entry = buildMyListEntry(_vodModalItem.item, _vodModalItem.contType);
+  const inList = isInMyList(loadMyList(), entry.type, entry.id);
+  btn.innerHTML = `<i data-lucide="${inList ? "check" : "plus"}" style="width:18px;height:18px"></i> <span>${inList ? "Na Minha Lista" : "Minha Lista"}</span>`;
+  lucide.createIcons();
 }
 
 // Mostra/esconde as abas Filmes/Séries na sidebar — mesmo padrão de
@@ -3880,6 +4450,7 @@ function openVodSection(vodType) {
     return;
   }
   setState({ section: "vod", vodType });
+  window.scrollTo({ top: 0 });
   closeSidebar();
   loadVodCatalog(vodType, creds);
 }
@@ -3888,9 +4459,11 @@ function continueCardHtml(item) {
   const key = `resume-${item.type}-${item.id}`;
   _vodCardsIndex[key] = item;
   const pct = item.duration ? Math.min(100, Math.round((item.progress / item.duration) * 100)) : 0;
+  // Episódio sem capa própria usa a capa da série guardada no histórico.
+  const cover = item.cover || (item.vodItem && (item.vodItem.cover || item.vodItem.stream_icon)) || "";
   return `
-    <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" tabindex="0">
-      <img src="${item.cover || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+    <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" data-lp="continue" tabindex="0">
+      ${vodCardArtHtml(cover, item.title)}
       <div class="vod-progress"><span style="width:${pct}%"></span></div>
       <p>${item.title || ""}</p>
     </button>`;
@@ -3914,7 +4487,7 @@ function vodCardHtml(item, contType) {
   const poster = item.stream_icon || item.cover || "";
   const title  = item.name || item.title || "Sem título";
   return `
-    <button class="vod-card" data-vod-key="${key}" tabindex="0">
+    <button class="vod-card" data-vod-key="${key}" data-lp="vod" tabindex="0">
       <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
       <p>${title}</p>
     </button>`;
@@ -3929,18 +4502,21 @@ function homeRecentCardHtml(item) {
     const ch = getChannels().find(c => c.id === item.id);
     if (!ch) return "";
     return `
-      <button class="vod-card" data-channel-id="${ch.id}" tabindex="0">
-        <img src="${ch.logo || ""}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
+      <button class="vod-card" data-channel-id="${ch.id}" data-lp="channel-recent" tabindex="0">
+        <div class="vod-card-logo ${ch.color}">${ch.logo
+          ? `<img src="${ch.logo}" alt="" loading="lazy" onerror="this.remove()">`
+          : `<span>${ch.initials}</span>`}</div>
         <p>${ch.name || ""}</p>
       </button>`;
   }
   return continueCardHtml(item);
 }
 
+// Devolve true se mostrou algum item (usado pelo estado vazio do Início).
 function renderHomeRecents() {
   const section = document.getElementById("home-recents-section");
   const list = document.getElementById("home-recents-list");
-  if (!section || !list) return;
+  if (!section || !list) return false;
   const continueMap = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
   const items = getUnifiedRecentItems(_state.recents, continueMap, 10)
     .map(homeRecentCardHtml)
@@ -3948,32 +4524,32 @@ function renderHomeRecents() {
   if (!items.length) {
     section.style.display = "none";
     list.innerHTML = "";
-    return;
+    return false;
   }
   section.style.display = "";
   list.innerHTML = items.join("");
+  return true;
 }
 
-function setVodHero(item, vodType, creds) {
-  const isSeries = vodType === "series";
-  const title = item.name || item.title || "Título";
-  document.getElementById("vod-hero-bg").src = item.stream_icon || item.cover || "";
-  document.getElementById("vod-hero-title").textContent = title;
-  document.getElementById("vod-hero-desc").textContent =
-    item.plot || "Descubra os melhores filmes e séries direto do seu provedor.";
-  document.getElementById("vod-hero").style.display = "flex";
+// Listas pessoais do Início: Minha Lista (se tiver itens) em cima dos
+// recém-assistidos. Mostra o estado vazio quando não há nada.
+function renderHomeLists() {
+  const myListHtml = myListRowHtml(null);
+  document.getElementById("home-mylist").innerHTML = myListHtml;
+  const hasRecents = renderHomeRecents();
+  document.getElementById("home-empty").style.display = (myListHtml || hasRecents) ? "none" : "";
+}
 
-  const playBtn = document.getElementById("vod-hero-play");
-  playBtn.style.display = "inline-flex";
-  if (isSeries) {
-    // Série: o herói abre o modal (é preciso escolher um episódio primeiro).
-    playBtn.onclick = () => openVodModal(item, vodType, creds);
-  } else {
-    playBtn.onclick = () => playVodSelection(
-      buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
-    );
-  }
+// Aplica o layout da aba ativa (ponto 9 da v6) na view de catálogo.
+function renderTabLayout() {
+  const layout = getCatalogTabLayout(_state.active);
+  document.getElementById("catalog-search-slot").style.display = layout.showSearch ? "" : "none";
+  document.getElementById("search-input").placeholder = layout.searchPlaceholder || "Buscar...";
+  document.getElementById("catalog-section").style.display = layout.showCatalog ? "" : "none";
+  document.getElementById("category-pills").style.display = layout.showPills ? "" : "none";
+  document.getElementById("feature-layout").style.display = layout.showOnNow ? "" : "none";
+  document.getElementById("catalog-eyebrow").textContent = layout.eyebrow;
+  document.getElementById("home-lists").style.display = layout.showHomeLists ? "" : "none";
 }
 
 // Nomes de categoria vêm da API com um prefixo redundante antes do "|" -
@@ -4000,21 +4576,16 @@ async function loadVodCatalog(vodType, creds) {
   searchInput.value = "";
   document.getElementById("vod-search-clear").style.display = "none";
   document.getElementById("vod-search-results").style.display = "none";
-  // Reseta o estado da busca (debounce pendente + flag de "estava em busca")
-  // junto com o resto do cache acima - sem isso, trocar de aba (Filmes ->
-  // Séries) no meio de uma busca deixaria o #vod-hero da nova aba escondido
-  // incorretamente na próxima tecla digitada (a captura de "estava visível
-  // antes" só acontece uma vez por busca, ver listener de vod-search-input).
+  // Cancela uma busca pendente da aba anterior junto com o cache.
   clearTimeout(_vodSearchDebounceTimer);
-  _vodSearchActive = false;
 
   document.getElementById("vod-eyebrow").textContent = isSeries ? "SÉRIES" : "FILMES";
   document.getElementById("vod-h1").textContent = isSeries ? "Qual série vamos maratonar?" : "O que vamos assistir?";
-  document.getElementById("vod-hero").style.display = "none";
 
   const carouselsEl = document.getElementById("vod-carousels");
   carouselsEl.style.display = "block";
-  const contRowHtml = continueWatchingRowHtml(contType);
+  // Faixas pessoais sempre por cima: Minha Lista e depois Continue Assistindo.
+  const contRowHtml = myListRowHtml(contType) + continueWatchingRowHtml(contType);
   carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
 
   try {
@@ -4043,9 +4614,6 @@ async function loadVodCatalog(vodType, creds) {
         </div>
         <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
       </div>`).join("");
-
-    const firstCatId = topCats[0].category_id;
-    let heroSet = false;
 
     // Cada fetch por categoria é guardado aqui para sabermos, via
     // Promise.allSettled, quando todas já resolveram (sucesso ou erro) e
@@ -4081,10 +4649,6 @@ async function loadVodCatalog(vodType, creds) {
           if (rowEl) {
             rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
           }
-          if (!heroSet && cat.category_id === firstCatId) {
-            heroSet = true;
-            setVodHero(deduped[0], vodType, creds);
-          }
         })
         .catch(() => {
           if (_vodCatalogCache.vodType !== vodType) return; // ver comentário acima
@@ -4112,7 +4676,8 @@ async function loadVodCatalog(vodType, creds) {
           <div class="vod-carousel">${newest.map(item => vodCardHtml(item, contType)).join("")}</div>
         </div>`;
       const carouselsEl = document.getElementById("vod-carousels");
-      const continueRow = carouselsEl.querySelector('.vod-row[data-cat-id="continue"]');
+      const continueRow = carouselsEl.querySelector('.vod-row[data-cat-id="continue"]')
+        || carouselsEl.querySelector('.vod-row[data-cat-id="mylist"]');
       if (continueRow) {
         continueRow.insertAdjacentHTML("afterend", newestHtml);
       } else {
@@ -4126,6 +4691,8 @@ async function loadVodCatalog(vodType, creds) {
 
 async function openVodModal(item, vodType, creds) {
   const isSeries = vodType === "series";
+  _vodModalItem = { item, contType: isSeries ? "series" : "vod" };
+  updateModalMyListButton();
   const modal = document.getElementById("vod-modal");
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -4146,7 +4713,7 @@ async function openVodModal(item, vodType, creds) {
     playBtn.querySelector("span").textContent = "Assistir";
     playBtn.onclick = () => playVodSelection(
       buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
+      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item }
     );
     playBtn.focus();
     return;
@@ -4170,7 +4737,7 @@ async function openVodModal(item, vodType, creds) {
 
     epsContainer.innerHTML = episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-title="${epTitle.replace(/"/g, "&quot;")}" data-series-cover="${(item.stream_icon || item.cover || '').replace(/"/g, "&quot;")}">
+      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
         <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>`;
@@ -4187,9 +4754,18 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-function playEpisode(episodeId, containerExtension, title, creds, cover) {
+// Episódio: título "Série · T1E3" e capa da série (o episódio quase nunca
+// tem capa própria), e guarda a série para a Minha Lista e o histórico.
+function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
-  playVodSelection(url, { id: episodeId, contType: "series", title, cover: cover || null });
+  const seriesName = (series && (series.name || series.title)) || "";
+  playVodSelection(url, {
+    id: episodeId,
+    contType: "series",
+    title: formatEpisodeTitle(seriesName, season, episodeNum),
+    cover: (series && (series.cover || series.stream_icon)) || null,
+    vodItem: series || null,
+  });
 }
 
 // Ponto único de reprodução de VOD: reaproveita o mesmo player (playStream)
@@ -4200,6 +4776,8 @@ function playEpisode(episodeId, containerExtension, title, creds, cover) {
 function playVodSelection(url, meta) {
   if (!url) { showToast("Não foi possível obter o link de reprodução."); return; }
   closeVodModal();
+  // "Continue Assistindo": retoma do ponto salvo assim que o vídeo começar.
+  pendingResumeAt = meta.resumeAt > 0 ? meta.resumeAt : 0;
   const continueId = meta.continueId || `resume-${meta.contType}-${meta.id}`;
   const pseudo = {
     id: continueId,
@@ -4212,6 +4790,7 @@ function playVodSelection(url, meta) {
     isVod: true,
     vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
     continueId,
+    vodItem: meta.vodItem ? trimVodItem(meta.vodItem) : null, // filme/série de origem
   };
   setState({ selected: pseudo, playing: false });
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4223,14 +4802,12 @@ function loadSettingsForm() {
   const url  = localStorage.getItem(LS.URL)  || "";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
-  const vol  = localStorage.getItem(LS.VOL)  || "1";
   const proxy = localStorage.getItem(LS.PROXY) || "";
   const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
   const vodUrl = localStorage.getItem(LS.VOD_URL) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
-  document.getElementById("pref-vol").value  = vol;
   document.getElementById("proxy-url").value = proxy;
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   document.getElementById("epg-url").value = epgUrl;
@@ -4274,8 +4851,10 @@ function render() {
   renderPlayerInfo();
   renderCatalog();
   renderOnNow();
-  renderHomeRecents();
+  renderTabLayout();
+  renderHomeLists();
   setPlayerMode();
+  scheduleDockingUpdate();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4312,9 +4891,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("fit-select").value = savedFit;
   document.getElementById("player-video").style.objectFit = savedFit;
 
-  // Volume salvo
-  const savedVol = parseFloat(localStorage.getItem(LS.VOL) || "1");
-  applyVolume(savedVol);
+  // Volume sempre no máximo (o aparelho regula)
+  forceMaxVolume();
 
   // ─── Link compartilhável: ?lista=<url> ───
   // Abrir este arquivo com ?lista=<url-da-playlist> (codificada) carrega essa
@@ -4368,11 +4946,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ── NAV ──
-  document.querySelectorAll(".nav-item[data-section]").forEach(el => {
-    el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); });
+  // Trocar de aba sobe para o topo, onde fica o player (as pílulas de
+  // categoria não sobem: a grade que muda está logo abaixo delas).
+  document.querySelectorAll(".sidebar-nav .nav-item[data-section]").forEach(el => {
+    el.addEventListener("click", () => { setSection(el.dataset.section); closeSidebar(); window.scrollTo({ top: 0 }); });
   });
   document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
-    el.addEventListener("click", () => setSection(el.dataset.section));
+    el.addEventListener("click", () => { setSection(el.dataset.section); window.scrollTo({ top: 0 }); });
   });
 
   // ── SIDEBAR ──
@@ -4390,6 +4970,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
       hideEpgPopover();
+      closeCardActions();
       if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
     }
   });
@@ -4426,8 +5007,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // pelo mini-player force essa navegação como efeito colateral.
   function togglePlayPause() {
     const video = document.getElementById("player-video");
+    const ch = _state.selected;
+    // Filme/episódio carregado: pausa e retoma no mesmo ponto (antes o play
+    // recarregava o arquivo e o vídeo voltava para o começo).
+    if (ch && ch.isVod && _state.playing) {
+      if (video.paused) {
+        userPausedVod = false;
+        video.play().catch(() => {});
+        setPlayPauseIcons(true);
+      } else {
+        userPausedVod = true;
+        video.pause();
+        setPlayPauseIcons(false);
+      }
+      return;
+    }
     if (!_state.playing) {
-      const ch = _state.selected;
       if (ch?.url) playStream(ch.url);
     } else {
       if (video.paused) { video.play(); }
@@ -4456,36 +5051,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const debugBtn = document.getElementById("debug-toggle-btn");
-  if (debugBtn) {
-    debugBtn.addEventListener("click", () => {
-      isDebugOverlayVisible = !isDebugOverlayVisible;
-      const overlay = document.getElementById("player-debug-overlay");
-      if (overlay) {
-        overlay.style.display = isDebugOverlayVisible ? "block" : "none";
-        if (isDebugOverlayVisible) updateDebugOverlay();
-      }
-      debugBtn.style.color = isDebugOverlayVisible ? "var(--primary)" : "";
-      showToast(isDebugOverlayVisible ? "Telemetria ativada" : "Telemetria oculta");
-    });
-  }
-
   document.getElementById("retry-btn").addEventListener("click", () => {
     const ch = _state.selected;
     if (ch?.url) playStream(ch.url);
-  });
-
-  document.getElementById("mute-btn").addEventListener("click", () => {
-    const v = !_state.muted;
-    setState({ muted: v }, true);
-    applyVolume(parseFloat(document.getElementById("vol-slider").value));
-  });
-
-  document.getElementById("vol-slider").addEventListener("input", e => {
-    const v = parseFloat(e.target.value);
-    setState({ muted: v === 0 }, true);
-    applyVolume(v);
-    localStorage.setItem(LS.VOL, v);
   });
 
   document.getElementById("fit-select").addEventListener("change", e => {
@@ -4502,29 +5070,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // com os elementos ocultos (ex.: arrasto residual) - por isso cada handler
   // confere video.duration antes de mexer em currentTime.
   document.getElementById("player-video").addEventListener("timeupdate", () => {
-    const video = document.getElementById("player-video");
-    const bar = document.getElementById("vod-seek-bar");
-    if (!bar || !isFinite(video.duration) || video.duration <= 0) return;
-    bar.value = (video.currentTime / video.duration) * 100;
-    document.getElementById("vod-seek-current").textContent = formatSeekTime(video.currentTime);
-    document.getElementById("vod-seek-duration").textContent = formatSeekTime(video.duration);
+    syncSeekUi(document.getElementById("player-video"));
   });
-
-  document.getElementById("vod-seek-bar").addEventListener("input", e => {
-    const video = document.getElementById("player-video");
-    if (!isFinite(video.duration) || video.duration <= 0) return;
-    video.currentTime = (Number(e.target.value) / 100) * video.duration;
-  });
-
-  document.getElementById("vod-skip-back-btn").addEventListener("click", () => {
-    const video = document.getElementById("player-video");
-    video.currentTime = Math.max(0, video.currentTime - 10);
-  });
-
-  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => {
-    const video = document.getElementById("player-video");
-    if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
-  });
+  document.getElementById("vod-seek-bar").addEventListener("input", e => seekToPercent(Number(e.target.value)));
+  document.getElementById("vod-skip-back-btn").addEventListener("click", () => skipBy(-10));
+  document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => skipBy(10));
 
   // Duplo clique no vídeo = fullscreen
   let _lastVideoTapTs = 0;
@@ -4544,29 +5094,52 @@ document.addEventListener("DOMContentLoaded", () => {
   // (ex.: tecla Esc), já que nesse caminho não passamos por toggleFullscreen.
   document.addEventListener("fullscreenchange", updateFullscreenBtnIcon);
 
-  // Tocar na tela em modo tela-cheia-de-mentira reexibe os controles
+  // Tocar no mini-player volta ao player grande: nas abas principais ele
+  // fica no topo da própria página (basta rolar). Em Configurações, que não
+  // tem player grande, volta para o catálogo.
   document.getElementById("player-screen").addEventListener("click", () => {
-    if (document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) {
-      showFsControls();
-    }
-  });
-
-  // Tocar no mini-player expande de volta para a tela cheia (seção catalog)
-  document.getElementById("player-screen").addEventListener("click", (e) => {
     const el = document.getElementById("player-screen");
-    if (el.classList.contains("mini-player")) {
-      setState({ section: "catalog" });
-    }
+    if (!el.classList.contains("mini-player")) return;
+    if (_state.section === "settings") setState({ section: "catalog" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
-  // #fs-exit-btn só fica visível enquanto .pseudo-fullscreen está ativo
-  // (regra CSS de .fs-overlay-controls), então passar por toggleFullscreen()
-  // sempre cai no ramo de saída - e já desgira e sincroniza o ícone do botão
-  // único (#fullscreen-btn), que fica coberto pelo overlay em tela cheia.
-  document.getElementById("fs-exit-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    toggleFullscreen();
+  // Rolagem/giro: reavalia mini-player e encaixe da busca na topbar.
+  window.addEventListener("scroll", scheduleDockingUpdate, { passive: true });
+  window.addEventListener("resize", scheduleDockingUpdate);
+
+  // ── TELA CHEIA (pontos 1 e 10 da v6) ──
+  // Toque na camada: mostra/esconde os controles. Dois toques: sai.
+  document.getElementById("fs-ui").addEventListener("click", e => {
+    if (e.target.closest("button, input")) { showFsControls(); return; } // mexeu num controle: mantém visível
+    const now = Date.now();
+    if (now - _fs.lastTapTs < FS_DOUBLE_TAP_MS) {
+      _fs.lastTapTs = 0;
+      toggleFullscreen();
+      return;
+    }
+    _fs.lastTapTs = now;
+    if (document.getElementById("fs-ui").classList.contains("visible")) hideFsControls();
+    else showFsControls();
   });
+  // #fs-exit-btn só existe na tela cheia, então toggleFullscreen() sempre
+  // cai no ramo de saída (e já sincroniza o ícone do #fullscreen-btn).
+  document.getElementById("fs-exit-btn").addEventListener("click", e => { e.stopPropagation(); toggleFullscreen(); });
+  document.getElementById("fs-lock-btn").addEventListener("click", e => { e.stopPropagation(); setFsLocked(true); flashFsLockHint(); });
+  document.getElementById("fs-rotate-btn").addEventListener("click", toggleFsRotation);
+  document.getElementById("fs-fit-btn").addEventListener("click", toggleFsFit);
+  document.getElementById("fs-play-btn").addEventListener("click", togglePlayPause);
+  document.getElementById("fs-skip-back-btn").addEventListener("click", () => skipBy(-10));
+  document.getElementById("fs-skip-fwd-btn").addEventListener("click", () => skipBy(10));
+  document.getElementById("fs-seek-bar").addEventListener("input", e => { seekToPercent(Number(e.target.value)); showFsControls(); });
+  // Tela bloqueada: só o cadeado desbloqueia; qualquer outro toque mostra a instrução.
+  document.getElementById("fs-lock-shield").addEventListener("click", e => {
+    e.stopPropagation();
+    if (e.target.closest("#fs-unlock-btn")) { setFsLocked(false); showFsControls(); return; }
+    flashFsLockHint();
+  });
+  // Girou o aparelho (ou o plugin girou): reaplica o layout da tela cheia.
+  window.addEventListener("resize", applyFsLayout);
 
   // ── VIEW TOGGLE ──
   document.getElementById("view-grid-btn").addEventListener("click", () => {
@@ -4620,12 +5193,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = _vodCardsIndex[card.dataset.vodKey];
     if (!item) return;
     if (card.dataset.vodResume === "1") {
-      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id });
+      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null });
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    openVodModal(item, _state.vodType, creds);
+    // Cartão da Minha Lista diz o próprio tipo (no Início, _state.vodType
+    // pode ser de outra aba).
+    openVodModal(item, card.dataset.vodType || _state.vodType, creds);
   }
 
   document.getElementById("vod-carousels").addEventListener("click", e => {
@@ -4658,6 +5233,89 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
+  // Minha Lista do Início: mesma delegação dos cartões de Filmes/Séries.
+  document.getElementById("home-mylist").addEventListener("click", onVodCardAreaClick);
+
+  // ── SEGURAR EM CIMA DE UM CARTÃO (menu de ações, ponto 8 da v6) ──
+  // Toque longo (~500ms sem arrastar) abre o menu. O clique que o navegador
+  // dispara ao soltar o dedo é engolido; senão ele cairia no fundo do menu
+  // (fechando-o) ou abriria o filme. No computador (e no toque longo do
+  // Android, que vira "contextmenu"), o botão direito faz o mesmo.
+  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+  let _lpTimer = null;
+  let _lpStart = null;
+  let _lpFired = false;
+  let _lpSuppressClickUntil = 0;
+
+  function cancelLongPress() {
+    clearTimeout(_lpTimer);
+    _lpTimer = null;
+    _lpStart = null;
+  }
+
+  document.addEventListener("touchstart", e => {
+    const card = e.target.closest("[data-lp]");
+    if (!card || e.touches.length !== 1) return;
+    _lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    _lpFired = false;
+    clearTimeout(_lpTimer);
+    _lpTimer = setTimeout(() => {
+      _lpTimer = null;
+      _lpFired = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openCardActions(card);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  document.addEventListener("touchmove", e => {
+    if (!_lpStart || !_lpTimer) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - _lpStart.x) > LONG_PRESS_MOVE_TOLERANCE_PX
+      || Math.abs(t.clientY - _lpStart.y) > LONG_PRESS_MOVE_TOLERANCE_PX) {
+      cancelLongPress(); // arrastou: é rolagem, não toque longo
+    }
+  }, { passive: true });
+
+  document.addEventListener("touchend", () => {
+    if (_lpFired) {
+      _lpSuppressClickUntil = Date.now() + 450;
+      _lpFired = false;
+    }
+    cancelLongPress();
+  }, { passive: true });
+  document.addEventListener("touchcancel", cancelLongPress, { passive: true });
+
+  document.addEventListener("click", e => {
+    if (Date.now() < _lpSuppressClickUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      _lpSuppressClickUntil = 0;
+    }
+  }, true);
+
+  document.addEventListener("contextmenu", e => {
+    const card = e.target.closest("[data-lp]");
+    if (!card) return;
+    e.preventDefault();
+    if (!document.getElementById("action-sheet").classList.contains("hidden")) return; // já aberto pelo toque longo
+    openCardActions(card);
+  });
+
+  document.getElementById("action-sheet-actions").addEventListener("click", e => {
+    const btn = e.target.closest("[data-action]");
+    if (btn) runCardAction(btn.dataset.action);
+  });
+  document.getElementById("action-sheet-cancel").addEventListener("click", closeCardActions);
+  document.getElementById("action-sheet").addEventListener("click", e => {
+    if (e.target.id === "action-sheet") closeCardActions();
+  });
+
+  document.getElementById("vod-modal-mylist").addEventListener("click", () => {
+    if (!_vodModalItem) return;
+    toggleMyListFor(_vodModalItem.item, _vodModalItem.contType);
+    updateModalMyListButton();
+  });
 
   // "Acessados Recentemente" (Início): mesma delegação, mas também precisa
   // tratar cartões de canal (data-channel-id), que os outros dois
@@ -4683,27 +5341,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const query = e.target.value;
     document.getElementById("vod-search-clear").style.display = query ? "flex" : "none";
     const resultsEl = document.getElementById("vod-search-results");
-    const heroEl = document.getElementById("vod-hero");
     clearTimeout(_vodSearchDebounceTimer);
 
     if (!query.trim()) {
-      _vodSearchActive = false;
       resultsEl.style.display = "none";
       document.getElementById("vod-carousels").style.display = "block";
-      if (_vodHeroVisibleBeforeSearch) heroEl.style.display = "flex";
       return;
     }
-
-    // #vod-hero não tem nada a ver com resultado de busca (é o destaque da
-    // categoria) - esconde assim que a busca fica ativa, e só uma vez por
-    // busca guarda se ele estava visível antes, pra poder restaurar certo
-    // ao limpar (sem isso, cada tecla re-capturaria "escondido" - o próprio
-    // estado que a tecla anterior deixou - e a busca nunca o traria de volta).
-    if (!_vodSearchActive) {
-      _vodSearchActive = true;
-      _vodHeroVisibleBeforeSearch = heroEl.style.display !== "none";
-    }
-    heroEl.style.display = "none";
 
     _vodSearchDebounceTimer = setTimeout(() => {
       // Cada array por categoria já vem deduplicado, mas o mesmo filme pode
@@ -4732,7 +5376,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    playEpisode(btn.dataset.epId, btn.dataset.epExt, btn.dataset.epTitle, creds, btn.dataset.seriesCover);
+    playEpisode({
+      episodeId: btn.dataset.epId,
+      containerExtension: btn.dataset.epExt,
+      season: btn.dataset.epSeason,
+      episodeNum: btn.dataset.epNum,
+      series: _vodModalItem ? _vodModalItem.item : null,
+      creds,
+    });
   });
 
   // "Continue Assistindo": salva o progresso do que estiver tocando (só para
@@ -4760,6 +5411,7 @@ document.addEventListener("DOMContentLoaded", () => {
       url: ch.url,
       progress: video.currentTime,
       duration: video.duration,
+      vodItem: ch.vodItem || null,
     });
   });
 
@@ -4767,6 +5419,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // este listener o watchdog (feito para canais ao vivo, que nunca emitem
   // EOF de propósito) trataria isso como um congelamento e reiniciaria o
   // mesmo vídeo do zero uns segundos depois de ele já ter terminado.
+  // Pausa vinda de fora do app (tirar o fone, Central de Controle, tela de
+  // bloqueio) também conta como pausa do usuário num filme: o watchdog não
+  // despausa, e os ícones acompanham.
+  document.getElementById("player-video").addEventListener("pause", () => {
+    const video = document.getElementById("player-video");
+    if (!_state.selected || !_state.selected.isVod || video.ended) return;
+    userPausedVod = true;
+    setPlayPauseIcons(false);
+  });
+  document.getElementById("player-video").addEventListener("play", () => {
+    if (!_state.selected || !_state.selected.isVod) return;
+    userPausedVod = false;
+    setPlayPauseIcons(true);
+  });
+
   document.getElementById("player-video").addEventListener("ended", () => {
     const ch = _state.selected;
     if (!ch || !ch.isVod) return;
@@ -4905,10 +5572,6 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(LS.FIT, e.target.value);
     document.getElementById("fit-select").value = e.target.value;
     document.getElementById("player-video").style.objectFit = e.target.value;
-  });
-  document.getElementById("pref-vol").addEventListener("change", e => {
-    localStorage.setItem(LS.VOL, e.target.value);
-    applyVolume(parseFloat(e.target.value));
   });
 });
 </script>
