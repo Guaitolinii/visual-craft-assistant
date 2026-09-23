@@ -25,6 +25,7 @@ const PURE_HELPER_NAMES = [
   "normalizeChannelRecents",
   "safeFileBase", "buildDownloadEntry", "enqueueDownloads", "nextQueuedDownload", "updateDownload",
   "removeDownload", "resetInterruptedDownloads", "groupDownloads", "formatDownloadProgress", "seasonsOf",
+  "providerKeyForItem", "attachProviders", "groupItemsByProvider",
 ];
 
 function toHostRealm(value) {

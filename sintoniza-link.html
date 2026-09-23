@@ -4662,6 +4662,39 @@ function dedupeVodItemsByTitle(items) {
   return Array.from(groups.values());
 }
 
+// ─── Selo de streaming: cruzamento com o JSON gerado pelo GitHub Actions ───
+// Mesma forma de chave usada por dedupeVodItemsByTitle (nome+ano em
+// minúsculas) para que o mapa gerado offline (Python, ver
+// scripts/vod_providers/build_provider_map.py) e o catálogo carregado no
+// app apontem exatamente para a mesma entrada, sem normalização extra.
+function providerKeyForItem(item) {
+  return `${(item.name || "").trim().toLowerCase()}|${vodItemYearKey(item)}`;
+}
+
+// Não muta os itens de entrada (o cache _vodCatalogCache.itemsByCategory
+// guarda os mesmos objetos em várias chaves; mutar aqui vazaria o campo
+// para outras cópias antes delas passarem por este mesmo cruzamento).
+function attachProviders(items, providerMap) {
+  return items.map(item => ({
+    ...item,
+    streamingProviders: providerMap[providerKeyForItem(item)] || [],
+  }));
+}
+
+// Uma fileira por streaming, na ordem dada, só para quem tem pelo menos um
+// título (evita fileira vazia). Título com mais de um streaming aparece em
+// cada fileira correspondente. Fecha com "outros" para quem não bateu com
+// nenhum streaming mapeado - nunca descarta um item do catálogo.
+function groupItemsByProvider(items, providerOrder) {
+  const groups = providerOrder.map(id => ({
+    providerId: id,
+    items: items.filter(it => (it.streamingProviders || []).includes(id)),
+  })).filter(g => g.items.length > 0);
+  const outros = items.filter(it => !(it.streamingProviders || []).length);
+  if (outros.length) groups.push({ providerId: "outros", items: outros });
+  return groups;
+}
+
 // Ordena pelo timestamp real "added"/"last_modified" da API (não a categoria
 // estática "Lançamentos") e corta no limite — usada para montar a fileira
 // "Novidades". Pura (tests/vod/dedupe-vod-items.test.js).
