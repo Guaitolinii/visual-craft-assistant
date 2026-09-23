@@ -4584,12 +4584,43 @@ let _vodModalItem = null;
 let _vodModalEpisodes = [];
 let _vodModalCreds = null;
 
+// URL pública do JSON gerado 1x/dia pelo GitHub Actions (ver
+// .github/workflows/vod-providers.yml e scripts/vod_providers/). Fica numa
+// branch separada (vod-data) que nunca é mesclada em main/v9 - é só um
+// canal de dados, atualizado por commit direto do bot.
+const VOD_PROVIDERS_URL = "https://raw.githubusercontent.com/Guaitolinii/visual-craft-assistant/vod-data/vod-providers.json";
+
+let _vodProviderMap = {};      // { "titulo|ano": ["netflix", "max"], ... }
+let vodDisplayMode = "badge";  // "badge" | "group" - lido por renderVodRows
+
+// Nunca lança: se o JSON ainda não existir, estiver com erro de rede, ou o
+// bucket vier vazio, o catálogo continua funcionando só sem selo nenhum -
+// este recurso nunca pode travar a reprodução ou a lista de VOD.
+async function fetchVodProviderMap() {
+  try {
+    const res = await fetch(VOD_PROVIDERS_URL, { cache: "no-cache" });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return { ...(data.movies || {}), ...(data.series || {}) };
+  } catch (e) {
+    return {};
+  }
+}
+
+function updateVodDisplayToggleVisibility() {
+  const toggle = document.getElementById("vod-display-toggle");
+  if (toggle) toggle.style.display = Object.keys(_vodProviderMap).length ? "flex" : "none";
+}
+
 // Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
 // - permite a busca filtrar em todas as categorias já carregadas sem refazer
 // requisições, e permite "Ver todos"/"Novidades" reaproveitarem os mesmos
 // dados já deduplicados. Resetado a cada loadVodCatalog (troca de aba ou
-// reentrada na view).
-let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {} };
+// reentrada na view). "settled" vira true quando todas as categorias já
+// responderam (sucesso ou erro) - o modo "Agrupar por streaming" só desenha
+// a partir daí (agrupar um catálogo pela metade embaralharia as fileiras a
+// cada categoria que chega e o "Demais" sairia incompleto).
+let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {}, settled: false };
 
 // Debounce da busca de VOD (ver listener de #vod-search-input): guarda o
 // setTimeout pendente do achatar+dedupe+filtrar+renderizar (o trabalho caro).
@@ -5400,6 +5431,69 @@ function vodCategoryDisplayName(cat) {
   return (cat.category_name || "").replace(/^[^|]+\|\s*/, "");
 }
 
+// Um único ponto de renderização das fileiras de catálogo, usado tanto na
+// carga inicial de loadVodCatalog quanto na troca de modo (badge/agrupar) -
+// troca de modo nunca refaz fetch, só re-renderiza com os mesmos itens já
+// carregados em _vodCatalogCache.
+// Desenha só dentro de #vod-catalog-rows (criado por loadVodCatalog): as
+// faixas pessoais (Minha Lista, Continue Assistindo, Novidades) ficam fora
+// dele, em #vod-carousels, e nunca são apagadas por aqui. Sem o container
+// (catálogo ainda sem categorias, ou erro ao carregar) não faz nada.
+// allItems (a lista achatada de itemsByCategory) alimenta o modo agrupar; o
+// modo por categoria lê cada categoria direto do cache - um título que está
+// em duas categorias aparece nas duas fileiras, como sempre foi (reagrupar a
+// lista achatada por item.category_id o poria duas vezes numa só fileira).
+function renderVodRows(allItems, contType) {
+  const rowsEl = document.getElementById("vod-catalog-rows");
+  if (!rowsEl) return;
+
+  if (vodDisplayMode === "group" && Object.keys(_vodProviderMap).length) {
+    if (!_vodCatalogCache.settled) {
+      rowsEl.innerHTML = `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
+      return;
+    }
+    // Dedupe na lista achatada: o mesmo título vindo de duas categorias
+    // não pode repetir dentro da mesma fileira de streaming.
+    const enriched = attachProviders(dedupeVodItemsByTitle(allItems), _vodProviderMap);
+    const groups = groupItemsByProvider(enriched, PROVIDER_ORDER);
+    rowsEl.innerHTML = groups.map(g => {
+      const label = g.providerId === "outros"
+        ? (contType === "series" ? "Demais séries" : "Demais filmes")
+        : PROVIDERS_BR[g.providerId].label;
+      const dot = g.providerId === "outros" ? "" :
+        `<span class="vod-row-provider-dot" style="background:${PROVIDERS_BR[g.providerId].bg}"></span>`;
+      return `
+        <div class="vod-row" data-cat-id="${g.providerId}">
+          <div class="vod-row-header"><h2>${dot}${label}</h2></div>
+          <div class="vod-carousel">${g.items.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("")}</div>
+        </div>`;
+    }).join("");
+    return;
+  }
+
+  // Modo "badge" (padrão): mantém o agrupamento por gênero/categoria já
+  // existente, só que cada cartão ganha attachProviders aplicado. Categoria
+  // que ainda não respondeu fica com o spinner e o mesmo id de carrossel
+  // (vod-carousel-<id>) que o .then por categoria de loadVodCatalog procura
+  // para preenchê-la quando chegar - por isso esta função pode rodar no meio
+  // da carga (mapa de streaming chegou, troca de modo) sem travar o resto.
+  rowsEl.innerHTML = _vodCatalogCache.categories.map(cat => {
+    const catItems = _vodCatalogCache.itemsByCategory[cat.category_id];
+    if (catItems && !catItems.length) return "";
+    const carouselHtml = catItems
+      ? attachProviders(catItems.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap).map(item => vodCardHtml(item, contType)).join("")
+      : `<div class="spinner" style="margin:1rem"></div>`;
+    return `
+      <div class="vod-row" data-cat-id="${cat.category_id}">
+        <div class="vod-row-header">
+          <h2>${vodCategoryDisplayName(cat)}</h2>
+          <button class="vod-see-all" data-cat-id="${cat.category_id}">Ver todos</button>
+        </div>
+        <div class="vod-carousel" id="vod-carousel-${cat.category_id}">${carouselHtml}</div>
+      </div>`;
+  }).join("");
+}
+
 const VOD_ROW_INITIAL_COUNT = 12; // cartões visíveis antes de "Ver todos"
 const VOD_NOVIDADES_COUNT = 20;
 
@@ -5409,7 +5503,22 @@ async function loadVodCatalog(vodType, creds) {
 
   // Reseta o cache e a busca a cada entrada na view (troca de aba
   // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
-  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {} };
+  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {}, settled: false };
+  // Mapa de streaming: uma vez por sessão (só tenta de novo se a última
+  // tentativa falhou e voltou vazio), em paralelo ao catálogo, sem nunca
+  // segurá-lo. Mapa vazio (JSON ainda não publicado / erro de rede) não
+  // redesenha nada: o catálogo fica exatamente como sem este recurso.
+  if (!Object.keys(_vodProviderMap).length) {
+    fetchVodProviderMap().then(map => {
+      _vodProviderMap = map;
+      updateVodDisplayToggleVisibility();
+      if (!Object.keys(map).length) return;
+      // contType lido do cache, não da closure: o usuário pode ter trocado
+      // de aba (Filmes -> Séries) enquanto o JSON baixava, e cartão de série
+      // desenhado como filme ficaria com a chave errada (stream_id vazio).
+      renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), _vodCatalogCache.vodType === "series" ? "series" : "vod");
+    });
+  }
   const searchInput = document.getElementById("vod-search-input");
   searchInput.value = "";
   document.getElementById("vod-search-clear").style.display = "none";
@@ -5445,14 +5554,12 @@ async function loadVodCatalog(vodType, creds) {
     const topCats = cats;
     _vodCatalogCache.categories = topCats;
 
-    carouselsEl.innerHTML = contRowHtml + topCats.map(cat => `
-      <div class="vod-row" data-cat-id="${cat.category_id}">
-        <div class="vod-row-header">
-          <h2>${vodCategoryDisplayName(cat)}</h2>
-          <button class="vod-see-all" data-cat-id="${cat.category_id}">Ver todos</button>
-        </div>
-        <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
-      </div>`).join("");
+    // Faixas pessoais em cima, fileiras do catálogo num container próprio
+    // logo abaixo (renderVodRows só mexe nele). Nenhuma categoria carregou
+    // ainda, então sai uma fileira com spinner por categoria (modo selo) ou
+    // um spinner único (modo agrupar).
+    carouselsEl.innerHTML = contRowHtml + `<div id="vod-catalog-rows"></div>`;
+    renderVodRows([], contType);
 
     // Cada fetch por categoria é guardado aqui para sabermos, via
     // Promise.allSettled, quando todas já resolveram (sucesso ou erro) e
@@ -5485,8 +5592,12 @@ async function loadVodCatalog(vodType, creds) {
           // deste mesmo array já limpo).
           const deduped = dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
           _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
+          // Preenchimento progressivo (fileira aparece assim que a própria
+          // categoria chega). Sem rowEl no modo agrupar - lá quem desenha é
+          // o allSettled abaixo, com o catálogo inteiro. Selo já sai aqui se
+          // o mapa de streaming chegou antes desta categoria.
           if (rowEl) {
-            rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
+            rowEl.innerHTML = attachProviders(deduped.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap).map(item => vodCardHtml(item, contType)).join("");
           }
         })
         .catch(() => {
@@ -5506,6 +5617,17 @@ async function loadVodCatalog(vodType, creds) {
     // sempre a primeira fileira quando existe.
     Promise.allSettled(categoryFetches).then(() => {
       if (_vodCatalogCache.vodType !== vodType) return; // usuário já trocou de aba
+      _vodCatalogCache.settled = true;
+      // Modo agrupar: até aqui só havia o spinner, agora que o catálogo
+      // inteiro chegou desenha as fileiras por streaming. Modo selo não
+      // precisa: cada fileira já foi preenchida (com selo) ao chegar, e um
+      // mapa que chegue depois redesenha sozinho (ver o .then de
+      // fetchVodProviderMap no início desta função) - redesenhar de novo
+      // aqui só resetaria a rolagem dos carrosséis e apagaria os
+      // "Vazio"/"Erro ao carregar".
+      if (vodDisplayMode === "group") {
+        renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), contType);
+      }
       const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
       const newest = selectNewestVodItems(allItems, VOD_NOVIDADES_COUNT);
       if (!newest.length) return;
@@ -6130,7 +6252,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const seeAllBtn = e.target.closest(".vod-see-all");
     if (seeAllBtn) {
       const catId = seeAllBtn.dataset.catId;
-      const items = _vodCatalogCache.itemsByCategory[catId] || [];
+      // Com attachProviders para os cartões não perderem o selo de streaming
+      // ao expandir/recolher (o cache guarda os itens crus, sem o selo).
+      const items = attachProviders(_vodCatalogCache.itemsByCategory[catId] || [], _vodProviderMap);
       const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
       const rowEl = document.getElementById(`vod-carousel-${catId}`);
       if (!rowEl) return;
@@ -6289,6 +6413,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("vod-search-input");
     input.value = "";
     input.dispatchEvent(new Event("input"));
+  });
+
+  // ── MODO DE EXIBIÇÃO (selo nos cartões / agrupar por streaming) ──
+  // Só re-renderiza com o que já está em _vodCatalogCache - nenhuma
+  // requisição nova ao player_api.php na troca de modo.
+  document.getElementById("vod-display-badge-btn").addEventListener("click", () => {
+    vodDisplayMode = "badge";
+    document.getElementById("vod-display-badge-btn").setAttribute("aria-pressed", "true");
+    document.getElementById("vod-display-group-btn").setAttribute("aria-pressed", "false");
+    renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), _vodCatalogCache.vodType === "series" ? "series" : "vod");
+  });
+  document.getElementById("vod-display-group-btn").addEventListener("click", () => {
+    vodDisplayMode = "group";
+    document.getElementById("vod-display-group-btn").setAttribute("aria-pressed", "true");
+    document.getElementById("vod-display-badge-btn").setAttribute("aria-pressed", "false");
+    renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), _vodCatalogCache.vodType === "series" ? "series" : "vod");
   });
 
   document.getElementById("vod-modal-episodes").addEventListener("click", e => {
