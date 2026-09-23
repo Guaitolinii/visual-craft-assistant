@@ -825,6 +825,8 @@
       box-shadow: 0 10px 20px oklch(0.1 0.01 65 / 25%);
     }
     .vod-card p { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Episódio nos recentes: código S01E03 numa linha própria, menor. */
+    .vod-card .vod-card-episode { font-size: .72rem; font-weight: 600; color: var(--primary); margin-top: .1rem; }
     .vod-progress { height: 3px; background: oklch(1 0 0 / 20%); border-radius: 2px; margin: -.4rem 0 .4rem; overflow: hidden; }
     .vod-progress span { display: block; height: 100%; background: var(--primary); }
     .vod-empty { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
@@ -4445,13 +4447,35 @@ function selectNewestVodItems(items, limit) {
     .slice(0, limit);
 }
 
-// Título exibido para um episódio: "Nome da Série · T1E3". Antes aparecia
-// só o título cru da API (muitas vezes apenas "S01E01").
+// Código do episódio no padrão das plataformas: S01E03 (zero à esquerda).
+function formatEpisodeCode(season, episodeNum) {
+  const pad = n => String(Number(n) || 1).padStart(2, "0");
+  return episodeNum ? `S${pad(season)}E${pad(episodeNum)}` : `S${pad(season)}`;
+}
+
+// Título completo de um episódio: "Nome da Série · S01E03".
 function formatEpisodeTitle(seriesName, season, episodeNum) {
-  const s = Number(season) || 1;
-  const code = episodeNum ? `T${s}E${episodeNum}` : `T${s}`;
+  const code = formatEpisodeCode(season, episodeNum);
   const name = String(seriesName || "").trim();
   return name ? `${name} · ${code}` : code;
+}
+
+// Separa nome da série e código do episódio de um título salvo no
+// histórico - aceita o formato da v7 ("Série · S01E03"), o da v6
+// ("Série · T1E3") e o antigo (só "S01E01"). Filme: só nome.
+function splitEpisodeTitle(title) {
+  const text = String(title || "").trim();
+  const toCode = raw => {
+    const m = /^[ST](\d+)E(\d+)$/i.exec(raw.trim());
+    return m ? formatEpisodeCode(m[1], m[2]) : "";
+  };
+  const sep = text.lastIndexOf(" · ");
+  if (sep > 0) {
+    const code = toCode(text.slice(sep + 3));
+    if (code) return { name: text.slice(0, sep), code };
+  }
+  const onlyCode = toCode(text);
+  return onlyCode ? { name: "", code: onlyCode } : { name: text, code: "" };
 }
 
 // Cópia enxuta do item da API (filme ou série), guardada no histórico e
@@ -4685,6 +4709,15 @@ function openVodSection(vodType) {
   loadVodCatalog(vodType, creds);
 }
 
+// Série: nome (abreviado com "…" se não couber) e, embaixo, S01E03 sempre
+// visível. Filme: só o nome, como antes.
+function continueCardTitleHtml(item) {
+  if (item.type !== "series") return `<p>${escapeHtmlText(item.title || "")}</p>`;
+  const { name, code } = splitEpisodeTitle(item.title);
+  return `<p class="vod-card-name">${escapeHtmlText(name || code)}</p>`
+    + (name && code ? `<p class="vod-card-episode">${code}</p>` : "");
+}
+
 function continueCardHtml(item) {
   const key = `resume-${item.type}-${item.id}`;
   _vodCardsIndex[key] = item;
@@ -4695,7 +4728,7 @@ function continueCardHtml(item) {
     <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" data-lp="continue" tabindex="0">
       ${vodCardArtHtml(cover, item.title)}
       <div class="vod-progress"><span style="width:${pct}%"></span></div>
-      <p>${item.title || ""}</p>
+      ${continueCardTitleHtml(item)}
     </button>`;
 }
 
@@ -4984,7 +5017,7 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-// Episódio: título "Série · T1E3" e capa da série (o episódio quase nunca
+// Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);

@@ -13,7 +13,7 @@ const LINK_HTML_PATH = path.join(__dirname, "..", "..", "sintoniza-link.html");
 // criados dentro do vm têm Object/Array.prototype diferentes.
 const PURE_HELPER_NAMES = [
   "shouldRetryDirectPlay", "describeDirectPlayError", "isContainerUnsupportedOnIOS", "shouldApplyResume",
-  "formatEpisodeTitle", "trimVodItem",
+  "formatEpisodeTitle", "formatEpisodeCode", "splitEpisodeTitle", "trimVodItem",
   "getCatalogTabLayout", "getMobileTabForSection",
   "computePlayerMode", "isPlayerScrolledAway", "shouldDockSearch",
   "isInMyList", "toggleMyListEntry", "getMyListItems", "buildMyListEntry",
