@@ -587,6 +587,109 @@ Nenhum código de app é criado nesta task. É só um relatório, em português,
 
 ---
 
+### Task 5b: Nome da série + S01E03 nos cartões de episódio (pedido extra do Gustavo)
+
+Pedido: nos recentes e no Continue Assistindo, a série aparecia só como "S01E01". A v6 passou a gravar o título "Série · T1E3", mas numa linha só, e com nome longo o código do episódio fica cortado pelo "…". Agora o cartão mostra duas linhas: o nome da série (abreviado com "…" se não couber) e embaixo o código **S01E03**, sempre visível. Entradas antigas só com "S01E01" mostram apenas o código.
+
+**Files:**
+- Modify: `sintoniza-link.html` (`formatEpisodeTitle`, nova `formatEpisodeCode` e `splitEpisodeTitle`, `continueCardHtml`, CSS)
+- Modify: `tests/vod/loadVodHelpers.js` (`PURE_HELPER_NAMES` += `"formatEpisodeCode", "splitEpisodeTitle"`)
+- Test: `tests/vod/episode-meta.test.js`
+
+- [ ] **Step 1: Testes que falham** (em `tests/vod/episode-meta.test.js`: trocar as expectativas do teste de `formatEpisodeTitle` e acrescentar os novos):
+
+```js
+test("formatEpisodeTitle usa o nome da série + S01E03", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.formatEpisodeTitle("Escola Minerva", "1", "3"), "Escola Minerva · S01E03");
+  assert.equal(ctx.formatEpisodeTitle("", 2, 5), "S02E05");
+  assert.equal(ctx.formatEpisodeTitle("Dark", undefined, ""), "Dark · S01");
+});
+
+test("formatEpisodeCode completa com zero à esquerda", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.formatEpisodeCode(1, 3), "S01E03");
+  assert.equal(ctx.formatEpisodeCode("10", "12"), "S10E12");
+  assert.equal(ctx.formatEpisodeCode(undefined, ""), "S01");
+});
+
+test("splitEpisodeTitle separa nome e código (formatos v6, v7 e antigo)", () => {
+  const ctx = loadVodHelpers();
+  assert.deepEqual(ctx.splitEpisodeTitle("Escola Minerva · S01E03"), { name: "Escola Minerva", code: "S01E03" });
+  assert.deepEqual(ctx.splitEpisodeTitle("Escola Minerva · T1E3"), { name: "Escola Minerva", code: "S01E03" });
+  assert.deepEqual(ctx.splitEpisodeTitle("S01E01"), { name: "", code: "S01E01" });
+  assert.deepEqual(ctx.splitEpisodeTitle("One Last Shot"), { name: "One Last Shot", code: "" });
+});
+```
+
+- [ ] **Step 2:** `node --test tests/vod/episode-meta.test.js` deve dar FAIL.
+
+- [ ] **Step 3: Implementar** (substituir `formatEpisodeTitle`):
+
+```js
+// Código do episódio no padrão das plataformas: S01E03 (zero à esquerda).
+function formatEpisodeCode(season, episodeNum) {
+  const pad = n => String(Number(n) || 1).padStart(2, "0");
+  return episodeNum ? `S${pad(season)}E${pad(episodeNum)}` : `S${pad(season)}`;
+}
+
+// Título completo de um episódio: "Nome da Série · S01E03".
+function formatEpisodeTitle(seriesName, season, episodeNum) {
+  const code = formatEpisodeCode(season, episodeNum);
+  const name = String(seriesName || "").trim();
+  return name ? `${name} · ${code}` : code;
+}
+
+// Separa nome da série e código do episódio de um título salvo no
+// histórico. Aceita o formato da v7 ("Série · S01E03"), o da v6
+// ("Série · T1E3") e o antigo (só "S01E01"). Filme: só nome.
+function splitEpisodeTitle(title) {
+  const text = String(title || "").trim();
+  const toCode = raw => {
+    const m = /^[ST](\d+)E(\d+)$/i.exec(raw.trim());
+    return m ? formatEpisodeCode(m[1], m[2]) : "";
+  };
+  const sep = text.lastIndexOf(" · ");
+  if (sep > 0) {
+    const code = toCode(text.slice(sep + 3));
+    if (code) return { name: text.slice(0, sep), code };
+  }
+  const onlyCode = toCode(text);
+  return onlyCode ? { name: "", code: onlyCode } : { name: text, code: "" };
+}
+```
+
+Em `continueCardHtml`, trocar `<p>${item.title || ""}</p>` por:
+
+```js
+      ${continueCardTitleHtml(item)}
+```
+
+com a função nova, logo acima de `continueCardHtml`:
+
+```js
+// Série: nome (abreviado com "…" se não couber) e, embaixo, S01E03 sempre
+// visível. Filme: só o nome, como antes.
+function continueCardTitleHtml(item) {
+  if (item.type !== "series") return `<p>${escapeHtmlText(item.title || "")}</p>`;
+  const { name, code } = splitEpisodeTitle(item.title);
+  return `<p class="vod-card-name">${escapeHtmlText(name || code)}</p>`
+    + (name && code ? `<p class="vod-card-episode">${code}</p>` : "");
+}
+```
+
+CSS, depois de `.vod-card p { … }`:
+
+```css
+    /* Episódio nos recentes: código S01E03 numa linha própria, menor. */
+    .vod-card .vod-card-episode { font-size: .72rem; font-weight: 600; color: var(--primary); margin-top: .1rem; }
+```
+
+- [ ] **Step 4:** `npm test` deve dar PASS.
+- [ ] **Step 5: Commit** `feat(vod): series name + S01E03 on two lines in recently watched cards`.
+
+---
+
 ### Task 7: Regenerar o `www/`, verificação, push da v7 e builds
 
 **Files:**
