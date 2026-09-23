@@ -508,6 +508,8 @@
       background: none; border: none; color: var(--foreground); cursor: pointer;
     }
     #player-screen.player-hidden { display: none; }
+    /* Menu das 3 listras aberto: o mini-player (z-index 500) sai da frente. */
+    body.sidebar-open #player-screen.mini-player { display: none !important; }
     /* flow-root: a margem do player fica dentro da âncora, e a altura medida
        ao virar mini-player/tela cheia bate com o espaço que ele ocupava. */
     #player-anchor { display: flow-root; }
@@ -4877,10 +4879,14 @@ function render() {
 function openSidebar()  {
   document.getElementById("sidebar").classList.add("open");
   document.getElementById("sidebar-scrim").classList.add("open");
+  // Esconde o mini-player enquanto o menu está aberto (ele fica por cima
+  // do menu e atrapalha a navegação - ponto 2 da v7).
+  document.body.classList.add("sidebar-open");
 }
 function closeSidebar() {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebar-scrim").classList.remove("open");
+  document.body.classList.remove("sidebar-open");
 }
 
 // ═══════════════════════════════════════════════════════════════

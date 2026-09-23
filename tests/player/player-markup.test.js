@@ -31,3 +31,9 @@ test("botões de ±10s desenham o número 10 dentro do próprio ícone", () => {
     assert.match(buttonHtml(id), /<svg[\s\S]*<text[^>]*>10<\/text>[\s\S]*<\/svg>/);
   }
 });
+
+test("mini-player some enquanto o menu das 3 listras está aberto", () => {
+  assert.match(html, /body\.sidebar-open #player-screen\.mini-player\s*\{[^}]*display:\s*none/);
+  assert.match(html, /document\.body\.classList\.add\("sidebar-open"\)/);
+  assert.match(html, /document\.body\.classList\.remove\("sidebar-open"\)/);
+});
