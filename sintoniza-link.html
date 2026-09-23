@@ -872,7 +872,7 @@
     .vod-modal-meta { display: flex; gap: .75rem; margin-top: .35rem; font-size: .82rem; color: oklch(0.85 0.01 75); }
     .vod-modal-body { padding: 1.5rem; overflow-y: auto; }
     .vod-modal-body p#vod-modal-plot { color: var(--foreground); line-height: 1.55; margin-bottom: 1.25rem; }
-    #vod-modal-actions { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    #vod-modal-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
     .vod-modal-episodes { display: flex; flex-direction: column; gap: .5rem; margin-top: .75rem; }
     .ep-btn {
       display: flex; justify-content: space-between; align-items: center; gap: 1rem;
@@ -1998,7 +1998,11 @@ let _state = {
   query:     "",
   channels:  null,        // null = usa DEMO_CHANNELS
   categories:[],          // lista de categorias únicas da playlist
-  favorites: JSON.parse(localStorage.getItem("sint_fav") || "[]"),
+  // Favoritos salvos por nome antigo podem ter <>" que o parseM3U agora
+  // tira do nome do canal (sanitizeLabel) - sem isso o favorito salvo fica
+  // "preso" a um nome que o canal atual nunca mais vai ter (v8, correção
+  // da v7.1 pt.2). IDs numéricos (favorito antigo por índice) passam direto.
+  favorites: JSON.parse(localStorage.getItem("sint_fav") || "[]").map(f => typeof f === "string" ? sanitizeLabel(f) : f),
   selected:  null,
   playing:   false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
@@ -2018,7 +2022,15 @@ function isFav(idOrCh) {
   if (!idOrCh) return false;
   const id = typeof idOrCh === "object" ? idOrCh.id : idOrCh;
   const name = typeof idOrCh === "object" ? idOrCh.name : (getChannels().find(c => c.id === idOrCh)?.name || "");
-  return _state.favorites.some(f => f === id || (name && (f === name || f.toString().toLowerCase() === name.toLowerCase())));
+  // Compara pelo nome já limpo (sanitizeLabel) - um favorito salvo antes da
+  // v8 pode ter <>" que o nome atual do canal (vindo do parseM3U) não tem
+  // mais, e sem isso nunca mais bateria (v8, correção da v7.1 pt.2).
+  return _state.favorites.some(f => {
+    if (f === id) return true;
+    if (!name) return false;
+    const favName = sanitizeLabel(f.toString());
+    return favName === name || favName.toLowerCase() === name.toLowerCase();
+  });
 }
 
 const isSelected  = ch => _state.selected && _state.selected.id === ch.id;
@@ -4219,7 +4231,7 @@ function cardHTML(ch) {
         <div class="card-tags"><span>● AO VIVO</span><span>${ch.category}</span></div>
         <h3>${ch.name}</h3>
         ${isChannelHls(ch) ? `<div style="padding:0 .75rem;margin-top:.25rem"><span class="tag-hls">HLS</span></div>` : ""}
-        <p class="${hasSchedule ? "has-epg-btn" : ""}">${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
+        <p class="${hasSchedule ? "has-epg-btn" : ""}">${nowPlaying ? `Agora: ${escapeHtmlText(nowPlaying)}` : ch.category}</p>
       </button>
       ${hasSchedule ? `
       <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
@@ -4252,7 +4264,7 @@ function listHTML(ch) {
           </div>
           <h3>${ch.name}</h3>
           ${isChannelHls(ch) ? `<div style="margin-top:.2rem"><span class="tag-hls">HLS</span></div>` : ""}
-          <p>${nowPlaying ? `Agora: ${nowPlaying}` : ch.category}</p>
+          <p>${nowPlaying ? `Agora: ${escapeHtmlText(nowPlaying)}` : ch.category}</p>
         </div>
       </button>
       ${hasSchedule ? `

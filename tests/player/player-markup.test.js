@@ -59,3 +59,17 @@ test("tela e menu de Downloads existem, com baixar filme/episódio/temporada/sé
   assert.match(html, /class="ep-dl-btn"/);
   assert.match(html, /callNativePlugin\("Filesystem", "downloadFile"/);
 });
+
+test("título do EPG (nowPlaying) vai escapado pro innerHTML de cardHTML e listHTML", () => {
+  // getNowPlayingTitle devolve texto do XMLTV (decodeXmlEntities), que pode
+  // conter <img onerror=...> - cardHTML/listHTML embutem em innerHTML, então
+  // precisam escapar antes de interpolar (v8, correção da v7.1 pt.2).
+  const occurrences = html.match(/Agora: \$\{escapeHtmlText\(nowPlaying\)\}/g) || [];
+  assert.equal(occurrences.length, 2, "esperado em cardHTML e em listHTML");
+});
+
+test("#vod-modal-actions quebra linha (3 botões: Assistir, Minha Lista, Baixar)", () => {
+  const match = html.match(/#vod-modal-actions\s*\{[^}]*\}/);
+  assert.ok(match, "#vod-modal-actions não encontrado");
+  assert.match(match[0], /flex-wrap:\s*wrap/);
+});
