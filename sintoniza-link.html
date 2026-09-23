@@ -4620,7 +4620,12 @@ function updateVodDisplayToggleVisibility() {
 // responderam (sucesso ou erro) - o modo "Agrupar por streaming" só desenha
 // a partir daí (agrupar um catálogo pela metade embaralharia as fileiras a
 // cada categoria que chega e o "Demais" sairia incompleto).
-let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {}, settled: false };
+// categoryStatus[category_id] guarda como cada categoria respondeu - "ok",
+// "empty" (lista vazia) ou "error" (fetch/JSON falhou); sem chave = ainda
+// carregando. itemsByCategory guarda [] tanto para vazia quanto para erro,
+// então é só por aqui que renderVodRows sabe se mostra "Vazio" ou "Erro ao
+// carregar" ao redesenhar a fileira.
+let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {}, categoryStatus: {}, settled: false };
 
 // Debounce da busca de VOD (ver listener de #vod-search-input): guarda o
 // setTimeout pendente do achatar+dedupe+filtrar+renderizar (o trabalho caro).
@@ -5477,12 +5482,22 @@ function renderVodRows(allItems, contType) {
   // (vod-carousel-<id>) que o .then por categoria de loadVodCatalog procura
   // para preenchê-la quando chegar - por isso esta função pode rodar no meio
   // da carga (mapa de streaming chegou, troca de modo) sem travar o resto.
+  // Categoria vazia ou com erro continua com a fileira e a mesma mensagem
+  // que o .then/.catch por categoria desenhou ("Vazio" / "Erro ao carregar"),
+  // em vez de sumir da tela a cada redesenho.
   rowsEl.innerHTML = _vodCatalogCache.categories.map(cat => {
-    const catItems = _vodCatalogCache.itemsByCategory[cat.category_id];
-    if (catItems && !catItems.length) return "";
-    const carouselHtml = catItems
-      ? attachProviders(catItems.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap).map(item => vodCardHtml(item, contType)).join("")
-      : `<div class="spinner" style="margin:1rem"></div>`;
+    const status = _vodCatalogCache.categoryStatus[cat.category_id];
+    let carouselHtml;
+    if (status === "ok") {
+      const catItems = _vodCatalogCache.itemsByCategory[cat.category_id];
+      carouselHtml = attachProviders(catItems.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap).map(item => vodCardHtml(item, contType)).join("");
+    } else if (status === "empty") {
+      carouselHtml = VOD_CATEGORY_EMPTY_HTML;
+    } else if (status === "error") {
+      carouselHtml = VOD_CATEGORY_ERROR_HTML;
+    } else {
+      carouselHtml = `<div class="spinner" style="margin:1rem"></div>`; // ainda carregando
+    }
     return `
       <div class="vod-row" data-cat-id="${cat.category_id}">
         <div class="vod-row-header">
@@ -5495,6 +5510,10 @@ function renderVodRows(allItems, contType) {
 }
 
 const VOD_ROW_INITIAL_COUNT = 12; // cartões visíveis antes de "Ver todos"
+// Mensagem da fileira de categoria vazia / com erro - a mesma no
+// preenchimento por categoria de loadVodCatalog e no redesenho de renderVodRows.
+const VOD_CATEGORY_EMPTY_HTML = `<p class="vod-empty">Vazio</p>`;
+const VOD_CATEGORY_ERROR_HTML = `<p class="vod-error">Erro ao carregar</p>`;
 const VOD_NOVIDADES_COUNT = 20;
 
 async function loadVodCatalog(vodType, creds) {
@@ -5503,7 +5522,7 @@ async function loadVodCatalog(vodType, creds) {
 
   // Reseta o cache e a busca a cada entrada na view (troca de aba
   // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
-  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {}, settled: false };
+  _vodCatalogCache = { vodType, categories: [], itemsByCategory: {}, categoryStatus: {}, settled: false };
   // Mapa de streaming: uma vez por sessão (só tenta de novo se a última
   // tentativa falhou e voltou vazio), em paralelo ao catálogo, sem nunca
   // segurá-lo. Mapa vazio (JSON ainda não publicado / erro de rede) não
@@ -5583,7 +5602,8 @@ async function loadVodCatalog(vodType, creds) {
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
           if (!Array.isArray(streams) || streams.length === 0) {
             _vodCatalogCache.itemsByCategory[cat.category_id] = [];
-            if (rowEl) rowEl.innerHTML = `<p class="vod-empty">Vazio</p>`;
+            _vodCatalogCache.categoryStatus[cat.category_id] = "empty";
+            if (rowEl) rowEl.innerHTML = VOD_CATEGORY_EMPTY_HTML;
             return;
           }
           // Deduplica por (nome, ano) antes de guardar no cache e de
@@ -5592,6 +5612,7 @@ async function loadVodCatalog(vodType, creds) {
           // deste mesmo array já limpo).
           const deduped = dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
           _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
+          _vodCatalogCache.categoryStatus[cat.category_id] = "ok";
           // Preenchimento progressivo (fileira aparece assim que a própria
           // categoria chega). Sem rowEl no modo agrupar - lá quem desenha é
           // o allSettled abaixo, com o catálogo inteiro. Selo já sai aqui se
@@ -5603,8 +5624,9 @@ async function loadVodCatalog(vodType, creds) {
         .catch(() => {
           if (_vodCatalogCache.vodType !== vodType) return; // ver comentário acima
           _vodCatalogCache.itemsByCategory[cat.category_id] = [];
+          _vodCatalogCache.categoryStatus[cat.category_id] = "error";
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
-          if (rowEl) rowEl.innerHTML = `<p class="vod-error">Erro ao carregar</p>`;
+          if (rowEl) rowEl.innerHTML = VOD_CATEGORY_ERROR_HTML;
         })
     );
 
@@ -5623,8 +5645,7 @@ async function loadVodCatalog(vodType, creds) {
       // precisa: cada fileira já foi preenchida (com selo) ao chegar, e um
       // mapa que chegue depois redesenha sozinho (ver o .then de
       // fetchVodProviderMap no início desta função) - redesenhar de novo
-      // aqui só resetaria a rolagem dos carrosséis e apagaria os
-      // "Vazio"/"Erro ao carregar".
+      // aqui só resetaria a rolagem dos carrosséis.
       if (vodDisplayMode === "group") {
         renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), contType);
       }
