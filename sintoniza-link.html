@@ -2110,6 +2110,27 @@ function makeInitials(name) {
   return name.substring(0, Math.min(3, name.length)).toUpperCase();
 }
 
+// ─── Textos vindos do provedor (lista M3U / API Xtream) ───
+// Entram no HTML da tela; um nome como <img onerror=...> rodaria código
+// com acesso ao bridge nativo do app. Limpamos na entrada: rótulo sem
+// < > " e imagem só http(s) sem aspas/espaços (v8, correção da v7.1).
+function sanitizeLabel(text) {
+  return String(text == null ? "" : text).replace(/[<>"]/g, "").trim();
+}
+
+function sanitizeImageUrl(url) {
+  const u = String(url || "").trim();
+  return /^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : "";
+}
+
+function sanitizeVodItem(item) {
+  if (!item || typeof item !== "object") return item;
+  const out = { ...item };
+  ["name", "title", "plot", "category_name"].forEach(k => { if (out[k] != null) out[k] = sanitizeLabel(out[k]); });
+  ["stream_icon", "cover"].forEach(k => { if (out[k] != null) out[k] = sanitizeImageUrl(out[k]); });
+  return out;
+}
+
 function parseM3U(text) {
   const lines = text.split(/\r?\n/);
   const channels = [];
@@ -2129,9 +2150,9 @@ function parseM3U(text) {
       const displayName = commaIdx >= 0 ? line.slice(commaIdx + 1).trim() : (tvgName ? tvgName[1] : 'Canal');
 
       extinf = {
-        name:     displayName || (tvgName ? tvgName[1] : 'Canal'),
-        logo:     logoMatch  ? logoMatch[1].trim()  : null,
-        category: groupMatch ? groupMatch[1].trim() : 'Geral',
+        name:     sanitizeLabel(displayName || (tvgName ? tvgName[1] : 'Canal')) || 'Canal',
+        logo:     logoMatch  ? (sanitizeImageUrl(logoMatch[1]) || null) : null,
+        category: groupMatch ? (sanitizeLabel(groupMatch[1]) || 'Geral') : 'Geral',
       };
     } else if (!line.startsWith('#') && line.length > 0 && extinf) {
       // FILTRO: remover canais que iniciam com PCNELID, EIXO, pluto TV, praia, Rádio
@@ -2891,6 +2912,7 @@ async function reloadCurrentChannel(isSilent = false) {
 async function playStream(url) {
   if (!url) { showPlayerError("Canal sem URL de transmissão."); return; }
   const gen = ++playbackGeneration;
+  abortPendingProbe();
   userPausedVod = false;
 
   const video = document.getElementById("player-video");
@@ -3432,8 +3454,17 @@ function collectCodecSupport(video) {
 // sem CORS - traz status, tipo e tamanho sem baixar o vídeo. Timeout próprio
 // porque o fetch nativo ignora AbortController; no navegador comum o
 // AbortController cancela a requisição de verdade quando o tempo esgota.
+// Controller da sondagem HEAD em andamento: uma reprodução nova (retry,
+// outro filme) cancela a sondagem velha para ela não ocupar a vaga de tela
+// no servidor (v8, correção da v7.1).
+let _pendingProbeController = null;
+function abortPendingProbe() {
+  if (_pendingProbeController) { try { _pendingProbeController.abort(); } catch (e) {} _pendingProbeController = null; }
+}
+
 async function probeVodUrl(url) {
   const controller = new AbortController();
+  _pendingProbeController = controller;
   let timer;
   const timeout = new Promise(resolve => {
     timer = setTimeout(() => {
@@ -3444,6 +3475,7 @@ async function probeVodUrl(url) {
   const request = fetch(url, { method: "HEAD", cache: "no-store", signal: controller.signal })
     .then(res => {
       clearTimeout(timer);
+      if (_pendingProbeController === controller) _pendingProbeController = null;
       return {
         httpStatus: res.status,
         contentType: res.headers.get("content-type") || "",
@@ -3452,6 +3484,7 @@ async function probeVodUrl(url) {
     })
     .catch(e => {
       clearTimeout(timer);
+      if (_pendingProbeController === controller) _pendingProbeController = null;
       return { httpStatus: 0, probeError: (e && e.message) || String(e) };
     });
   return Promise.race([request, timeout]);
@@ -3528,6 +3561,7 @@ async function copyTextToClipboard(text) {
 function stopStream() {
   // Invalida qualquer retentativa pendente da reprodução que está parando.
   playbackGeneration++;
+  abortPendingProbe();
   userPausedVod = false;
   releaseScreenWakeLock();
   stopWatchdog();
@@ -4498,7 +4532,7 @@ function trimVodItem(item) {
 // colorido em vez de um retângulo em branco.
 function vodCardArtHtml(cover, title) {
   return cover
-    ? `<img src="${cover}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    ? `<img src="${escapeHtmlText(cover)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
     : `<div class="vod-card-placeholder logo-c3">${escapeHtmlText(makeInitials(title || "?"))}</div>`;
 }
 
@@ -4753,12 +4787,12 @@ function vodCardHtml(item, contType) {
   const id = contType === "series" ? item.series_id : item.stream_id;
   const key = `${contType}-${id}`;
   _vodCardsIndex[key] = item;
-  const poster = item.stream_icon || item.cover || "";
+  const poster = escapeHtmlText(sanitizeImageUrl(item.stream_icon || item.cover || ""));
   const title  = item.name || item.title || "Sem título";
   return `
     <button class="vod-card" data-vod-key="${key}" data-lp="vod" tabindex="0">
       <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
-      <p>${title}</p>
+      <p>${escapeHtmlText(title)}</p>
     </button>`;
 }
 
@@ -4860,7 +4894,8 @@ async function loadVodCatalog(vodType, creds) {
   try {
     const catRes = await fetch(xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories"));
     if (!catRes.ok) throw new Error(`HTTP ${catRes.status}`);
-    const cats = await catRes.json();
+    const catsRaw = await catRes.json();
+    const cats = Array.isArray(catsRaw) ? catsRaw.map(sanitizeVodItem) : catsRaw;
 
     if (!Array.isArray(cats) || cats.length === 0) {
       carouselsEl.innerHTML = contRowHtml || `<p class="vod-empty">Nenhuma categoria encontrada.</p>`;
@@ -4913,7 +4948,7 @@ async function loadVodCatalog(vodType, creds) {
           // renderizar - nenhuma duplicata de catálogo chega à tela, seja
           // na fileira da categoria, na busca ou em "Ver todos" (todos leem
           // deste mesmo array já limpo).
-          const deduped = dedupeVodItemsByTitle(streams);
+          const deduped = dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
           _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
           if (rowEl) {
             rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
@@ -4997,7 +5032,7 @@ async function openVodModal(item, vodType, creds) {
     const res = await fetch(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const episodes = Object.values(data.episodes || {}).flat();
+    const episodes = Object.values(data.episodes || {}).flat().map(sanitizeVodItem);
 
     if (!episodes.length) {
       epsContainer.innerHTML = `<p class="vod-empty">Nenhum episódio encontrado.</p>`;
@@ -5007,7 +5042,7 @@ async function openVodModal(item, vodType, creds) {
     epsContainer.innerHTML = episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
       return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
-        <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${epTitle}</span>
+        <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${escapeHtmlText(epTitle)}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>`;
     }).join("");

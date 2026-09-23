@@ -21,6 +21,7 @@ const PURE_HELPER_NAMES = [
   "resolvePlayerScrolledAway", "keepSelectionIfPresent",
   "sanitizeDiagnosticText", "describeCodecSupport", "buildPlaybackDiagnostic",
   "refineDirectPlayErrorMessage", "fileExtFromUrl", "formatBytes",
+  "sanitizeLabel", "sanitizeImageUrl", "sanitizeVodItem", "parseM3U",
 ];
 
 function toHostRealm(value) {
