@@ -23,6 +23,8 @@ const PURE_HELPER_NAMES = [
   "refineDirectPlayErrorMessage", "fileExtFromUrl", "formatBytes",
   "sanitizeLabel", "sanitizeImageUrl", "sanitizeVodItem", "parseM3U",
   "normalizeChannelRecents",
+  "safeFileBase", "buildDownloadEntry", "enqueueDownloads", "nextQueuedDownload", "updateDownload",
+  "removeDownload", "resetInterruptedDownloads", "groupDownloads", "formatDownloadProgress", "seasonsOf",
 ];
 
 function toHostRealm(value) {

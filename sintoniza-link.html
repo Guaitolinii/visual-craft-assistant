@@ -4761,6 +4761,81 @@ function updateModalMyListButton() {
   lucide.createIcons();
 }
 
+// ─── Downloads (v8) ───
+// Filmes/episódios salvos no aparelho para ver sem internet. Um download
+// por vez (o provedor conta cada download como uma tela). Entrada:
+// { key, kind: "movie"|"episode", id, title, seriesName, code, cover, url,
+//   seriesId, fileName, status: queued|downloading|done|error, bytes,
+//   total, error, ts, fileUri }
+const DOWNLOADS_KEY = "sint_downloads";
+const DOWNLOAD_DIR_NAME = "Sintoniza";
+
+function safeFileBase(text) {
+  return String(text || "video").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "video";
+}
+
+function buildDownloadEntry({ kind, id, title, seriesName, code, cover, ext, url, seriesId }, nowMs) {
+  const fileExt = /^[a-z0-9]{1,5}$/i.test(ext || "") ? String(ext).toLowerCase() : "mp4";
+  const label = kind === "episode" ? `${seriesName || "Série"} - ${code || ""}`.trim() : (title || "Filme");
+  return {
+    key: `${kind}-${id}`, kind, id: String(id), title: title || label,
+    seriesName: seriesName || "", code: code || "", cover: cover || "", url,
+    seriesId: seriesId != null ? String(seriesId) : "",
+    fileName: `${safeFileBase(label)} [${id}].${fileExt}`,
+    status: "queued", bytes: 0, total: 0, error: "", ts: nowMs, fileUri: "",
+  };
+}
+
+function enqueueDownloads(list, entries) {
+  const keys = new Set(list.map(e => e.key));
+  const added = [];
+  entries.forEach(e => { if (!keys.has(e.key)) { keys.add(e.key); added.push(e); } });
+  return list.concat(added);
+}
+
+function nextQueuedDownload(list) {
+  if (list.some(e => e.status === "downloading")) return null;
+  return list.find(e => e.status === "queued") || null;
+}
+
+function updateDownload(list, key, patch) {
+  return list.map(e => (e.key === key ? { ...e, ...patch } : e));
+}
+
+function removeDownload(list, key) {
+  return list.filter(e => e.key !== key);
+}
+
+// Ao abrir o app: o que estava "baixando" foi interrompido (app fechado),
+// então volta para a fila e recomeça.
+function resetInterruptedDownloads(list) {
+  return list.map(e => (e.status === "downloading" ? { ...e, status: "queued", bytes: 0 } : e));
+}
+
+function groupDownloads(list) {
+  const movies = list.filter(e => e.kind === "movie").sort((a, b) => b.ts - a.ts);
+  const bySeries = new Map();
+  list.filter(e => e.kind === "episode").forEach(e => {
+    const k = e.seriesId || e.seriesName;
+    if (!bySeries.has(k)) bySeries.set(k, { seriesName: e.seriesName, cover: e.cover, episodes: [] });
+    bySeries.get(k).episodes.push(e);
+  });
+  const series = Array.from(bySeries.values()).map(s => ({
+    ...s, episodes: s.episodes.slice().sort((a, b) => a.code.localeCompare(b.code)),
+  }));
+  return { movies, series };
+}
+
+function formatDownloadProgress(bytes, total) {
+  if (!total) return bytes ? formatBytes(bytes) : "";
+  const pct = Math.min(100, Math.floor((bytes / total) * 100));
+  return `${pct}% · ${formatBytes(bytes) || "0 MB"} de ${formatBytes(total)}`;
+}
+
+function seasonsOf(episodes) {
+  return Array.from(new Set(episodes.map(e => Number(e.season)).filter(n => n > 0))).sort((a, b) => a - b);
+}
+
 // Mostra/esconde as abas Filmes/Séries na sidebar — mesmo padrão de
 // degradação graciosa do EPG (some quando não configurado em vez de exibir
 // uma tela sempre quebrada).
