@@ -7,7 +7,7 @@ import { extractInlineScriptById } from "../helpers/extractInlineScript.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LINK_HTML_PATH = path.join(__dirname, "..", "..", "sintoniza-link.html");
 
-// Funções puras do script principal usadas pelos testes da v6. As que
+// Funções puras do script principal usadas pelos testes da v6 e v7. As que
 // devolvem objetos/arrays são copiadas para este realm (JSON) antes de
 // voltar para o teste - deepStrictEqual compara protótipos, e objetos
 // criados dentro do vm têm Object/Array.prototype diferentes.

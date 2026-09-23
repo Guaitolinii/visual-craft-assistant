@@ -48,4 +48,8 @@ test("fora dessa volta, a medida da rolagem é mantida", () => {
   const ctx = loadVodHelpers();
   assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "catalog", section: "catalog", scrolledAway: true }), true);
   assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "vod", section: "settings", scrolledAway: true }), true);
+  // o zeramento só acontece na transição de saída de Configurações
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "settings", section: "settings", scrolledAway: true }), true);
+  // primeira renderização (sem seção anterior)
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: null, section: "catalog", scrolledAway: false }), false);
 });
