@@ -824,6 +824,38 @@
     #vod-modal-play { align-items: center; gap: .5rem; }
     #vod-modal-mylist { display: inline-flex; align-items: center; gap: .5rem; }
 
+    /* ════════════ MENU DE AÇÕES (segurar em cima de um cartão) ════════════ */
+    .action-sheet {
+      position: fixed; inset: 0; z-index: 10001;
+      display: flex; align-items: flex-end; justify-content: center;
+      background: oklch(0.05 0.01 65 / 55%);
+      padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    }
+    .action-sheet.hidden { display: none !important; }
+    .action-sheet-card {
+      width: 100%; max-width: 26rem; background: var(--card);
+      border-radius: 1rem; padding: 1rem;
+      display: flex; flex-direction: column; gap: .5rem;
+      box-shadow: 0 20px 50px oklch(0.1 0.01 65 / 40%);
+    }
+    .action-sheet-title {
+      font-weight: 600; font-size: .95rem; padding: .25rem .25rem .6rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .action-sheet-actions { display: flex; flex-direction: column; gap: .35rem; }
+    .action-sheet-btn, .action-sheet-cancel {
+      display: flex; align-items: center; gap: .6rem; width: 100%;
+      padding: .85rem 1rem; border-radius: .6rem; border: none;
+      background: var(--secondary); color: var(--foreground);
+      font-size: .9rem; font-weight: 500; text-align: left;
+    }
+    .action-sheet-btn.danger { color: var(--error); }
+    .action-sheet-cancel { justify-content: center; background: none; border: 1px solid var(--border); margin-top: .25rem; }
+    /* Sem o menu nativo do iOS (salvar imagem/seleção de texto) ao segurar. */
+    [data-lp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    [data-lp] img { -webkit-user-drag: none; pointer-events: none; }
+
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
     .settings-content { margin: 0 auto; max-width: 48rem; padding: 2rem 2rem 0; }
@@ -1429,6 +1461,15 @@
   <div class="epg-popover-eyebrow">A seguir</div>
   <div class="epg-popover-title" id="epg-popover-title"></div>
   <div class="epg-popover-time" id="epg-popover-time"></div>
+</div>
+
+<!-- MENU DE AÇÕES: aberto ao segurar em cima de um cartão (ponto 8 da v6) -->
+<div id="action-sheet" class="action-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="action-sheet-card">
+    <p class="action-sheet-title" id="action-sheet-title"></p>
+    <div class="action-sheet-actions" id="action-sheet-actions"></div>
+    <button class="action-sheet-cancel" id="action-sheet-cancel">Cancelar</button>
+  </div>
 </div>
 
 <!-- VOD MODAL: detalhes de um filme/série + lista de episódios -->
@@ -4061,6 +4102,92 @@ function toggleMyListFor(rawItem, contType) {
   refreshPersonalLists();
 }
 
+// ─── Segurar em cima de um cartão (ponto 8 da v6) ───
+// Opções do menu por tipo de cartão.
+function getCardActions({ kind, inMyList, canUseMyList }) {
+  const myListAction = inMyList
+    ? { id: "mylist-remove", label: "Remover da Minha Lista", icon: "minus-circle", danger: false }
+    : { id: "mylist-add", label: "Adicionar à Minha Lista", icon: "plus-circle", danger: false };
+  const removeRecent = { id: "recent-remove", label: "Remover dos recentes", icon: "trash-2", danger: true };
+  if (kind === "channel-recent") return [removeRecent];
+  if (kind === "mylist") return [{ id: "mylist-remove", label: "Remover da Minha Lista", icon: "minus-circle", danger: true }];
+  if (kind === "continue") return canUseMyList ? [myListAction, removeRecent] : [removeRecent];
+  if (kind === "vod") return [myListAction];
+  return [];
+}
+
+let _actionSheetContext = null;
+
+// Descobre o que é o cartão pressionado e com quais dados agir.
+function resolveCardContext(card) {
+  const kind = card.dataset.lp;
+  if (kind === "channel-recent") {
+    const ch = getChannels().find(c => c.id === +card.dataset.channelId);
+    return ch ? { kind, title: ch.name, channelId: ch.id } : null;
+  }
+  const item = _vodCardsIndex[card.dataset.vodKey];
+  if (!item) return null;
+  if (kind === "continue") {
+    // Histórico antigo (antes da v6) não guardava a série/filme de origem:
+    // sem rawItem, o menu oferece só "Remover".
+    return { kind, title: item.title || "", recentId: item.id, rawItem: item.vodItem || null, contType: item.type === "series" ? "series" : "vod" };
+  }
+  const contType = kind === "mylist"
+    ? (card.dataset.vodType === "series" ? "series" : "vod")
+    : (_vodCatalogCache.vodType === "series" ? "series" : "vod");
+  return { kind, title: item.name || item.title || "", rawItem: item, contType };
+}
+
+function openCardActions(card) {
+  const ctx = resolveCardContext(card);
+  if (!ctx) return;
+  let inMyList = false;
+  if (ctx.rawItem) {
+    const entry = buildMyListEntry(ctx.rawItem, ctx.contType);
+    inMyList = isInMyList(loadMyList(), entry.type, entry.id);
+  }
+  const actions = getCardActions({ kind: ctx.kind, inMyList, canUseMyList: !!ctx.rawItem });
+  if (!actions.length) return;
+  _actionSheetContext = ctx;
+  document.getElementById("action-sheet-title").textContent = ctx.title;
+  document.getElementById("action-sheet-actions").innerHTML = actions.map(a => `
+    <button class="action-sheet-btn${a.danger ? " danger" : ""}" data-action="${a.id}">
+      <i data-lucide="${a.icon}" style="width:18px;height:18px"></i><span>${a.label}</span>
+    </button>`).join("");
+  const sheet = document.getElementById("action-sheet");
+  sheet.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+  lucide.createIcons();
+}
+
+function closeCardActions() {
+  const sheet = document.getElementById("action-sheet");
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+  _actionSheetContext = null;
+}
+
+function runCardAction(actionId) {
+  const ctx = _actionSheetContext;
+  closeCardActions();
+  if (!ctx) return;
+  if (actionId === "mylist-add" || actionId === "mylist-remove") {
+    if (ctx.rawItem) toggleMyListFor(ctx.rawItem, ctx.contType);
+    return;
+  }
+  if (actionId === "recent-remove") {
+    if (ctx.channelId != null) {
+      const recents = _state.recents.filter(r => r.id !== ctx.channelId);
+      localStorage.setItem("sint_recents", JSON.stringify(recents));
+      setState({ recents });
+    } else if (ctx.recentId) {
+      removeContinueWatching(ctx.recentId);
+      refreshPersonalLists();
+    }
+    showToast("Removido dos recentes");
+  }
+}
+
 // Botão "Minha Lista" do modal do filme/série: reflete se já está na lista.
 function updateModalMyListButton() {
   const btn = document.getElementById("vod-modal-mylist");
@@ -4098,7 +4225,7 @@ function continueCardHtml(item) {
   // Episódio sem capa própria usa a capa da série guardada no histórico.
   const cover = item.cover || (item.vodItem && (item.vodItem.cover || item.vodItem.stream_icon)) || "";
   return `
-    <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" tabindex="0">
+    <button class="vod-card" data-vod-key="${key}" data-vod-resume="1" data-lp="continue" tabindex="0">
       ${vodCardArtHtml(cover, item.title)}
       <div class="vod-progress"><span style="width:${pct}%"></span></div>
       <p>${item.title || ""}</p>
@@ -4123,7 +4250,7 @@ function vodCardHtml(item, contType) {
   const poster = item.stream_icon || item.cover || "";
   const title  = item.name || item.title || "Sem título";
   return `
-    <button class="vod-card" data-vod-key="${key}" tabindex="0">
+    <button class="vod-card" data-vod-key="${key}" data-lp="vod" tabindex="0">
       <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
       <p>${title}</p>
     </button>`;
@@ -4138,7 +4265,7 @@ function homeRecentCardHtml(item) {
     const ch = getChannels().find(c => c.id === item.id);
     if (!ch) return "";
     return `
-      <button class="vod-card" data-channel-id="${ch.id}" tabindex="0">
+      <button class="vod-card" data-channel-id="${ch.id}" data-lp="channel-recent" tabindex="0">
         <div class="vod-card-logo ${ch.color}">${ch.logo
           ? `<img src="${ch.logo}" alt="" loading="lazy" onerror="this.remove()">`
           : `<span>${ch.initials}</span>`}</div>
@@ -4606,6 +4733,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
       hideEpgPopover();
+      closeCardActions();
       if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
     }
   });
@@ -4871,6 +4999,81 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
   // Minha Lista do Início: mesma delegação dos cartões de Filmes/Séries.
   document.getElementById("home-mylist").addEventListener("click", onVodCardAreaClick);
+
+  // ── SEGURAR EM CIMA DE UM CARTÃO (menu de ações, ponto 8 da v6) ──
+  // Toque longo (~500ms sem arrastar) abre o menu. O clique que o navegador
+  // dispara ao soltar o dedo é engolido; senão ele cairia no fundo do menu
+  // (fechando-o) ou abriria o filme. No computador (e no toque longo do
+  // Android, que vira "contextmenu"), o botão direito faz o mesmo.
+  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+  let _lpTimer = null;
+  let _lpStart = null;
+  let _lpFired = false;
+  let _lpSuppressClickUntil = 0;
+
+  function cancelLongPress() {
+    clearTimeout(_lpTimer);
+    _lpTimer = null;
+    _lpStart = null;
+  }
+
+  document.addEventListener("touchstart", e => {
+    const card = e.target.closest("[data-lp]");
+    if (!card || e.touches.length !== 1) return;
+    _lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    _lpFired = false;
+    clearTimeout(_lpTimer);
+    _lpTimer = setTimeout(() => {
+      _lpTimer = null;
+      _lpFired = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openCardActions(card);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  document.addEventListener("touchmove", e => {
+    if (!_lpStart || !_lpTimer) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - _lpStart.x) > LONG_PRESS_MOVE_TOLERANCE_PX
+      || Math.abs(t.clientY - _lpStart.y) > LONG_PRESS_MOVE_TOLERANCE_PX) {
+      cancelLongPress(); // arrastou: é rolagem, não toque longo
+    }
+  }, { passive: true });
+
+  document.addEventListener("touchend", () => {
+    if (_lpFired) {
+      _lpSuppressClickUntil = Date.now() + 450;
+      _lpFired = false;
+    }
+    cancelLongPress();
+  }, { passive: true });
+  document.addEventListener("touchcancel", cancelLongPress, { passive: true });
+
+  document.addEventListener("click", e => {
+    if (Date.now() < _lpSuppressClickUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      _lpSuppressClickUntil = 0;
+    }
+  }, true);
+
+  document.addEventListener("contextmenu", e => {
+    const card = e.target.closest("[data-lp]");
+    if (!card) return;
+    e.preventDefault();
+    if (!document.getElementById("action-sheet").classList.contains("hidden")) return; // já aberto pelo toque longo
+    openCardActions(card);
+  });
+
+  document.getElementById("action-sheet-actions").addEventListener("click", e => {
+    const btn = e.target.closest("[data-action]");
+    if (btn) runCardAction(btn.dataset.action);
+  });
+  document.getElementById("action-sheet-cancel").addEventListener("click", closeCardActions);
+  document.getElementById("action-sheet").addEventListener("click", e => {
+    if (e.target.id === "action-sheet") closeCardActions();
+  });
 
   document.getElementById("vod-modal-mylist").addEventListener("click", () => {
     if (!_vodModalItem) return;
