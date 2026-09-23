@@ -883,6 +883,28 @@
     .ep-btn span { font-size: .85rem; font-weight: 500; }
     #vod-modal-play { align-items: center; gap: .5rem; }
     #vod-modal-mylist { display: inline-flex; align-items: center; gap: .5rem; }
+    /* O style inline controla o esconder (canDownload / série). */
+    #vod-modal-download { display: inline-flex; align-items: center; gap: .5rem; }
+
+    /* ════════════ DOWNLOADS (v8) ════════════ */
+    .dl-group { margin-bottom: 1.75rem; }
+    .dl-group h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .75rem; }
+    .dl-row {
+      display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; margin-bottom: .5rem;
+      background: var(--card); border: 1px solid var(--border); border-radius: .6rem;
+    }
+    .dl-info { flex: 1; min-width: 0; }
+    .dl-title { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dl-status { font-size: .75rem; color: var(--muted-fg); margin-top: .15rem; }
+    .dl-bar { height: 4px; background: var(--secondary); border-radius: 4px; margin-top: .4rem; overflow: hidden; }
+    .dl-bar span { display: block; height: 100%; background: var(--primary); transition: width 300ms; }
+    .dl-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+    .dl-btn { width: 2.4rem; height: 2.4rem; border-radius: 999px; border: none; background: var(--secondary); color: var(--foreground); display: flex; align-items: center; justify-content: center; }
+    .dl-btn.danger { color: var(--error); }
+    .vod-dl-bar { display: flex; flex-wrap: wrap; gap: .5rem; margin: .25rem 0 .75rem; }
+    .ep-row { display: flex; gap: .5rem; align-items: stretch; }
+    .ep-row .ep-btn { flex: 1; }
+    .ep-dl-btn { width: 3rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); color: var(--foreground); display: flex; align-items: center; justify-content: center; }
 
     /* ════════════ MENU DE AÇÕES (segurar em cima de um cartão) ════════════ */
     .action-sheet {
@@ -1100,6 +1122,8 @@
     <button class="nav-item" data-section="Todos os canais">
       <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
+    <!-- Downloads (v8): só aparece no app instalado (canDownload). -->
+    <button class="nav-item" id="nav-downloads-btn" style="display:none"><i data-lucide="download" style="width:19px;height:19px"></i><span>Downloads</span></button>
 
     <!-- Filmes/Séries: só aparece quando há credenciais Xtream salvas em
          Configurações (mesmo padrão de degradação graciosa do EPG, que some
@@ -1384,6 +1408,20 @@
     </div>
   </div><!-- /vod-view -->
 
+  <!-- ══ DOWNLOADS VIEW (v8) ══ -->
+  <div class="view hidden" id="downloads-view">
+    <div class="content-shell">
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow">DOWNLOADS</p>
+          <h1>Seus downloads</h1>
+          <p>Filmes e episódios salvos no aparelho para assistir sem internet. Baixa com o app aberto ou minimizado.</p>
+        </div>
+      </section>
+      <div id="downloads-list"></div>
+    </div>
+  </div><!-- /downloads-view -->
+
   <!-- ══ SETTINGS VIEW ══ -->
   <div class="view settings-view hidden" id="settings-view">
     <div class="settings-content">
@@ -1591,6 +1629,7 @@
         <button class="btn-ghost" id="vod-modal-mylist">
           <i data-lucide="plus" style="width:18px;height:18px"></i> <span>Minha Lista</span>
         </button>
+        <button class="btn-ghost" id="vod-modal-download" style="display:none"><i data-lucide="download" style="width:18px;height:18px"></i> <span>Baixar</span></button>
       </div>
 
       <div id="vod-modal-series-content" style="display:none">
@@ -4046,6 +4085,7 @@ function renderNav() {
   document.querySelectorAll(".mobile-tab[data-vod-view]").forEach(el => {
     el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
   });
+  document.getElementById("nav-downloads-btn").classList.toggle("active", section === "downloads");
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
   const fc = document.getElementById("fav-count");
@@ -4233,6 +4273,7 @@ function renderPageSection() {
   document.getElementById("catalog-view").classList.toggle("hidden", section !== "catalog");
   document.getElementById("settings-view").classList.toggle("hidden", section !== "settings");
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
+  document.getElementById("downloads-view").classList.toggle("hidden", section !== "downloads");
 }
 
 // Como o player aparece (pontos 6/7 da v6): grande no topo de todas as
@@ -4406,6 +4447,10 @@ let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carros
 // Filme/série aberto no modal agora: { item, contType: "vod"|"series" }.
 // Usado pelos episódios (capa/nome da série) e pelo botão Minha Lista.
 let _vodModalItem = null;
+// Downloads (v8): episódios carregados no modal e as credenciais usadas para
+// abri-lo (para montar as URLs de download de episódio/temporada/série).
+let _vodModalEpisodes = [];
+let _vodModalCreds = null;
 
 // Cache client-side de tudo que já foi buscado nesta sessão de Filmes/Séries
 // - permite a busca filtrar em todas as categorias já carregadas sem refazer
@@ -4836,6 +4881,174 @@ function seasonsOf(episodes) {
   return Array.from(new Set(episodes.map(e => Number(e.season)).filter(n => n > 0))).sort((a, b) => a - b);
 }
 
+// ─── Downloads (v8): motor nativo ───
+// Lista em memória (espelhada no localStorage) e um só listener de progresso.
+let _downloads = [];
+let _downloadListenerOn = false;
+
+function loadDownloads() {
+  try {
+    const list = JSON.parse(localStorage.getItem(DOWNLOADS_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+}
+function setDownloads(list) {
+  _downloads = list;
+  localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(list));
+  renderDownloads();
+}
+
+// Download só existe no app instalado (precisa do plugin Filesystem).
+function canDownload() {
+  return isNativeApp() && isNativePluginAvailable("Filesystem");
+}
+
+// Progresso vem do plugin a cada ~100ms; atualiza só a linha na tela (sem
+// regravar o localStorage a cada pedaço).
+function ensureDownloadProgressListener() {
+  const cap = window.Capacitor;
+  if (_downloadListenerOn || !cap || typeof cap.addListener !== "function") return;
+  _downloadListenerOn = true;
+  cap.addListener("Filesystem", "progress", data => {
+    const active = _downloads.find(e => e.status === "downloading");
+    if (!active || !data) return;
+    active.bytes = Number(data.bytes) || 0;
+    active.total = Number(data.contentLength) || active.total;
+    updateDownloadRow(active);
+  });
+}
+
+// Baixa o próximo da fila (um por vez) e, ao terminar, chama a si mesma
+// para seguir com o próximo.
+async function processDownloadQueue() {
+  if (!canDownload()) return;
+  const next = nextQueuedDownload(_downloads);
+  if (!next) return;
+  ensureDownloadProgressListener();
+  setDownloads(updateDownload(_downloads, next.key, { status: "downloading", error: "", bytes: 0 }));
+  try {
+    if (window.Capacitor.getPlatform && window.Capacitor.getPlatform() === "android") {
+      await callNativePlugin("Filesystem", "requestPermissions"); // só o Android ≤10 pede
+    }
+    const result = await callNativePlugin("Filesystem", "downloadFile", {
+      url: next.url, path: `${DOWNLOAD_DIR_NAME}/${next.fileName}`, directory: "DOCUMENTS", progress: true, recursive: true,
+    });
+    if (!result) throw new Error("recurso de download indisponível");
+    const cur = _downloads.find(e => e.key === next.key);
+    if (cur) setDownloads(updateDownload(_downloads, next.key, { status: "done", bytes: cur.total || cur.bytes, fileUri: result.path || "" }));
+  } catch (e) {
+    if (_downloads.some(x => x.key === next.key)) {
+      setDownloads(updateDownload(_downloads, next.key, { status: "error", error: sanitizeDiagnosticText((e && e.message) || String(e)) }));
+    }
+  }
+  processDownloadQueue();
+}
+
+// Põe itens na fila (sem duplicar) e avisa quantos entraram.
+function queueDownloads(entries) {
+  if (!canDownload()) { showToast("Downloads funcionam no app instalado (iPhone/Android)."); return; }
+  const before = _downloads.length;
+  setDownloads(enqueueDownloads(_downloads, entries));
+  const added = _downloads.length - before;
+  showToast(added ? `${added} ${added > 1 ? "itens adicionados" : "item adicionado"} aos downloads` : "Já está nos downloads");
+  processDownloadQueue();
+}
+
+// Caminho do arquivo baixado (guardado ao terminar, ou pedido ao plugin).
+async function downloadFileUri(entry) {
+  if (entry.fileUri) return entry.fileUri;
+  const r = await callNativePlugin("Filesystem", "getUri", { path: `${DOWNLOAD_DIR_NAME}/${entry.fileName}`, directory: "DOCUMENTS" });
+  return (r && r.uri) || "";
+}
+
+// Toca o arquivo local no mesmo player do VOD.
+async function playDownloaded(entry) {
+  const uri = await downloadFileUri(entry);
+  if (!uri) { showToast("Arquivo não encontrado."); return; }
+  const isEp = entry.kind === "episode";
+  playVodSelection(window.Capacitor.convertFileSrc(uri), {
+    id: entry.id, contType: isEp ? "series" : "vod", title: entry.title, cover: entry.cover,
+  });
+}
+
+// Abre a folha de compartilhar do sistema (Salvar em Arquivos, AirDrop etc.).
+async function shareDownloaded(entry) {
+  const uri = await downloadFileUri(entry);
+  if (!uri) { showToast("Arquivo não encontrado."); return; }
+  try { await callNativePlugin("Share", "share", { title: entry.title, files: [uri] }); } catch (e) {}
+}
+
+// Remove da lista e apaga o arquivo (se já foi gravado, mesmo que em parte).
+async function deleteDownloaded(entry) {
+  if (entry.status === "done" || entry.status === "error") {
+    try { await callNativePlugin("Filesystem", "deleteFile", { path: `${DOWNLOAD_DIR_NAME}/${entry.fileName}`, directory: "DOCUMENTS" }); } catch (e) {}
+  }
+  setDownloads(removeDownload(_downloads, entry.key));
+}
+
+// Entrada de download de um episódio, com o nome/capa da série do modal.
+function episodeDownloadEntry(ep) {
+  const series = (_vodModalItem && _vodModalItem.item) || {};
+  const seriesName = series.name || series.title || "Série";
+  return buildDownloadEntry({
+    kind: "episode", id: ep.id,
+    title: formatEpisodeTitle(seriesName, ep.season, ep.episode_num),
+    seriesName, code: formatEpisodeCode(ep.season, ep.episode_num),
+    cover: series.cover || series.stream_icon || "", ext: ep.container_extension,
+    url: buildSeriesEpisodeUrl(_vodModalCreds, ep.id, ep.container_extension), seriesId: series.series_id,
+  }, Date.now());
+}
+
+// ─── Downloads (v8): tela ───
+const DOWNLOAD_STATUS_LABEL = { queued: "Na fila", downloading: "Baixando", done: "Baixado", error: "Erro" };
+
+// Uma linha da tela: título, status/progresso e os botões de ação.
+function downloadRowHtml(entry) {
+  const label = entry.kind === "episode" ? (entry.code || entry.title) : entry.title;
+  const progress = entry.status === "downloading" || entry.status === "done" ? formatDownloadProgress(entry.bytes, entry.total) : "";
+  const pct = entry.total ? Math.min(100, Math.floor((entry.bytes / entry.total) * 100)) : 0;
+  const actions = [
+    entry.status === "done" ? `<button class="dl-btn" data-dl-action="play" aria-label="Assistir"><i data-lucide="play" style="width:18px;height:18px"></i></button>` : "",
+    entry.status === "done" ? `<button class="dl-btn" data-dl-action="share" aria-label="Salvar em Arquivos / compartilhar"><i data-lucide="share-2" style="width:18px;height:18px"></i></button>` : "",
+    entry.status === "error" ? `<button class="dl-btn" data-dl-action="retry" aria-label="Tentar de novo"><i data-lucide="rotate-cw" style="width:18px;height:18px"></i></button>` : "",
+    entry.status !== "downloading" ? `<button class="dl-btn danger" data-dl-action="remove" aria-label="Remover"><i data-lucide="trash-2" style="width:18px;height:18px"></i></button>` : "",
+  ].join("");
+  return `
+    <div class="dl-row" data-dl-key="${escapeHtmlText(entry.key)}">
+      <div class="dl-info">
+        <p class="dl-title">${escapeHtmlText(label)}</p>
+        <p class="dl-status" data-dl-status>${DOWNLOAD_STATUS_LABEL[entry.status] || ""}${progress ? " · " + escapeHtmlText(progress) : ""}${entry.status === "error" && entry.error ? " · " + escapeHtmlText(entry.error) : ""}</p>
+        ${entry.status === "downloading" ? `<div class="dl-bar"><span data-dl-bar style="width:${pct}%"></span></div>` : ""}
+      </div>
+      <div class="dl-actions">${actions}</div>
+    </div>`;
+}
+
+// Desenha a tela de Downloads (só quando ela está aberta).
+function renderDownloads() {
+  const el = document.getElementById("downloads-list");
+  if (!el || _state.section !== "downloads") return;
+  if (!_downloads.length) {
+    el.innerHTML = `<div class="empty-state"><i data-lucide="download" style="width:2rem;height:2rem"></i><h3>Nenhum download ainda</h3><p>Abra um filme ou série e toque em "Baixar".</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+  const { movies, series } = groupDownloads(_downloads);
+  el.innerHTML = (movies.length ? `<div class="dl-group"><h2>Filmes</h2>${movies.map(downloadRowHtml).join("")}</div>` : "")
+    + series.map(s => `<div class="dl-group"><h2>${escapeHtmlText(s.seriesName || "Série")}</h2>${s.episodes.map(downloadRowHtml).join("")}</div>`).join("");
+  lucide.createIcons();
+}
+
+// Atualiza só a linha que está baixando (chamado a cada evento de progresso).
+function updateDownloadRow(entry) {
+  const row = document.querySelector(`.dl-row[data-dl-key="${CSS.escape(entry.key)}"]`);
+  if (!row) return;
+  const status = row.querySelector("[data-dl-status]");
+  if (status) status.textContent = `Baixando · ${formatDownloadProgress(entry.bytes, entry.total)}`;
+  const bar = row.querySelector("[data-dl-bar]");
+  if (bar && entry.total) bar.style.width = `${Math.min(100, Math.floor((entry.bytes / entry.total) * 100))}%`;
+}
+
 // Mostra/esconde as abas Filmes/Séries na sidebar — mesmo padrão de
 // degradação graciosa do EPG (some quando não configurado em vez de exibir
 // uma tela sempre quebrada).
@@ -5105,6 +5318,8 @@ async function loadVodCatalog(vodType, creds) {
 async function openVodModal(item, vodType, creds) {
   const isSeries = vodType === "series";
   _vodModalItem = { item, contType: isSeries ? "series" : "vod" };
+  _vodModalCreds = creds; // usado para montar as URLs dos downloads (v8)
+  _vodModalEpisodes = [];
   updateModalMyListButton();
   const modal = document.getElementById("vod-modal");
   modal.classList.remove("hidden");
@@ -5119,6 +5334,7 @@ async function openVodModal(item, vodType, creds) {
 
   const playBtn = document.getElementById("vod-modal-play");
   const seriesContent = document.getElementById("vod-modal-series-content");
+  const dlBtn = document.getElementById("vod-modal-download");
 
   if (!isSeries) {
     seriesContent.style.display = "none";
@@ -5128,10 +5344,19 @@ async function openVodModal(item, vodType, creds) {
       buildVodStreamUrl(creds, item.stream_id, item.container_extension),
       { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item }
     );
+    // Downloads (v8): "Baixar" o filme, só no app instalado.
+    dlBtn.style.display = canDownload() ? "inline-flex" : "none";
+    dlBtn.onclick = () => queueDownloads([buildDownloadEntry({
+      kind: "movie", id: item.stream_id, title, cover: item.stream_icon || item.cover,
+      ext: item.container_extension, url: buildVodStreamUrl(creds, item.stream_id, item.container_extension),
+    }, Date.now())]);
     playBtn.focus();
     return;
   }
 
+  // Série: o download é por episódio/temporada/série completa (na lista).
+  dlBtn.style.display = "none";
+  dlBtn.onclick = null;
   playBtn.style.display = "none";
   seriesContent.style.display = "block";
   const epsContainer = document.getElementById("vod-modal-episodes");
@@ -5148,12 +5373,22 @@ async function openVodModal(item, vodType, creds) {
       return;
     }
 
-    epsContainer.innerHTML = episodes.map(ep => {
+    _vodModalEpisodes = episodes;
+
+    // Downloads (v8): barra com um botão por temporada e um de série completa.
+    const seasons = seasonsOf(episodes);
+    const dlBar = canDownload()
+      ? `<div class="vod-dl-bar">${seasons.map(s => `<button class="btn-ghost" data-dl-season="${s}"><i data-lucide="download" style="width:16px;height:16px"></i> Temporada ${s}</button>`).join("")}<button class="btn-ghost" data-dl-series="1"><i data-lucide="download" style="width:16px;height:16px"></i> Série completa</button></div>`
+      : "";
+
+    // Cada episódio é uma linha: botão de tocar + botão de baixar ao lado
+    // (não pode haver botão dentro de botão).
+    epsContainer.innerHTML = dlBar + episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<button class="ep-btn" data-ep-id="${ep.id}" data-ep-ext="${ep.container_extension || "mp4"}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
+      return `<div class="ep-row"><button class="ep-btn" data-ep-id="${escapeHtmlText(ep.id)}" data-ep-ext="${escapeHtmlText(ep.container_extension || "mp4")}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
         <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${escapeHtmlText(epTitle)}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
-      </button>`;
+      </button>${canDownload() ? `<button class="ep-dl-btn" data-ep-dl="${escapeHtmlText(ep.id)}" aria-label="Baixar episódio"><i data-lucide="download" style="width:18px;height:18px"></i></button>` : ""}</div>`;
     }).join("");
     lucide.createIcons();
   } catch (err) {
@@ -5266,6 +5501,7 @@ function render() {
   renderOnNow();
   renderTabLayout();
   renderHomeLists();
+  renderDownloads();
   setPlayerMode();
   scheduleDockingUpdate();
 }
@@ -5369,6 +5605,31 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelectorAll(".mobile-tab[data-section]").forEach(el => {
     el.addEventListener("click", () => { setSection(el.dataset.section); window.scrollTo({ top: 0 }); });
+  });
+
+  // ── DOWNLOADS (v8) ──
+  // Item "Downloads" do menu: só aparece no app instalado.
+  const navDownloadsBtn = document.getElementById("nav-downloads-btn");
+  navDownloadsBtn.style.display = canDownload() ? "" : "none";
+  navDownloadsBtn.addEventListener("click", () => {
+    setState({ section: "downloads" }); closeSidebar(); window.scrollTo({ top: 0 }); renderDownloads();
+  });
+  // Botões de cada linha da tela (assistir, compartilhar, tentar de novo, remover).
+  document.getElementById("downloads-list").addEventListener("click", e => {
+    const btn = e.target.closest("[data-dl-action]");
+    if (!btn) return;
+    const row = btn.closest(".dl-row");
+    const key = row && row.dataset.dlKey;
+    const entry = _downloads.find(x => x.key === key);
+    if (!entry) return;
+    const action = btn.dataset.dlAction;
+    if (action === "play") playDownloaded(entry);
+    else if (action === "share") shareDownloaded(entry);
+    else if (action === "remove") deleteDownloaded(entry);
+    else if (action === "retry") {
+      setDownloads(updateDownload(_downloads, key, { status: "queued", error: "" }));
+      processDownloadQueue();
+    }
   });
 
   // ── SIDEBAR ──
@@ -5799,6 +6060,24 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("vod-modal-episodes").addEventListener("click", e => {
+    // Downloads (v8): botão de baixar ao lado do episódio, por temporada ou
+    // a série completa. Verificados antes do .ep-btn (que toca o episódio).
+    const dlEp = e.target.closest("[data-ep-dl]");
+    if (dlEp) {
+      const ep = _vodModalEpisodes.find(x => String(x.id) === dlEp.dataset.epDl);
+      if (ep) queueDownloads([episodeDownloadEntry(ep)]);
+      return;
+    }
+    const dlSeason = e.target.closest("[data-dl-season]");
+    if (dlSeason) {
+      const s = Number(dlSeason.dataset.dlSeason);
+      queueDownloads(_vodModalEpisodes.filter(x => Number(x.season) === s).map(episodeDownloadEntry));
+      return;
+    }
+    if (e.target.closest("[data-dl-series]")) {
+      queueDownloads(_vodModalEpisodes.map(episodeDownloadEntry));
+      return;
+    }
     const btn = e.target.closest(".ep-btn");
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
@@ -6000,6 +6279,13 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("fit-select").value = e.target.value;
     document.getElementById("player-video").style.objectFit = e.target.value;
   });
+
+  // ── DOWNLOADS (v8): carrega a lista salva ──
+  // O que estava "baixando" foi interrompido (app fechado): volta para a
+  // fila e o motor recomeça (no navegador, processDownloadQueue não faz nada).
+  _downloads = resetInterruptedDownloads(loadDownloads());
+  localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(_downloads));
+  processDownloadQueue();
 });
 </script>
 </body>

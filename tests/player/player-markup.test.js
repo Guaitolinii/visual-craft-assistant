@@ -49,3 +49,13 @@ test("sem avisos técnicos de buffer/reconexão na tela", () => {
     assert.ok(!html.includes(text), `aviso técnico "${text}" ainda existe`);
   }
 });
+
+test("tela e menu de Downloads existem, com baixar filme/episódio/temporada/série", () => {
+  for (const id of ["nav-downloads-btn", "downloads-view", "downloads-list", "vod-modal-download"]) {
+    assert.ok(html.includes(`id="${id}"`), `id="${id}" não existe`);
+  }
+  assert.match(html, /data-dl-season=/);
+  assert.match(html, /data-dl-series=/);
+  assert.match(html, /class="ep-dl-btn"/);
+  assert.match(html, /callNativePlugin\("Filesystem", "downloadFile"/);
+});
