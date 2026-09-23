@@ -18,6 +18,9 @@ const PURE_HELPER_NAMES = [
   "computePlayerMode", "isPlayerScrolledAway", "shouldDockSearch",
   "isInMyList", "toggleMyListEntry", "getMyListItems", "buildMyListEntry",
   "getCardActions", "computeFsLayout",
+  "resolvePlayerScrolledAway", "keepSelectionIfPresent",
+  "sanitizeDiagnosticText", "describeCodecSupport", "buildPlaybackDiagnostic",
+  "refineDirectPlayErrorMessage", "fileExtFromUrl", "formatBytes",
 ];
 
 function toHostRealm(value) {

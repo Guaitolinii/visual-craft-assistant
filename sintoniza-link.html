@@ -3995,6 +3995,18 @@ function shouldDockSearch(slotTop, topbarBottom) {
 
 let _playerScrolledAway = false;
 
+// Seção em que o player estava no último setPlayerMode() (ver abaixo).
+let _lastPlayerSection = null;
+
+// Volta de Configurações: lá o player fica fora do lugar (mini/oculto) e a
+// âncora vazia, então a medida antiga de "rolou para longe" não vale - sem
+// zerar, o player ficava preso como mini-player para sempre (ponto 1 da v7).
+// Recomeça como visível e a rolagem mede de novo com o player no lugar.
+function resolvePlayerScrolledAway({ prevSection, section, scrolledAway }) {
+  if (prevSection === "settings" && section !== "settings") return false;
+  return scrolledAway;
+}
+
 // Enquanto o player está fora do fluxo (mini ou tela cheia), a âncora
 // guarda a altura dele para a página não "pular" para cima.
 function lockPlayerAnchor() {
@@ -4009,6 +4021,8 @@ function unlockPlayerAnchor() {
 function setPlayerMode() {
   const el = document.getElementById("player-screen");
   if (!el) return;
+  _playerScrolledAway = resolvePlayerScrolledAway({ prevSection: _lastPlayerSection, section: _state.section, scrolledAway: _playerScrolledAway });
+  _lastPlayerSection = _state.section;
   const isFullscreen = el.classList.contains("pseudo-fullscreen");
   const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
   const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
@@ -5166,9 +5180,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setState({ section: "settings" });
     closeSidebar();
     loadSettingsForm();
+    window.scrollTo({ top: 0 });
   });
   document.getElementById("settings-back").addEventListener("click", () => {
     setState({ section: "catalog" });
+    window.scrollTo({ top: 0 });
   });
 
   // ── FILMES/SÉRIES (VOD) ──

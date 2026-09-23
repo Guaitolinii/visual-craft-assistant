@@ -37,3 +37,15 @@ test("player conta como fora da tela com menos de 48px visíveis abaixo da topba
   assert.equal(ctx.isPlayerScrolledAway(200, 100), false);
   assert.equal(ctx.isPlayerScrolledAway(140, 100), true);
 });
+
+test("voltar de Configurações zera a medida antiga de 'player fora da tela'", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "settings", section: "catalog", scrolledAway: true }), false);
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "settings", section: "vod", scrolledAway: true }), false);
+});
+
+test("fora dessa volta, a medida da rolagem é mantida", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "catalog", section: "catalog", scrolledAway: true }), true);
+  assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "vod", section: "settings", scrolledAway: true }), true);
+});
