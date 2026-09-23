@@ -19,6 +19,12 @@ test("safeFileBase remove caracteres proibidos", () => {
   assert.equal(loadVodHelpers().safeFileBase('a/b\\c:d*e?f"g<h>i|j'), "a b c d e f g h i j");
 });
 
+test("safeFileBase remove # e % (quebram a URL do convertFileSrc no Android) e o id também é limpo", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.safeFileBase("a#b%c"), "a b c");
+  assert.equal(ctx.buildDownloadEntry({ kind: "movie", id: "7#x/%", title: "Filme #1 100%", ext: "mp4", url: "u" }, 1).fileName, "Filme 1 100 [7 x].mp4");
+});
+
 test("enqueueDownloads não duplica e nextQueuedDownload respeita um por vez", () => {
   const ctx = loadVodHelpers();
   let list = ctx.enqueueDownloads([], [movie(ctx), ep(ctx, 501, "S01E03")]);

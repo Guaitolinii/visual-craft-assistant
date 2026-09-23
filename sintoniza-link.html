@@ -1434,7 +1434,7 @@
         <div>
           <p class="eyebrow">DOWNLOADS</p>
           <h1>Seus downloads</h1>
-          <p>Filmes e episódios salvos no aparelho para assistir sem internet. Baixa com o app aberto ou minimizado.</p>
+          <p>Filmes e episódios salvos no aparelho para assistir sem internet. Mantenha o app aberto enquanto baixa (no iPhone, o download pausa pouco depois de minimizar; ao voltar, ele continua do início da fila).</p>
         </div>
       </section>
       <div id="downloads-list"></div>
@@ -4894,8 +4894,9 @@ function updateModalMyListButton() {
 const DOWNLOADS_KEY = "sint_downloads";
 const DOWNLOAD_DIR_NAME = "Sintoniza";
 
+// "#" e "%" também saem: quebram a URL do convertFileSrc no Android.
 function safeFileBase(text) {
-  return String(text || "video").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "video";
+  return String(text || "video").replace(/[\\/:*?"<>|#%\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "video";
 }
 
 function buildDownloadEntry({ kind, id, title, seriesName, code, cover, ext, url, seriesId }, nowMs) {
@@ -4905,7 +4906,7 @@ function buildDownloadEntry({ kind, id, title, seriesName, code, cover, ext, url
     key: `${kind}-${id}`, kind, id: String(id), title: title || label,
     seriesName: seriesName || "", code: code || "", cover: cover || "", url,
     seriesId: seriesId != null ? String(seriesId) : "",
-    fileName: `${safeFileBase(label)} [${id}].${fileExt}`,
+    fileName: `${safeFileBase(label)} [${safeFileBase(String(id))}].${fileExt}`,
     status: "queued", bytes: 0, total: 0, error: "", ts: nowMs, fileUri: "",
   };
 }
@@ -4991,7 +4992,10 @@ function ensureDownloadProgressListener() {
   cap.addListener("Filesystem", "progress", data => {
     const active = _downloads.find(e => e.status === "downloading");
     if (!active || !data) return;
-    active.bytes = Number(data.bytes) || 0;
+    // Ignora eventos de outro download (se o plugin mandar a URL).
+    if (data.url && data.url !== active.url) return;
+    // Math.max: no Android o contador é Int e fica negativo acima de 2 GB.
+    active.bytes = Math.max(0, Number(data.bytes) || 0);
     active.total = Number(data.contentLength) || active.total;
     updateDownloadRow(active);
   });
@@ -5009,12 +5013,20 @@ async function processDownloadQueue() {
     if (window.Capacitor.getPlatform && window.Capacitor.getPlatform() === "android") {
       await callNativePlugin("Filesystem", "requestPermissions"); // só o Android ≤10 pede
     }
+    // No Android o downloadFile ignora o "recursive" e só cria Documentos/;
+    // a pasta Sintoniza é criada antes (erro de "já existe" é ignorado).
+    try { await callNativePlugin("Filesystem", "mkdir", { path: DOWNLOAD_DIR_NAME, directory: "DOCUMENTS", recursive: true }); } catch (e) {}
+    // Timeouts evitam a fila travada quando o servidor para de responder.
     const result = await callNativePlugin("Filesystem", "downloadFile", {
       url: next.url, path: `${DOWNLOAD_DIR_NAME}/${next.fileName}`, directory: "DOCUMENTS", progress: true, recursive: true,
+      connectTimeout: 30000, readTimeout: 60000,
     });
     if (!result) throw new Error("recurso de download indisponível");
+    // O caminho devolvido (result.path) não é guardado: no Android é um
+    // caminho cru e no iOS a pasta do app muda após atualizações. O arquivo
+    // é sempre localizado de novo via getUri (downloadFileUri).
     const cur = _downloads.find(e => e.key === next.key);
-    if (cur) setDownloads(updateDownload(_downloads, next.key, { status: "done", bytes: cur.total || cur.bytes, fileUri: result.path || "" }));
+    if (cur) setDownloads(updateDownload(_downloads, next.key, { status: "done", bytes: cur.total || cur.bytes }));
   } catch (e) {
     if (_downloads.some(x => x.key === next.key)) {
       setDownloads(updateDownload(_downloads, next.key, { status: "error", error: sanitizeDiagnosticText((e && e.message) || String(e)) }));
@@ -5033,9 +5045,9 @@ function queueDownloads(entries) {
   processDownloadQueue();
 }
 
-// Caminho do arquivo baixado (guardado ao terminar, ou pedido ao plugin).
+// URI file:// do arquivo baixado, sempre pedida ao plugin (Android e iOS);
+// o campo fileUri da entrada não é mais usado.
 async function downloadFileUri(entry) {
-  if (entry.fileUri) return entry.fileUri;
   const r = await callNativePlugin("Filesystem", "getUri", { path: `${DOWNLOAD_DIR_NAME}/${entry.fileName}`, directory: "DOCUMENTS" });
   return (r && r.uri) || "";
 }
@@ -5464,8 +5476,11 @@ async function openVodModal(item, vodType, creds) {
     // (não pode haver botão dentro de botão).
     epsContainer.innerHTML = dlBar + episodes.map(ep => {
       const epTitle = ep.title || (ep.info && ep.info.name) || "Episódio";
-      return `<div class="ep-row"><button class="ep-btn" data-ep-id="${escapeHtmlText(ep.id)}" data-ep-ext="${escapeHtmlText(ep.container_extension || "mp4")}" data-ep-season="${ep.season || 1}" data-ep-num="${ep.episode_num || ""}">
-        <span>T${ep.season || 1} E${ep.episode_num || "?"} — ${escapeHtmlText(epTitle)}</span>
+      // Temporada/episódio vêm do provedor: número ou texto escapado.
+      const epSeason = Number(ep.season) || 1;
+      const epNum = escapeHtmlText(ep.episode_num ?? "");
+      return `<div class="ep-row"><button class="ep-btn" data-ep-id="${escapeHtmlText(ep.id)}" data-ep-ext="${escapeHtmlText(ep.container_extension || "mp4")}" data-ep-season="${epSeason}" data-ep-num="${epNum}">
+        <span>T${epSeason} E${epNum || "?"} — ${escapeHtmlText(epTitle)}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
       </button>${canDownload() ? `<button class="ep-dl-btn" data-ep-dl="${escapeHtmlText(ep.id)}" aria-label="Baixar episódio"><i data-lucide="download" style="width:18px;height:18px"></i></button>` : ""}</div>`;
     }).join("");
