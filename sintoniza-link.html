@@ -401,78 +401,46 @@
       background: oklch(0.1 0.01 65 / 65%); color: oklch(0.98 0 0);
       backdrop-filter: blur(8px);
     }
-    /* Mini-player: quando algo está tocando mas a seção ativa não é "catalog" */
+    /* Mini-player (pontos 6/7 da v6): barra compacta acima das abas, só
+       quando algo toca e o player grande saiu da tela (ou em Configurações). */
     #player-screen.mini-player {
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      z-index: 500;
-      height: 4.5rem;
-      /* .player-media's base rule (and its 768px/480px breakpoint variants)
-         sets min-height: 26rem/18rem/14rem, which acts as a floor over the
-         `height` above - without clearing it here, the mini-player rendered
-         3-6x too tall and intercepted taps across the whole covered area. */
-      min-height: 0;
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: .75rem;
-      padding: 0 1rem;
-      background: var(--card);
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 500;
+      /* min-height: 0 anula o piso de altura do card grande (.player-media
+         tem 26rem/18rem/14rem), que deixava a barra alta demais. */
+      height: 4.5rem; min-height: 0;
+      display: flex; flex-direction: row; align-items: center;
+      padding: 0 .75rem 0 1rem;
+      background: var(--card); color: var(--foreground);
       border-top: 1px solid var(--border);
       box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
-      /* Clear the full-size card's framing (margin/rounded corners) so the
-         mini-player stays a flat, edge-to-edge docked bar. */
       margin: 0; border-radius: 0;
     }
+    /* A área de mídia vira uma linha: miniatura, título e play/pause. Antes
+       elas empilhavam e a miniatura ficava cortada embaixo do título. */
     #player-screen.mini-player .player-media {
-      /* .player-media's base rule sets min-height:26rem, flex:1 and its own
-         dark background - all sized for the full-size video card. Now that
-         .player-controls/.vod-seek-row are #player-screen's siblings of
-         .player-media (not .player-media's own siblings), .player-media is
-         the flex item taking the mini bar's remaining row space - without
-         resetting these, it stretched full-width as a tall dark rectangle,
-         the same class of bug already fixed once below for .player-video-wrap. */
-      position: relative;
-      min-height: 0;
-      flex: 0 0 auto;
-      background: transparent;
-      overflow: visible;
+      position: relative; min-height: 0; flex: 1; min-width: 0;
+      display: flex; align-items: center; gap: .75rem;
+      background: transparent; overflow: visible;
     }
+    /* position: relative só aqui: confina o <video> (inset: 0) na miniatura.
+       No player grande o wrap não tem tamanho próprio e não pode ter isso. */
     #player-screen.mini-player .player-video-wrap {
-      /* Scoped to mini-player only (not a global .player-video-wrap rule):
-         this also establishes the positioning context so the absolutely
-         positioned <video> (inset:0) is confined to this 3.5rem box instead
-         of resolving against .player-media/#player-screen. Giving
-         .player-video-wrap position:relative unconditionally would collapse
-         it to 0 height in the full-size player (it has no in-flow content
-         and no explicit size outside this mini-player rule), hiding the
-         video entirely. */
-      position: relative;
-      width: 3.5rem; height: 3.5rem; flex-shrink: 0; border-radius: .5rem; overflow: hidden;
+      order: -1; position: relative;
+      width: 4.5rem; height: 2.55rem; flex-shrink: 0;
+      border-radius: .4rem; overflow: hidden; background: #000;
     }
     #player-screen.mini-player .player-controls,
     #player-screen.mini-player .vod-seek-row,
     #player-screen.mini-player .player-loader,
+    #player-screen.mini-player .player-error,
     #player-screen.mini-player .play-center {
-      /* .play-center (the 4.5rem/72px central play button) is full-size-only
-         UI, same as the three from the brief - confirmed via live rendering
-         (agent-browser screenshot): with only those three hidden, the 72px
-         play-center button exactly filled the 72px-tall mini bar, since
-         neither of its dimensions is otherwise constrained here.
-         !important on all of these: .vod-seek-row/.player-controls are
-         toggled via inline style (element.style.display) elsewhere, which
-         otherwise wins over this rule regardless of source order. */
+      /* !important: .vod-seek-row/.player-controls recebem display inline via JS */
       display: none !important;
     }
     #player-screen.mini-player .player-art {
-      display: flex !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      position: static;
-      flex: 1;
-      padding: 0;
-      background: none;
-      align-items: center;
+      display: flex !important; opacity: 1 !important; pointer-events: auto !important;
+      position: static; flex: 1; min-width: 0;
+      padding: 0; background: none; align-items: center;
     }
     #player-screen.mini-player .signal-lines,
     #player-screen.mini-player .channel-monogram,
@@ -480,18 +448,13 @@
       display: none !important;
     }
     #player-screen.mini-player .player-copy {
-      display: flex !important;
-      flex-direction: column;
-      justify-content: center;
-      overflow: hidden;
-      margin-left: .75rem;
+      display: flex !important; flex-direction: column; justify-content: center;
+      flex: 1; min-width: 0; overflow: hidden; color: var(--foreground);
     }
+    /* Texto escuro sobre a barra clara (antes: branco sobre branco). */
     #player-screen.mini-player .player-copy h2 {
-      font-size: .85rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin: 0;
+      font-size: .85rem; margin: 0; color: var(--foreground);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #player-screen.mini-player .player-copy p,
     #player-screen.mini-player .live-badge {
@@ -499,21 +462,14 @@
     }
     .mini-play-btn { display: none; }
     #player-screen.mini-player .mini-play-btn {
-      display: flex !important;
-      align-items: center;
-      justify-content: center;
-      width: 3rem;
-      height: 3rem;
-      background: none;
-      border: none;
-      color: white;
-      margin-left: auto;
-      margin-right: .5rem;
-      cursor: pointer;
+      display: flex !important; align-items: center; justify-content: center;
+      width: 2.75rem; height: 2.75rem; flex-shrink: 0;
+      background: none; border: none; color: var(--foreground); cursor: pointer;
     }
-    #player-screen.player-hidden {
-      display: none;
-    }
+    #player-screen.player-hidden { display: none; }
+    /* flow-root: a margem do player fica dentro da âncora, e a altura medida
+       ao virar mini-player/tela cheia bate com o espaço que ele ocupava. */
+    #player-anchor { display: flow-root; }
     .ctrl-select {
       border: 1px solid oklch(1 0 0 / 12%); border-radius: .35rem;
       background: oklch(0.16 0.015 65); color: oklch(0.92 0.01 75);
@@ -754,28 +710,6 @@
     .view.hidden { display: none; }
 
     /* ════════════ VOD VIEW (Filmes/Séries) ════════════ */
-    .vod-hero {
-      position: relative; width: 100%; height: 22rem; border-radius: .75rem;
-      overflow: hidden; margin: 1.5rem 0 2rem; background: oklch(0.12 0.01 65);
-      display: flex; flex-direction: column; justify-content: flex-end;
-      padding: 2rem; box-shadow: 0 20px 40px oklch(0.1 0.01 65 / 25%);
-    }
-    .vod-hero-bg {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      object-fit: cover; opacity: .55;
-      mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
-      -webkit-mask-image: linear-gradient(to top, oklch(0.05 0.01 65) 5%, transparent 75%);
-    }
-    .vod-hero-scrim {
-      position: absolute; inset: 0;
-      background: linear-gradient(to top, oklch(0.05 0.01 65) 15%, transparent 65%);
-    }
-    .vod-hero-copy { position: relative; z-index: 2; max-width: 36rem; color: oklch(0.98 0 0); }
-    .vod-hero-copy h2 { font-size: 2.1rem; font-weight: 700; text-shadow: 0 2px 10px oklch(0 0 0 / 50%); margin-bottom: .6rem; }
-    .vod-hero-copy p {
-      font-size: 1rem; color: oklch(0.85 0.01 75); line-height: 1.5; margin-bottom: 1.25rem;
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    }
     .vod-search-box { max-width: 28rem; margin: 1.25rem 0 0; }
     .vod-row { margin-bottom: 2rem; }
     .vod-row h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
@@ -883,7 +817,7 @@
     }
     .ep-btn:hover { border-color: var(--primary); }
     .ep-btn span { font-size: .85rem; font-weight: 500; }
-    #vod-hero-play, #vod-modal-play { align-items: center; gap: .5rem; }
+    #vod-modal-play { align-items: center; gap: .5rem; }
 
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
@@ -1027,8 +961,6 @@
       .mobile-tabs .active { color: var(--primary); }
       .settings-content { padding: 1.5rem 1rem 0; }
       .ctrl-select { max-width: 5rem; font-size: .65rem; }
-      .vod-hero { height: 16rem; padding: 1.25rem; }
-      .vod-hero-copy h2 { font-size: 1.5rem; }
       .vod-card { min-width: 7.5rem; width: 7.5rem; }
       .home-recents-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
       .vod-modal-hero { height: 11rem; }
@@ -1117,6 +1049,9 @@
   </header>
 
   <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
+  <!-- #player-anchor: guarda o lugar do player grande no topo da página
+       enquanto ele vira mini-player ou tela cheia (sem a página "pular"). -->
+  <div id="player-anchor">
   <div id="player-screen">
     <!-- .player-media: video area only (art/video/loader/error/debug/play
          button) - kept separate from #player-screen so the absolutely
@@ -1201,6 +1136,7 @@
       </button>
     </div>
   </div><!-- /player-screen -->
+  </div><!-- /player-anchor -->
 
   <!-- ══ CATALOG VIEW ══ -->
   <div class="view" id="catalog-view">
@@ -1312,17 +1248,6 @@
         </label>
       </div>
 
-      <section class="vod-hero" id="vod-hero" style="display:none">
-        <img class="vod-hero-bg" id="vod-hero-bg" src="" alt="" />
-        <div class="vod-hero-scrim"></div>
-        <div class="vod-hero-copy">
-          <h2 id="vod-hero-title"></h2>
-          <p id="vod-hero-desc"></p>
-          <button class="btn-primary" id="vod-hero-play" style="display:none">
-            <i data-lucide="play" style="width:18px;height:18px"></i> Assistir
-          </button>
-        </div>
-      </section>
 
       <div class="vod-carousel-grid" id="vod-search-results" style="display:none"></div>
       <div id="vod-carousels"></div>
@@ -3759,29 +3684,68 @@ function renderPageSection() {
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
 }
 
-// #player-screen agora é um irmão persistente de #catalog-view/#vod-view/
-// #settings-view (nunca mais fica dentro de uma view que pode ser
-// escondida) - sua visibilidade não depende mais da seção ativa, e sim de
-// se algo está tocando. Na seção "catalog" ele sempre aparece em tamanho
-// cheio (igual sempre foi, canal pausado/parado incluso - não escondemos
-// o player ao pausar um canal, só quando saímos da tela de Canais); fora
-// dela, vira uma barra compacta (mini-player) só enquanto algo está
-// tocando, e some de vez quando não há nada tocando.
+// Como o player aparece (pontos 6/7 da v6): grande no topo de todas as
+// abas (#player-screen é irmão persistente das views e fica acima delas).
+// Vira mini-player só quando algo está tocando e o player grande saiu da
+// tela na rolagem. Em Configurações nunca fica grande.
+function computePlayerMode({ section, hasActiveMedia, playerScrolledAway, isFullscreen }) {
+  if (isFullscreen) return "full";
+  if (section === "settings") return hasActiveMedia ? "mini" : "hidden";
+  return hasActiveMedia && playerScrolledAway ? "mini" : "full";
+}
+
+// O player grande conta como "fora da tela" quando sobram menos de 48px
+// dele visíveis abaixo da topbar fixa.
+const PLAYER_VISIBLE_MIN_PX = 48;
+function isPlayerScrolledAway(anchorBottom, topbarBottom) {
+  return anchorBottom - topbarBottom < PLAYER_VISIBLE_MIN_PX;
+}
+
+let _playerScrolledAway = false;
+
+// Enquanto o player está fora do fluxo (mini ou tela cheia), a âncora
+// guarda a altura dele para a página não "pular" para cima.
+function lockPlayerAnchor() {
+  const anchor = document.getElementById("player-anchor");
+  if (anchor && !anchor.style.height) anchor.style.height = `${anchor.offsetHeight}px`;
+}
+function unlockPlayerAnchor() {
+  const anchor = document.getElementById("player-anchor");
+  if (anchor) anchor.style.height = "";
+}
+
 function setPlayerMode() {
   const el = document.getElementById("player-screen");
   if (!el) return;
-  if (_state.section === "catalog") {
-    el.classList.remove("player-hidden", "mini-player");
-    return;
-  }
-  const isPlaying = !!(_state.selected && (_state.playing || _state.selected.isVod));
-  if (!isPlaying) {
-    el.classList.remove("mini-player");
-    el.classList.add("player-hidden");
-    return;
-  }
-  el.classList.remove("player-hidden");
-  el.classList.add("mini-player");
+  const isFullscreen = el.classList.contains("pseudo-fullscreen");
+  const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
+  const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
+  const mode = computePlayerMode({ section: _state.section, hasActiveMedia, playerScrolledAway: _playerScrolledAway, isFullscreen });
+  const keepSlot = _state.section !== "settings" && (mode === "mini" || isFullscreen);
+  if (keepSlot && !wasOutOfFlow) lockPlayerAnchor(); // mede antes de sair do fluxo
+  if (!keepSlot) unlockPlayerAnchor();
+  el.classList.toggle("mini-player", mode === "mini");
+  el.classList.toggle("player-hidden", mode === "hidden");
+}
+
+// Rolagem: decide o mini-player (e o encaixe da busca na topbar). Roda no
+// máximo uma vez por quadro.
+let _dockingRaf = 0;
+function scheduleDockingUpdate() {
+  if (_dockingRaf) return;
+  _dockingRaf = requestAnimationFrame(() => {
+    _dockingRaf = 0;
+    updateDocking();
+  });
+}
+
+function updateDocking() {
+  const topbar = document.querySelector(".topbar");
+  const anchor = document.getElementById("player-anchor");
+  if (!topbar || !anchor) return;
+  const topbarBottom = topbar.getBoundingClientRect().bottom;
+  _playerScrolledAway = isPlayerScrolledAway(anchor.getBoundingClientRect().bottom, topbarBottom);
+  setPlayerMode();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3872,14 +3836,9 @@ let _vodModalItem = null;
 // reentrada na view).
 let _vodCatalogCache = { vodType: null, categories: [], itemsByCategory: {} };
 
-// Estado do debounce da busca de VOD (ver listener de #vod-search-input) -
-// _vodSearchDebounceTimer guarda o setTimeout pendente do achatar+dedupe+
-// filtrar+renderizar (o trabalho caro), _vodSearchActive/
-// _vodHeroVisibleBeforeSearch controlam esconder/restaurar o #vod-hero
-// exatamente uma vez por busca (não a cada tecla).
+// Debounce da busca de VOD (ver listener de #vod-search-input): guarda o
+// setTimeout pendente do achatar+dedupe+filtrar+renderizar (o trabalho caro).
 let _vodSearchDebounceTimer = null;
-let _vodSearchActive = false;
-let _vodHeroVisibleBeforeSearch = false;
 
 // Ordena por mais recente e filtra por tipo — pura, sem DOM/rede, por isso
 // testável isoladamente (tests/vod/continue-watching.test.js).
@@ -4112,28 +4071,6 @@ function renderTabLayout() {
   document.getElementById("home-lists").style.display = layout.showHomeLists ? "" : "none";
 }
 
-function setVodHero(item, vodType, creds) {
-  const isSeries = vodType === "series";
-  const title = item.name || item.title || "Título";
-  document.getElementById("vod-hero-bg").src = item.stream_icon || item.cover || "";
-  document.getElementById("vod-hero-title").textContent = title;
-  document.getElementById("vod-hero-desc").textContent =
-    item.plot || "Descubra os melhores filmes e séries direto do seu provedor.";
-  document.getElementById("vod-hero").style.display = "flex";
-
-  const playBtn = document.getElementById("vod-hero-play");
-  playBtn.style.display = "inline-flex";
-  if (isSeries) {
-    // Série: o herói abre o modal (é preciso escolher um episódio primeiro).
-    playBtn.onclick = () => openVodModal(item, vodType, creds);
-  } else {
-    playBtn.onclick = () => playVodSelection(
-      buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon }
-    );
-  }
-}
-
 // Nomes de categoria vêm da API com um prefixo redundante antes do "|" -
 // séries como "Series | Netflix", "Series | Disney Plus", filmes como
 // "Filmes | Ação", "Filmes | Comédia" etc. A view inteira já deixa claro se é
@@ -4158,17 +4095,11 @@ async function loadVodCatalog(vodType, creds) {
   searchInput.value = "";
   document.getElementById("vod-search-clear").style.display = "none";
   document.getElementById("vod-search-results").style.display = "none";
-  // Reseta o estado da busca (debounce pendente + flag de "estava em busca")
-  // junto com o resto do cache acima - sem isso, trocar de aba (Filmes ->
-  // Séries) no meio de uma busca deixaria o #vod-hero da nova aba escondido
-  // incorretamente na próxima tecla digitada (a captura de "estava visível
-  // antes" só acontece uma vez por busca, ver listener de vod-search-input).
+  // Cancela uma busca pendente da aba anterior junto com o cache.
   clearTimeout(_vodSearchDebounceTimer);
-  _vodSearchActive = false;
 
   document.getElementById("vod-eyebrow").textContent = isSeries ? "SÉRIES" : "FILMES";
   document.getElementById("vod-h1").textContent = isSeries ? "Qual série vamos maratonar?" : "O que vamos assistir?";
-  document.getElementById("vod-hero").style.display = "none";
 
   const carouselsEl = document.getElementById("vod-carousels");
   carouselsEl.style.display = "block";
@@ -4201,9 +4132,6 @@ async function loadVodCatalog(vodType, creds) {
         </div>
         <div class="vod-carousel" id="vod-carousel-${cat.category_id}"><div class="spinner" style="margin:1rem"></div></div>
       </div>`).join("");
-
-    const firstCatId = topCats[0].category_id;
-    let heroSet = false;
 
     // Cada fetch por categoria é guardado aqui para sabermos, via
     // Promise.allSettled, quando todas já resolveram (sucesso ou erro) e
@@ -4238,10 +4166,6 @@ async function loadVodCatalog(vodType, creds) {
           _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
           if (rowEl) {
             rowEl.innerHTML = deduped.slice(0, VOD_ROW_INITIAL_COUNT).map(item => vodCardHtml(item, contType)).join("");
-          }
-          if (!heroSet && cat.category_id === firstCatId) {
-            heroSet = true;
-            setVodHero(deduped[0], vodType, creds);
           }
         })
         .catch(() => {
@@ -4446,6 +4370,7 @@ function render() {
   renderTabLayout();
   renderHomeLists();
   setPlayerMode();
+  scheduleDockingUpdate();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4709,13 +4634,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Tocar no mini-player expande de volta para a tela cheia (seção catalog)
-  document.getElementById("player-screen").addEventListener("click", (e) => {
+  // Tocar no mini-player volta ao player grande: nas abas principais ele
+  // fica no topo da própria página (basta rolar). Em Configurações, que não
+  // tem player grande, volta para o catálogo.
+  document.getElementById("player-screen").addEventListener("click", () => {
     const el = document.getElementById("player-screen");
-    if (el.classList.contains("mini-player")) {
-      setState({ section: "catalog" });
-    }
+    if (!el.classList.contains("mini-player")) return;
+    if (_state.section === "settings") setState({ section: "catalog" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
+
+  // Rolagem/giro: reavalia mini-player e encaixe da busca na topbar.
+  window.addEventListener("scroll", scheduleDockingUpdate, { passive: true });
+  window.addEventListener("resize", scheduleDockingUpdate);
 
   // #fs-exit-btn só fica visível enquanto .pseudo-fullscreen está ativo
   // (regra CSS de .fs-overlay-controls), então passar por toggleFullscreen()
@@ -4841,27 +4772,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const query = e.target.value;
     document.getElementById("vod-search-clear").style.display = query ? "flex" : "none";
     const resultsEl = document.getElementById("vod-search-results");
-    const heroEl = document.getElementById("vod-hero");
     clearTimeout(_vodSearchDebounceTimer);
 
     if (!query.trim()) {
-      _vodSearchActive = false;
       resultsEl.style.display = "none";
       document.getElementById("vod-carousels").style.display = "block";
-      if (_vodHeroVisibleBeforeSearch) heroEl.style.display = "flex";
       return;
     }
-
-    // #vod-hero não tem nada a ver com resultado de busca (é o destaque da
-    // categoria) - esconde assim que a busca fica ativa, e só uma vez por
-    // busca guarda se ele estava visível antes, pra poder restaurar certo
-    // ao limpar (sem isso, cada tecla re-capturaria "escondido" - o próprio
-    // estado que a tecla anterior deixou - e a busca nunca o traria de volta).
-    if (!_vodSearchActive) {
-      _vodSearchActive = true;
-      _vodHeroVisibleBeforeSearch = heroEl.style.display !== "none";
-    }
-    heroEl.style.display = "none";
 
     _vodSearchDebounceTimer = setTimeout(() => {
       // Cada array por categoria já vem deduplicado, mas o mesmo filme pode
