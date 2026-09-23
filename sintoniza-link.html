@@ -822,6 +822,7 @@
     .ep-btn:hover { border-color: var(--primary); }
     .ep-btn span { font-size: .85rem; font-weight: 500; }
     #vod-modal-play { align-items: center; gap: .5rem; }
+    #vod-modal-mylist { display: inline-flex; align-items: center; gap: .5rem; }
 
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
@@ -1452,6 +1453,9 @@
       <div id="vod-modal-actions">
         <button class="btn-primary" id="vod-modal-play">
           <i data-lucide="play" style="width:18px;height:18px"></i> <span>Assistir</span>
+        </button>
+        <button class="btn-ghost" id="vod-modal-mylist">
+          <i data-lucide="plus" style="width:18px;height:18px"></i> <span>Minha Lista</span>
         </button>
       </div>
 
@@ -3974,6 +3978,99 @@ function removeContinueWatching(id) {
   }
 }
 
+// ─── Minha Lista (ponto 8 da v6) ───
+// Filmes e séries marcados pelo usuário. Viram a primeira faixa do Início
+// (tudo) e de Filmes/Séries (só o tipo da aba) e somem quando a lista está
+// vazia. Entrada: { type: "vod"|"series", id, title, cover, item, ts }.
+const MYLIST_KEY = "sint_mylist";
+
+function loadMyList() {
+  try { return JSON.parse(localStorage.getItem(MYLIST_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveMyList(list) {
+  localStorage.setItem(MYLIST_KEY, JSON.stringify(list));
+}
+
+function isInMyList(list, type, id) {
+  return list.some(e => e.type === type && String(e.id) === String(id));
+}
+
+function toggleMyListEntry(list, entry, nowMs) {
+  if (isInMyList(list, entry.type, entry.id)) {
+    return list.filter(e => !(e.type === entry.type && String(e.id) === String(entry.id)));
+  }
+  return [{ ...entry, ts: nowMs }, ...list];
+}
+
+function getMyListItems(list, type) {
+  return list.filter(e => !type || e.type === type).sort((a, b) => b.ts - a.ts);
+}
+
+function buildMyListEntry(rawItem, contType) {
+  const item = trimVodItem(rawItem);
+  return {
+    type: contType,
+    id: contType === "series" ? item.series_id : item.stream_id,
+    title: item.name || item.title || "Sem título",
+    cover: item.stream_icon || item.cover || "",
+    item,
+  };
+}
+
+function myListCardHtml(entry) {
+  const key = `mylist-${entry.type}-${entry.id}`;
+  _vodCardsIndex[key] = entry.item;
+  return `
+    <button class="vod-card" data-vod-key="${key}" data-vod-type="${entry.type === "series" ? "series" : "movies"}" data-lp="mylist" tabindex="0">
+      ${vodCardArtHtml(entry.cover, entry.title)}
+      <p>${escapeHtmlText(entry.title)}</p>
+    </button>`;
+}
+
+// contType null = todos os tipos (Início).
+function myListRowHtml(contType) {
+  const items = getMyListItems(loadMyList(), contType);
+  if (!items.length) return "";
+  return `
+    <div class="vod-row" data-cat-id="mylist">
+      <h2>Minha Lista</h2>
+      <div class="vod-carousel">${items.map(myListCardHtml).join("")}</div>
+    </div>`;
+}
+
+// Recria só as faixas pessoais (Minha Lista / Continue Assistindo) da aba
+// Filmes/Séries aberta, sem refazer as requisições do catálogo.
+function refreshVodPersonalRows() {
+  const carouselsEl = document.getElementById("vod-carousels");
+  if (!carouselsEl || _state.section !== "vod") return;
+  const contType = _state.vodType === "series" ? "series" : "vod";
+  carouselsEl.querySelectorAll('.vod-row[data-cat-id="mylist"], .vod-row[data-cat-id="continue"]').forEach(row => row.remove());
+  carouselsEl.insertAdjacentHTML("afterbegin", myListRowHtml(contType) + continueWatchingRowHtml(contType));
+}
+
+function refreshPersonalLists() {
+  renderHomeLists();
+  refreshVodPersonalRows();
+}
+
+function toggleMyListFor(rawItem, contType) {
+  const entry = buildMyListEntry(rawItem, contType);
+  const wasIn = isInMyList(loadMyList(), entry.type, entry.id);
+  saveMyList(toggleMyListEntry(loadMyList(), entry, Date.now()));
+  showToast(wasIn ? "Removido da Minha Lista" : "Adicionado à Minha Lista");
+  refreshPersonalLists();
+}
+
+// Botão "Minha Lista" do modal do filme/série: reflete se já está na lista.
+function updateModalMyListButton() {
+  const btn = document.getElementById("vod-modal-mylist");
+  if (!btn || !_vodModalItem) return;
+  const entry = buildMyListEntry(_vodModalItem.item, _vodModalItem.contType);
+  const inList = isInMyList(loadMyList(), entry.type, entry.id);
+  btn.innerHTML = `<i data-lucide="${inList ? "check" : "plus"}" style="width:18px;height:18px"></i> <span>${inList ? "Na Minha Lista" : "Minha Lista"}</span>`;
+  lucide.createIcons();
+}
+
 // Mostra/esconde as abas Filmes/Séries na sidebar — mesmo padrão de
 // degradação graciosa do EPG (some quando não configurado em vez de exibir
 // uma tela sempre quebrada).
@@ -4070,10 +4167,13 @@ function renderHomeRecents() {
   return true;
 }
 
-// Listas pessoais do Início. Mostra o estado vazio quando não há nada.
+// Listas pessoais do Início: Minha Lista (se tiver itens) em cima dos
+// recém-assistidos. Mostra o estado vazio quando não há nada.
 function renderHomeLists() {
+  const myListHtml = myListRowHtml(null);
+  document.getElementById("home-mylist").innerHTML = myListHtml;
   const hasRecents = renderHomeRecents();
-  document.getElementById("home-empty").style.display = hasRecents ? "none" : "";
+  document.getElementById("home-empty").style.display = (myListHtml || hasRecents) ? "none" : "";
 }
 
 // Aplica o layout da aba ativa (ponto 9 da v6) na view de catálogo.
@@ -4120,7 +4220,8 @@ async function loadVodCatalog(vodType, creds) {
 
   const carouselsEl = document.getElementById("vod-carousels");
   carouselsEl.style.display = "block";
-  const contRowHtml = continueWatchingRowHtml(contType);
+  // Faixas pessoais sempre por cima: Minha Lista e depois Continue Assistindo.
+  const contRowHtml = myListRowHtml(contType) + continueWatchingRowHtml(contType);
   carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
 
   try {
@@ -4211,7 +4312,8 @@ async function loadVodCatalog(vodType, creds) {
           <div class="vod-carousel">${newest.map(item => vodCardHtml(item, contType)).join("")}</div>
         </div>`;
       const carouselsEl = document.getElementById("vod-carousels");
-      const continueRow = carouselsEl.querySelector('.vod-row[data-cat-id="continue"]');
+      const continueRow = carouselsEl.querySelector('.vod-row[data-cat-id="continue"]')
+        || carouselsEl.querySelector('.vod-row[data-cat-id="mylist"]');
       if (continueRow) {
         continueRow.insertAdjacentHTML("afterend", newestHtml);
       } else {
@@ -4226,6 +4328,7 @@ async function loadVodCatalog(vodType, creds) {
 async function openVodModal(item, vodType, creds) {
   const isSeries = vodType === "series";
   _vodModalItem = { item, contType: isSeries ? "series" : "vod" };
+  updateModalMyListButton();
   const modal = document.getElementById("vod-modal");
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -4731,7 +4834,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
     if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
-    openVodModal(item, _state.vodType, creds);
+    // Cartão da Minha Lista diz o próprio tipo (no Início, _state.vodType
+    // pode ser de outra aba).
+    openVodModal(item, card.dataset.vodType || _state.vodType, creds);
   }
 
   document.getElementById("vod-carousels").addEventListener("click", e => {
@@ -4764,6 +4869,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
+  // Minha Lista do Início: mesma delegação dos cartões de Filmes/Séries.
+  document.getElementById("home-mylist").addEventListener("click", onVodCardAreaClick);
+
+  document.getElementById("vod-modal-mylist").addEventListener("click", () => {
+    if (!_vodModalItem) return;
+    toggleMyListFor(_vodModalItem.item, _vodModalItem.contType);
+    updateModalMyListButton();
+  });
 
   // "Acessados Recentemente" (Início): mesma delegação, mas também precisa
   // tratar cartões de canal (data-channel-id), que os outros dois
