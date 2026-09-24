@@ -40,6 +40,10 @@ function main() {
   writeFileSync(path.join(WWW, "index.html"), injectDefaults(linkHtml, process.env));
   console.log("[prepare-mobile] sintoniza-link.html -> www/index.html");
 
+  const tvHtml = readFileSync(path.join(ROOT, "sintoniza-tv", "sintoniza-tv.html"), "utf8");
+  writeFileSync(path.join(WWW, "sintoniza-tv.html"), injectDefaults(tvHtml, process.env));
+  console.log("[prepare-mobile] sintoniza-tv/sintoniza-tv.html -> www/sintoniza-tv.html");
+
   const favicon = path.join(ROOT, "public", "favicon.ico");
   if (existsSync(favicon)) {
     copyFileSync(favicon, path.join(WWW, "favicon.ico"));

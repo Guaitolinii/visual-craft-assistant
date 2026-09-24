@@ -481,7 +481,7 @@
   <div id="tv-detail-scene">
     <div id="tv-detail-backdrop"></div>
     <div class="tv-detail-content">
-      <h1 id="tv-detail-title"></h1>
+      <h2 id="tv-detail-title"></h2>
       <div class="tv-detail-meta">
         <span id="tv-detail-year"></span>
         <span id="tv-detail-rating"></span>
@@ -793,15 +793,6 @@ function toggleFav(ch) {
   localStorage.setItem('sint_fav', JSON.stringify(favs));
   showTVToast(already ? 'Removido dos favoritos' : 'Adicionado aos favoritos!');
   updateFavBtn();
-}
-
-function visibleChannels() {
-  const { activeTab, favorites, recents } = _state;
-  const all = getChannels();
-  if (activeTab === 'Todos')      return all;
-  if (activeTab === 'Favoritos')  return all.filter(ch => isFav(ch));
-  if (activeTab === 'Recentes')   return all.filter(ch => recents.includes(ch.id));
-  return all.filter(ch => ch.category === activeTab);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1140,6 +1131,11 @@ function escapeHtmlText(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+function sanitizeImageUrl(url) {
+  const u = String(url || "").trim();
+  return /^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : "";
+}
+
 // Inicia reprodução unificada para filmes e episódios (semelhante ao selectChannel)
 function playTvVodSelection(url, meta) {
   if (!url) { showTVToast("Não foi possível obter o link de reprodução."); return; }
@@ -1169,7 +1165,7 @@ function openTvDetailScene(item, tileEl) {
   const cover = item.stream_icon || item.cover || '';
   const backdrop = document.getElementById('tv-detail-backdrop');
   if (cover) {
-    backdrop.style.backgroundImage = `url("${escapeHtmlText(cover)}")`;
+    backdrop.style.backgroundImage = `url("${sanitizeImageUrl(cover)}")`;
     backdrop.style.display = 'block';
   } else {
     backdrop.style.display = 'none';
@@ -1839,80 +1835,11 @@ function selectChannel(ch) {
   if (ch.url) playStream(ch.url);
   else { showArt(ch); hideLoader(); }
   updateFavBtn();
-  renderChannels(); // atualiza destaque "is-playing"
 }
 
 // ──────────────────────────────────────────────────────────────
 // RENDER
 // ──────────────────────────────────────────────────────────────
-function buildTabs() {
-  const cats = _state.categories;
-  const tabs = ['Todos', 'Favoritos', 'Recentes', ...cats];
-  return tabs;
-}
-
-function renderTabs() {
-  const tabsEl = document.getElementById('tv-tabs');
-  if (!tabsEl) return;
-  const tabs = buildTabs();
-  tabsEl.innerHTML = tabs.map(t => `
-    <button class="tv-tab${t === _state.activeTab ? ' active' : ''}"
-            data-tab="${t}" data-focusable>
-      ${t}
-    </button>`).join('');
-
-  tabsEl.querySelectorAll('.tv-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      setState({ activeTab: btn.dataset.tab });
-      renderTabs();
-      renderChannels();
-      // Mover foco para o primeiro card
-      setTimeout(() => {
-        const first = document.querySelector('#tv-channel-row .tv-channel-card');
-        if (first) first.focus();
-      }, 50);
-    });
-  });
-}
-
-function renderChannels() {
-  const rowEl = document.getElementById('tv-channel-row');
-  if (!rowEl) return;
-  const channels = visibleChannels();
-  if (!channels.length) {
-    rowEl.innerHTML = '<div style="color:#5c5c78;font-size:20px;padding:32px 0">Nenhum canal encontrado</div>';
-    return;
-  }
-
-  rowEl.innerHTML = channels.map((ch, idx) => {
-    const playing = !!(_state.selected && _state.selected.id === ch.id);
-    const logoHtml = ch.logo
-      ? `<img class="tv-channel-logo" src="${ch.logo}" alt="${ch.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-        + `<div class="tv-channel-logo-fallback" style="display:none">${ch.initials}</div>`
-      : `<div class="tv-channel-logo-fallback">${ch.initials}</div>`;
-
-    return `
-      <div class="tv-channel-card${playing ? ' is-playing' : ''}"
-           data-focusable
-           data-id="${ch.id}"
-           style="animation-delay:${Math.min(idx * 0.03, 0.5)}s"
-           tabindex="0">
-        ${ch.live ? '<div class="tv-card-live">LIVE</div>' : ''}
-        ${logoHtml}
-        <div class="tv-channel-label" title="${ch.name}">${ch.name}</div>
-        ${isChannelHls(ch) ? '<div style="margin-top:2px"><span class="tag-hls">HLS</span></div>' : ''}
-      </div>`;
-  }).join('');
-
-  rowEl.querySelectorAll('.tv-channel-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const id  = parseInt(card.dataset.id);
-      const ch  = getChannels().find(c => c.id === id);
-      if (ch) selectChannel(ch);
-    });
-  });
-}
-
 // ──────────────────────────────────────────────────────────────
 // HOME: fileiras estilo Netflix
 // Task 4 — tiles de canais; Task 5 — tiles de VOD com selos de streaming
@@ -1977,6 +1904,15 @@ function renderTvRows() {
     html += `<section class="tv-row" id="row-recents">
       <h2 class="tv-row-label">Continuar assistindo</h2>
       <div class="tv-row-track" role="list">${recents.map(buildTileHtml).join('')}</div>
+    </section>`;
+  }
+
+  // ── Fileira: Favoritos ─────────────────────────────────────────────────
+  const favs = channels.filter(c => isFav(c));
+  if (favs.length) {
+    html += `<section class="tv-row" id="row-favs">
+      <h2 class="tv-row-label">Favoritos</h2>
+      <div class="tv-row-track" role="list">${favs.map(buildTileHtml).join('')}</div>
     </section>`;
   }
 
@@ -2206,12 +2142,15 @@ function morphIsOpen() {
   return m && m.classList.contains('tv-morph-open');
 }
 
+let lastMorphRect = null;
+
 function openMorph(cardEl, sceneName) {
   const morph = document.getElementById('tv-morph');
   if (!morph) return;
 
   // Captura o rect ANTES de qualquer mudança de layout
   const rect = cardEl.getBoundingClientRect();
+  lastMorphRect = rect;
 
   // Esconde todas as cenas; ativa a solicitada
   ['tv-player-scene', 'tv-detail-scene'].forEach(id => {
@@ -2223,6 +2162,8 @@ function openMorph(cardEl, sceneName) {
 
   if (sceneName === 'tv-player-scene') {
     morph.classList.add('tv-morph-transparent');
+    const playerZone = document.getElementById('tv-player-zone');
+    if (playerZone) playerZone.classList.remove('hidden');
     if (typeof showHud === 'function') showHud();
   } else {
     morph.classList.remove('tv-morph-transparent');
@@ -2270,6 +2211,8 @@ function closeMorph() {
       const s = document.getElementById(id);
       if (s) s.classList.remove('tv-scene-active');
     });
+    const playerZone = document.getElementById('tv-player-zone');
+    if (playerZone) playerZone.classList.add('hidden');
     stopStream();
     setState({ playing: false });
     setTimeout(focusFirstFocusable, 50);
@@ -2280,12 +2223,19 @@ function closeMorph() {
     cleanup();
     return;
   }
-  // Anima de volta para a posição original (simplificado: colapsa para o topo-esq)
+  // Anima de volta para a posição original
   morph.classList.remove('tv-morph-expanding');
-  morph.style.top    = '0';
-  morph.style.left   = '0';
-  morph.style.width  = '200px';
-  morph.style.height = '120px';
+  if (lastMorphRect) {
+    morph.style.top    = lastMorphRect.top + 'px';
+    morph.style.left   = lastMorphRect.left + 'px';
+    morph.style.width  = lastMorphRect.width + 'px';
+    morph.style.height = lastMorphRect.height + 'px';
+  } else {
+    morph.style.top    = '0';
+    morph.style.left   = '0';
+    morph.style.width  = '200px';
+    morph.style.height = '120px';
+  }
   morph.addEventListener('transitionend', cleanup, { once: true });
 }
 
@@ -2442,9 +2392,17 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTvVodCatalog();
   });
   onClick('sb-favs', () => {
-    setState({ activeTab: 'Favoritos' });
-    renderTabs(); renderChannels();
     closeSidebar();
+    const favRow = document.getElementById('row-favs');
+    if (favRow) {
+      const first = favRow.querySelector('.tv-tile');
+      if (first) {
+        first.focus();
+        first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    } else {
+      showTVToast('Nenhum favorito ainda.');
+    }
   });
   onClick('sb-reload-list', () => {
     closeSidebar();
