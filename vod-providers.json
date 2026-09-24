@@ -1,1 +1,45 @@
-{"generatedAt": null, "movies": {}, "series": {}}
+{
+  "generatedAt": "2026-09-24T03:36:58.270323+00:00",
+  "movies": {
+    "duna|": [
+      "max"
+    ],
+    "furiosa a mad max saga - black & chrome edition|": [
+      "netflix",
+      "max"
+    ],
+    "divertida mente|": [
+      "disney"
+    ],
+    "deadpool|": [
+      "disney"
+    ],
+    "napoleão|": [
+      "apple"
+    ],
+    "meu malvado favorito 4|": [
+      "netflix"
+    ]
+  },
+  "series": {
+    "round 6|None": [
+      "netflix"
+    ],
+    "the last of us|None": [
+      "max"
+    ],
+    "fallout|None": [
+      "prime"
+    ],
+    "loki|None": [
+      "disney"
+    ],
+    "ruptura|None": [
+      "apple"
+    ],
+    "ted lasso|None": [
+      "apple"
+    ]
+  },
+  "_note": "Teste manual local com amostra de titulos populares reais - nao e a execucao completa do robo."
+}
