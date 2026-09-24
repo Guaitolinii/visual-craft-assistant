@@ -291,6 +291,17 @@
       data-focusable
     />
   </div>
+  <p style="font-size:18px;color:#5c5c78;margin-top:24px">Filmes e Séries — URL do catálogo (opcional)</p>
+  <div class="tv-onboarding-input-group">
+    <input
+      id="tv-vod-url"
+      class="tv-input"
+      type="url"
+      placeholder="http://seu-provedor.com/get.php?username=...&amp;password=...&amp;type=m3u_plus"
+      autocomplete="off"
+      data-focusable
+    />
+  </div>
   <p style="font-size:18px;color:#5c5c78">Pressione OK no controle para selecionar o campo e usar o teclado da TV</p>
 </div>
 
@@ -405,6 +416,10 @@
   <div class="tv-sidebar-item active" id="sb-home" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     Início
+  </div>
+  <div class="tv-sidebar-item" id="sb-vod" data-focusable tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+    Filmes e Séries
   </div>
   <div class="tv-sidebar-item" id="sb-favs" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -902,6 +917,131 @@ function selectNewestVodItems(items, limit) {
     .slice()
     .sort((a, b) => vodItemAddedTs(b) - vodItemAddedTs(a))
     .slice(0, limit);
+}
+
+// ──────────────────────────────────────────────────────────────
+// VOD TV: CATÁLOGO DE FILMES E SÉRIES (Task 5)
+// Xtream API → fileiras Netflix no home (#tv-rows)
+// ──────────────────────────────────────────────────────────────
+
+// ─ Sanitização de item VOD (verbatim de sintoniza-link.html) ─────────────
+function sanitizeVodItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  const out = { ...item };
+  ['name', 'title', 'plot', 'category_name'].forEach(k => { if (out[k] != null) out[k] = sanitizeLabel(out[k]); });
+  ['stream_icon', 'cover'].forEach(k => { if (out[k] != null) out[k] = sanitizeImageUrl(out[k]); });
+  return out;
+}
+
+// ─ Build-time URL injection (verbatim de sintoniza-link.html) ──────────
+// scripts/prepare-mobile.js substitui os tokens pelas URLs dos secrets.
+// Em dev (npm run dev), os tokens ficam literais e resolveInjectedDefault → ''.
+const TV_INJECTED_DEFAULTS = {
+  channels: '__DEFAULT_CHANNELS_URL__',
+  vod:      '__DEFAULT_VOD_URL__',
+};
+function resolveInjectedDefault(value) {
+  const v = String(value || '').trim();
+  return v.startsWith('__DEFAULT_') ? '' : v;
+}
+// Semeia as URLs padrão na primeira abertura sem sobrescrever o que o usuário
+// já salvou. 'sint_tv_defaults_seeded' garante que a semeadura acontece só
+// uma vez (o usuário pode limpar depois e o app deixa em branco).
+function seedTvInjectedDefaults() {
+  let seeded = {};
+  try { seeded = JSON.parse(localStorage.getItem('sint_tv_defaults_seeded') || '{}') || {}; } catch (e) { seeded = {}; }
+  const targets = [['channels', 'sint_url'], ['vod', 'sint_vod_url']];
+  let changed = false;
+  for (const [name, key] of targets) {
+    const value = resolveInjectedDefault(TV_INJECTED_DEFAULTS[name]);
+    if (!value || seeded[name]) continue;
+    if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+    seeded[name] = true;
+    changed = true;
+  }
+  if (changed) localStorage.setItem('sint_tv_defaults_seeded', JSON.stringify(seeded));
+}
+
+// ─ Mapa de streamings (gerado 1×/dia pelo GitHub Actions na branch vod-data) ─
+// Nunca lança: erro de rede → retorna {}; catálogo funciona só sem selos.
+const VOD_PROVIDERS_URL = 'https://raw.githubusercontent.com/Guaitolinii/visual-craft-assistant/vod-data/vod-providers.json';
+let _tvVodProviderMap = {};
+
+async function fetchTvVodProviderMap() {
+  try {
+    const res = await fetch(VOD_PROVIDERS_URL, { cache: 'no-cache' });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return { ...(data.movies || {}), ...(data.series || {}) };
+  } catch (e) {
+    return {};
+  }
+}
+
+// ─ Cache de catálogo VOD ─────────────────────────────────────────────────
+// Resetado a cada loadTvVodCatalog. settled → true quando todas as categorias
+// responderam (sucesso ou erro) - renderTvRows só mostra fileiras de VOD após isso.
+let _tvVodCatalogCache = { categories: [], itemsByCategory: {}, settled: false };
+// Credenciais da última chamada a loadTvVodCatalog: closures de
+// Promise.allSettled comparam _tvVodCreds === creds para evitar escrita
+// em cache antigo quando o usuário troca de URL durante o carregamento.
+let _tvVodCreds = null;
+
+// ─ Loader do catálogo de filmes/séries ─────────────────────────────
+async function loadTvVodCatalog() {
+  const vodUrl = localStorage.getItem('sint_vod_url') || '';
+  const creds = parseXtreamCredentials(vodUrl);
+  if (!creds) {
+    showTVToast('Configure a URL de Filmes/Séries no menu inicial.');
+    return;
+  }
+  _tvVodCreds = creds;
+  _tvVodCatalogCache = { categories: [], itemsByCategory: {}, settled: false };
+  renderTvRows(); // mostra placeholder enquanto carrega
+
+  showTVToast('Carregando catálogo de filmes...');
+
+  // Provider map em paralelo (não bloqueia o catálogo)
+  if (!Object.keys(_tvVodProviderMap).length) {
+    fetchTvVodProviderMap().then(map => {
+      _tvVodProviderMap = map;
+      if (_tvVodCatalogCache.settled) renderTvRows(); // redesenha com badges
+    });
+  }
+
+  try {
+    const catRes = await fetch(xtreamApiUrl(creds, 'get_vod_categories'));
+    if (!catRes.ok) throw new Error(`HTTP ${catRes.status}`);
+    const catsRaw = await catRes.json();
+    const cats = Array.isArray(catsRaw) ? catsRaw.map(sanitizeVodItem) : [];
+    if (!cats.length) { showTVToast('Nenhuma categoria de filmes encontrada.'); return; }
+    _tvVodCatalogCache.categories = cats;
+
+    // Uma requisição por categoria em paralelo
+    const fetches = cats.map(cat =>
+      fetch(xtreamApiUrl(creds, 'get_vod_streams', { category_id: cat.category_id }))
+        .then(res => res.json())
+        .then(streams => {
+          if (_tvVodCreds !== creds) return; // usuário trocou URL
+          if (!Array.isArray(streams) || !streams.length) {
+            _tvVodCatalogCache.itemsByCategory[cat.category_id] = [];
+            return;
+          }
+          _tvVodCatalogCache.itemsByCategory[cat.category_id] =
+            dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
+        })
+        .catch(() => { if (_tvVodCreds === creds) _tvVodCatalogCache.itemsByCategory[cat.category_id] = []; })
+    );
+
+    Promise.allSettled(fetches).then(() => {
+      if (_tvVodCreds !== creds) return;
+      _tvVodCatalogCache.settled = true;
+      showTVToast('Catálogo carregado!');
+      renderTvRows();
+    });
+  } catch (err) {
+    showTVToast('Erro ao carregar catálogo: ' + err.message);
+  }
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1552,8 +1692,10 @@ function renderChannels() {
 
 // ──────────────────────────────────────────────────────────────
 // HOME: fileiras estilo Netflix
-// Task 4 — estrutura e tiles de canais; Task 5 — VOD e dados reais
+// Task 4 — tiles de canais; Task 5 — tiles de VOD com selos de streaming
 // ──────────────────────────────────────────────────────────────
+
+// ─ Tile de canal ao vivo ───────────────────────────────────────────────
 function buildTileHtml(ch) {
   const logoHtml = ch.logo
     ? `<img class="tv-tile-cover" src="${ch.logo}" alt="" onerror="this.style.display='none'">`
@@ -1570,6 +1712,31 @@ function buildTileHtml(ch) {
   </div>`;
 }
 
+// ─ Tile de VOD (filme ou série) ────────────────────────────────────
+function buildVodTileHtml(item) {
+  const cover = item.stream_icon || item.cover || '';
+  const coverHtml = cover
+    ? `<img class="tv-tile-cover" src="${cover}" alt="" onerror="this.style.display='none'">`
+    : '';
+  // Selo do streaming (só o primeiro: tile pequeno, um basta)
+  let badgeHtml = '';
+  const providers = item.streamingProviders || [];
+  if (providers.length) {
+    const p = PROVIDERS_BR[providers[0]];
+    if (p) badgeHtml = `<span class="tv-provider-badge" style="background:${p.bg};color:${p.fg}">${p.label}</span>`;
+  }
+  const year = item.year || (item.releaseDate ? String(item.releaseDate).slice(0, 4) : '');
+  const vodId = item.stream_id || item.series_id || '';
+  return `<div class="tv-tile" data-focusable data-vod-id="${vodId}" tabindex="0" role="listitem">
+    ${coverHtml}${badgeHtml}
+    <div class="tv-tile-overlay">
+      <div class="tv-tile-name">${item.name || item.title || ''}</div>
+      ${year ? `<div class="tv-tile-meta">${year}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+// ─ renderTvRows: popula #tv-rows com todas as fileiras ──────────────────
 function renderTvRows() {
   const rowsEl = document.getElementById('tv-rows');
   if (!rowsEl) return;
@@ -1582,7 +1749,7 @@ function renderTvRows() {
 
   let html = '';
 
-  // Fileira: Continuar assistindo
+  // ── Fileira: Continuar assistindo (canais recentes) ────────────────────
   if (recents.length) {
     html += `<section class="tv-row" id="row-recents">
       <h2 class="tv-row-label">Continuar assistindo</h2>
@@ -1590,7 +1757,7 @@ function renderTvRows() {
     </section>`;
   }
 
-  // Fileira: Canais ao vivo
+  // ── Fileira: Canais ao vivo ──────────────────────────────────────────
   html += `<section class="tv-row" id="row-live">
     <h2 class="tv-row-label">Canais ao vivo</h2>
     <div class="tv-row-track" role="list">
@@ -1600,9 +1767,54 @@ function renderTvRows() {
     </div>
   </section>`;
 
+  // ── Fileiras de VOD (só após loadTvVodCatalog completar) ──────────────
+  if (_tvVodCatalogCache.settled) {
+    const allItems = dedupeVodItemsByTitle(
+      Object.values(_tvVodCatalogCache.itemsByCategory).flat()
+    );
+
+    if (allItems.length) {
+      // Novidades: 20 mais recentes pelo timestamp real da API
+      const newest = selectNewestVodItems(allItems, 20);
+      if (newest.length) {
+        const newWithP = attachProviders(newest, _tvVodProviderMap);
+        html += `<section class="tv-row" id="row-novidades">
+          <h2 class="tv-row-label">Novidades</h2>
+          <div class="tv-row-track" role="list">${newWithP.map(buildVodTileHtml).join('')}</div>
+        </section>`;
+      }
+
+      if (Object.keys(_tvVodProviderMap).length) {
+        // Fileiras por streaming (mapa já carregou)
+        const enriched = attachProviders(allItems, _tvVodProviderMap);
+        groupItemsByProvider(enriched, PROVIDER_ORDER).forEach(g => {
+          const label = g.providerId === 'outros'
+            ? 'Outros'
+            : (PROVIDERS_BR[g.providerId] ? PROVIDERS_BR[g.providerId].label : g.providerId);
+          html += `<section class="tv-row" id="row-vod-${g.providerId}">
+            <h2 class="tv-row-label">${label}</h2>
+            <div class="tv-row-track" role="list">${g.items.slice(0, 30).map(buildVodTileHtml).join('')}</div>
+          </section>`;
+        });
+      } else {
+        // Mapa ainda não carregou: uma fileira única sem badges
+        html += `<section class="tv-row" id="row-vod-all">
+          <h2 class="tv-row-label">Filmes</h2>
+          <div class="tv-row-track" role="list">${allItems.slice(0, 50).map(buildVodTileHtml).join('')}</div>
+        </section>`;
+      }
+    }
+  } else if (_tvVodCatalogCache.categories.length) {
+    // Catálogo em carregamento: placeholder
+    html += `<section class="tv-row" id="row-vod-loading">
+      <h2 class="tv-row-label">Filmes</h2>
+      <div class="tv-row-track"><p class="tv-row-empty">Carregando catálogo...</p></div>
+    </section>`;
+  }
+
   rowsEl.innerHTML = html;
 
-  // Clique em tile de canal → abre morph + inicia reprodução
+  // ── Wire: tile de canal → morph + playback ───────────────────────────
   rowsEl.querySelectorAll('.tv-tile[data-ch-id]').forEach(tile => {
     tile.addEventListener('click', () => {
       const chId = parseInt(tile.dataset.chId, 10);
@@ -1611,10 +1823,18 @@ function renderTvRows() {
       currentBufferStageIndex = 0;
       reconnectCircuitBreaker.reset();
       openMorph(tile, 'tv-player-scene');
-      // selectChannel gerencia o estado e a reprodução;
-      // o delay (~morph duration) evita que o player tente
-      // exibir antes que a tela esteja em foco.
+      // delay ≈ morph duration para o player não tentar exibir antes da tela
       setTimeout(() => selectChannel(ch), 360);
+    });
+  });
+
+  // ── Wire: tile de VOD → morph (Task 6: ficha de série; Task 7: player) ──
+  rowsEl.querySelectorAll('.tv-tile[data-vod-id]').forEach(tile => {
+    tile.addEventListener('click', () => {
+      if (!tile.dataset.vodId) return;
+      // Task 6 abrirá a ficha de série; Task 7 iniciará o player.
+      // Por ora apenas abre o morph (scene ativada em Task 6/7).
+      openMorph(tile, 'tv-player-scene');
     });
   });
 }
@@ -1948,20 +2168,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = m3uEl && m3uEl.value ? m3uEl.value.trim() : '';
     const epgEl = document.getElementById('tv-epg-url');
     const epgUrl = epgEl && epgEl.value ? epgEl.value.trim() : '';
+    const vodEl = document.getElementById('tv-vod-url');
+    const vodUrl = vodEl && vodEl.value ? vodEl.value.trim() : '';
     if (epgUrl) {
       localStorage.setItem('sint_epg_url', epgUrl);
       localStorage.removeItem('sint_epg_cache');
       refreshEpgIfStale();
     }
+    if (vodUrl) localStorage.setItem('sint_vod_url', vodUrl);
     if (url) loadPlaylist(url);
     else showTVToast('Informe uma URL válida');
   });
 
   // Sidebar items
   onClick('sb-home', () => {
-    setState({ activeTab: 'Todos' });
-    renderTabs(); renderChannels();
+    if (morphIsOpen()) closeMorph();
     closeSidebar();
+    renderTvRows();
+  });
+  onClick('sb-vod', () => {
+    closeSidebar();
+    loadTvVodCatalog();
   });
   onClick('sb-favs', () => {
     setState({ activeTab: 'Favoritos' });
@@ -2038,6 +2265,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   setTimeout(focusFirstFocusable, 100);
+
+  // Semeia URLs padrão do build no localStorage (uma vez, sem sobrescrever)
+  seedTvInjectedDefaults();
+
+  // Pré-popula campos do onboarding com o que está salvo
+  const m3uInput = document.getElementById('tv-m3u-url');
+  if (m3uInput) m3uInput.value = localStorage.getItem('sint_url') || '';
+  const epgInput = document.getElementById('tv-epg-url');
+  if (epgInput) epgInput.value = localStorage.getItem('sint_epg_url') || '';
+  const vodInput = document.getElementById('tv-vod-url');
+  if (vodInput) vodInput.value = localStorage.getItem('sint_vod_url') || '';
 
   // Carrega lista salva automaticamente
   // Lê 'sint_url' — compatível com o app web sintoniza.html
