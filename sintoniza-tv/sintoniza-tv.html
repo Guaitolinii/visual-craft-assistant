@@ -250,6 +250,18 @@
       display: block;
     }
 
+    /* ── Task 7: Player unificado ── */
+    #tv-morph.tv-morph-transparent {
+      background: transparent;
+    }
+    #tv-channel-info {
+      transition: opacity 300ms ease;
+    }
+    #tv-channel-info.tv-hud-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
     /* ── Task 6: Ficha de Série / VOD ── */
     #tv-detail-scene {
       background: var(--tv-bg);
@@ -383,14 +395,31 @@
   <!-- Motor de reprodução (HLS/MPEG-TS/AVPlay): fica escondido na home;
        o morph o expõe em tela cheia ao selecionar um item (Task 7). -->
   <div id="tv-player-zone" class="hidden">
+    <!-- Vídeo -->
+    <video id="tv-video" playsinline></video>
+  </div><!-- /tv-player-zone -->
 
+  <!-- ── Home: fileiras estilo Netflix ─────────────────────────── -->
+  <!-- Task 4: estrutura + CSS; Task 5: dados reais de canais e VOD -->
+  <div id="tv-home">
+    <div id="tv-rows" role="region" aria-label="Catálogo">
+      <!-- renderTvRows() popula este container -->
+    </div>
+  </div>
+
+</div><!-- /tv-app -->
+
+<!-- Morph overlay: o cartão selecionado EXPANDE para tela inteira (nunca um modal por cima).
+     JS seta top/left/width/height do rect do cartão antes de abrir;
+     CSS transiciona para 0/0/100vw/100vh. Task 6 popula #tv-detail-scene;
+     Task 7 popula #tv-player-scene com o chrome do player. -->
+<div id="tv-morph" aria-hidden="true">
+  <!-- Chrome do player — Task 7 adiciona: título, ponto AO VIVO, controles de transporte -->
+  <div id="tv-player-scene">
     <!-- Arte (estado inicial) -->
     <div id="tv-art">
       <div class="tv-art-monogram" id="tv-art-text">TV</div>
     </div>
-
-    <!-- Vídeo -->
-    <video id="tv-video" playsinline></video>
 
     <!-- Loader de buffer -->
     <div id="tv-loader">
@@ -446,27 +475,6 @@
       Stage: <span id="dbg-stage">0</span><br>
       Reconexões: <span id="dbg-rec">0</span>
     </div>
-  </div><!-- /tv-player-zone -->
-
-  <!-- ── Home: fileiras estilo Netflix ─────────────────────────── -->
-  <!-- Task 4: estrutura + CSS; Task 5: dados reais de canais e VOD -->
-  <div id="tv-home">
-    <div id="tv-rows" role="region" aria-label="Catálogo">
-      <!-- renderTvRows() popula este container -->
-    </div>
-  </div>
-
-</div><!-- /tv-app -->
-
-<!-- Morph overlay: o cartão selecionado EXPANDE para tela inteira (nunca um modal por cima).
-     JS seta top/left/width/height do rect do cartão antes de abrir;
-     CSS transiciona para 0/0/100vw/100vh. Task 6 popula #tv-detail-scene;
-     Task 7 popula #tv-player-scene com o chrome do player. -->
-<div id="tv-morph" aria-hidden="true">
-  <!-- Chrome do player — Task 7 adiciona: título, ponto AO VIVO, controles de transporte -->
-  <div id="tv-player-scene">
-    <!-- O motor real (HLS/MPEG-TS/AVPlay) continua em #tv-player-zone;
-         Task 7 expõe o vídeo dentro deste painel. -->
   </div>
 
   <!-- Ficha de série — Task 6 adiciona: backdrop, sinopse, fileiras de episódios -->
@@ -2213,6 +2221,13 @@ function openMorph(cardEl, sceneName) {
   const scene = document.getElementById(sceneName);
   if (scene) scene.classList.add('tv-scene-active');
 
+  if (sceneName === 'tv-player-scene') {
+    morph.classList.add('tv-morph-transparent');
+    if (typeof showHud === 'function') showHud();
+  } else {
+    morph.classList.remove('tv-morph-transparent');
+  }
+
   // Posição inicial = posição do cartão na tela
   morph.style.top          = rect.top    + 'px';
   morph.style.left         = rect.left   + 'px';
@@ -2299,6 +2314,19 @@ function closeSidebar() {
 // ──────────────────────────────────────────────────────────────
 // NAVEGAÇÃO POR CONTROLE REMOTO (D-PAD)
 // ──────────────────────────────────────────────────────────────
+let hudTimeout = null;
+function showHud() {
+  const info = document.getElementById('tv-channel-info');
+  if (info) info.classList.remove('tv-hud-hidden');
+  clearTimeout(hudTimeout);
+  hudTimeout = setTimeout(() => {
+    const scene = document.getElementById('tv-player-scene');
+    if (scene && scene.classList.contains('tv-scene-active') && morphIsOpen()) {
+      if (info) info.classList.add('tv-hud-hidden');
+    }
+  }, 5000);
+}
+
 // Detecta genericamente qualquer <button>, <input> ou elemento com
 // tabindex="0" visível na tela - sem exigir um atributo especial por
 // elemento - e move o foco pro mais próximo na direção pressionada via
@@ -2352,6 +2380,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (video.paused) { video.play(); setState({ playing: true }); }
     else              { video.pause(); setState({ playing: false }); }
     updatePlayBtn();
+    showHud();
   });
 
   onClick('tv-reload-btn', () => {
@@ -2371,10 +2400,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>'
         : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>';
     }
+    showHud();
   });
 
   onClick('tv-fav-btn', () => {
     if (_state.selected) toggleFav(_state.selected);
+    showHud();
   });
 
   onClick('tv-retry-btn', () => {
@@ -2429,7 +2460,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Motor D-pad: ver getFocusableEls()/focusFirstFocusable() acima.
   document.addEventListener('keydown', (e) => {
+    showHud();
     const active = document.activeElement;
+
+    // Media keys (LG/Tizen remotes)
+    if (['MediaPlayPause', 'MediaPlay', 'MediaPause'].includes(e.key)) {
+      e.preventDefault();
+      const playBtn = document.getElementById('tv-play-btn');
+      if (playBtn) playBtn.click();
+      return;
+    }
 
     // Botão Voltar do controle: fecha morph → fecha sidebar → abre sidebar
     if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'XF86Back') {
