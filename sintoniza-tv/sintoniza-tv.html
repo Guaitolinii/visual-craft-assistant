@@ -10,6 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" />
+  <!-- Fontes do home estilo Netflix (Task 4) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" />
 
   <!-- Bibliotecas de player -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -22,6 +24,238 @@
     /* Variáveis de ícone SVG embutidas (substitui Lucide CDN) */
     .icon { display:inline-flex; align-items:center; justify-content:center; }
     .icon svg { width:1em; height:1em; }
+
+    /* ── Task 4: Design tokens (home Netflix) ────────────────────────── */
+    /* Prefixo --tv-* para não colidir com --bg/--accent laranja do tema atual. */
+    :root {
+      --tv-bg:       #0a0c11;
+      --tv-surface:  #171b26;
+      --tv-surface2: #212739;
+      --tv-line:     #2b3245;
+      --tv-ink:      #f2f4f9;
+      --tv-muted:    #8b93a8;
+      --tv-accent:   #22cdd6;   /* teal — mesmo do selo de streaming */
+      --tv-focus:    #ffffff;   /* branco puro no foco (não o accent, pra não brigar com o selo) */
+      --tv-live:     #ff3b4e;
+    }
+
+    /* ── Task 4: Layout base — sobrescreve o grid 2-zonas do tv-styles.css ── */
+    #tv-app {
+      display: block;
+      position: relative;
+    }
+
+    /* Zona do player fica escondida por padrão; o morph a revelará (Task 7) */
+    #tv-player-zone.hidden {
+      display: none;
+    }
+    #tv-player-zone {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+    }
+
+    /* Correção de hierarquia de heading: h3→h2 na sobreposição de erro */
+    .tv-player-error-title {
+      font-size: var(--font-lg);
+      color: var(--text-1);
+    }
+
+    /* ── Task 4: Home — fileiras estilo Netflix ──────────────────────── */
+    #tv-home {
+      position: absolute;
+      inset: 0;
+      background: var(--tv-bg);
+      overflow: hidden;
+      font-family: 'Figtree', 'Outfit', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #tv-rows {
+      flex: 1;
+      overflow: hidden;
+      padding: calc(56px + var(--safe-v)) var(--safe-h) var(--safe-v);
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    /* ── Row ─────────────────────────────────────────────────────────── */
+    .tv-row {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+
+    .tv-row-label {
+      font-family: 'Bricolage Grotesque', 'Outfit', system-ui, sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--tv-ink);
+      letter-spacing: -0.025em;
+      line-height: 1;
+      margin: 0;
+    }
+
+    .tv-row-track {
+      display: flex;
+      gap: 18px;
+      overflow: hidden;
+    }
+
+    .tv-row-empty {
+      font-size: 20px;
+      color: var(--tv-muted);
+      padding: 20px 0;
+      font-style: italic;
+      margin: 0;
+    }
+
+    /* ── Tile ────────────────────────────────────────────────────────── */
+    .tv-tile {
+      flex: 0 0 220px;
+      height: 140px;
+      background: var(--tv-surface);
+      border-radius: 12px;
+      cursor: none;
+      position: relative;
+      overflow: hidden;
+      outline: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      border: 2px solid transparent;
+      transition: border-color 100ms, transform 100ms;
+    }
+
+    .tv-tile:focus {
+      border-color: var(--tv-focus);
+      transform: scale(1.05);
+      z-index: 2;
+    }
+
+    .tv-tile-cover {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .tv-tile-overlay {
+      position: relative;
+      padding: 10px 12px 12px;
+      background: linear-gradient(to top, rgba(10,12,17,0.92) 0%, transparent 100%);
+      z-index: 1;
+    }
+
+    .tv-tile-name {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--tv-ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+
+    .tv-tile-meta {
+      font-size: 13px;
+      color: var(--tv-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* AO VIVO — exceção sancionada: dado genuinamente ao vivo */
+    .tv-tile-live {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--tv-live);
+      letter-spacing: 0.07em;
+      z-index: 2;
+    }
+
+    .tv-tile-live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--tv-live);
+      animation: tv-tile-pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes tv-tile-pulse {
+      0%, 100% { opacity: 1;   transform: scale(1);    }
+      50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    /* Selo de streaming (canto superior direito do tile) */
+    .tv-provider-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1.4;
+      z-index: 2;
+    }
+
+    /* ── Morph overlay: o cartão VIRA a tela inteira ─────────────────── */
+    /* JS define top/left/width/height via style="" (posição inicial = rect do cartão).
+       Depois de um rAF, adiciona .tv-morph-expanding que ativa a transição CSS,
+       e sobrescreve os inline styles para 0/0/100vw/100vh. */
+    #tv-morph {
+      position: fixed;
+      z-index: 200;
+      background: var(--tv-bg);
+      border-radius: 12px;
+      overflow: hidden;
+      display: none;
+    }
+
+    #tv-morph.tv-morph-open {
+      display: block;
+    }
+
+    #tv-morph.tv-morph-expanding {
+      transition:
+        top    360ms cubic-bezier(.4,0,.2,1),
+        left   360ms cubic-bezier(.4,0,.2,1),
+        width  360ms cubic-bezier(.4,0,.2,1),
+        height 360ms cubic-bezier(.4,0,.2,1),
+        border-radius 360ms cubic-bezier(.4,0,.2,1);
+    }
+
+    /* Cenas dentro do morph — ocultas até serem ativadas */
+    #tv-player-scene,
+    #tv-detail-scene {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+
+    #tv-player-scene.tv-scene-active,
+    #tv-detail-scene.tv-scene-active {
+      display: block;
+    }
+
+    /* prefers-reduced-motion: corte instantâneo, sem animação de escala */
+    @media (prefers-reduced-motion: reduce) {
+      .tv-tile { transition: none; }
+      .tv-tile-live-dot { animation: none; }
+      #tv-morph.tv-morph-expanding { transition: none; }
+    }
   </style>
 </head>
 <body>
@@ -71,8 +305,9 @@
     <div id="tv-clock"></div>
   </div>
 
-  <!-- ── Zona Superior: Player ────────────────────────────────── -->
-  <div id="tv-player-zone">
+  <!-- Motor de reprodução (HLS/MPEG-TS/AVPlay): fica escondido na home;
+       o morph o expõe em tela cheia ao selecionar um item (Task 7). -->
+  <div id="tv-player-zone" class="hidden">
 
     <!-- Arte (estado inicial) -->
     <div id="tv-art">
@@ -91,7 +326,7 @@
     <!-- Overlay de erro -->
     <div id="tv-error" class="hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="#9898b0" stroke-width="2" width="48" height="48"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 5a10.94 10.94 0 0 0-2.36 5.5M10.5 21C12 20.5 13 19.5 13.5 18M6.5 9.5a7 7 0 0 0-.17 1.5"/><path d="M21 3L3 21"/></svg>
-      <h3>Não foi possível reproduzir</h3>
+      <h2 class="tv-player-error-title">Não foi possível reproduzir</h2>
       <p id="tv-error-msg">Canal fora do ar ou formato não suportado.</p>
       <button id="tv-retry-btn" class="tv-btn" data-focusable style="margin-top:12px">Tentar novamente</button>
     </div>
@@ -138,15 +373,31 @@
     </div>
   </div><!-- /tv-player-zone -->
 
-  <!-- ── Zona Inferior: Catálogo ──────────────────────────────── -->
-  <div id="tv-catalog-zone">
-    <!-- Abas de categoria -->
-    <div id="tv-tabs"></div>
-    <!-- Faixa de canais -->
-    <div id="tv-channel-row"></div>
+  <!-- ── Home: fileiras estilo Netflix ─────────────────────────── -->
+  <!-- Task 4: estrutura + CSS; Task 5: dados reais de canais e VOD -->
+  <div id="tv-home">
+    <div id="tv-rows" role="region" aria-label="Catálogo">
+      <!-- renderTvRows() popula este container -->
+    </div>
   </div>
 
 </div><!-- /tv-app -->
+
+<!-- Morph overlay: o cartão selecionado EXPANDE para tela inteira (nunca um modal por cima).
+     JS seta top/left/width/height do rect do cartão antes de abrir;
+     CSS transiciona para 0/0/100vw/100vh. Task 6 popula #tv-detail-scene;
+     Task 7 popula #tv-player-scene com o chrome do player. -->
+<div id="tv-morph" aria-hidden="true">
+  <!-- Chrome do player — Task 7 adiciona: título, ponto AO VIVO, controles de transporte -->
+  <div id="tv-player-scene">
+    <!-- O motor real (HLS/MPEG-TS/AVPlay) continua em #tv-player-zone;
+         Task 7 expõe o vídeo dentro deste painel. -->
+  </div>
+
+  <!-- Ficha de série — Task 6 adiciona: backdrop, sinopse, fileiras de episódios -->
+  <div id="tv-detail-scene">
+  </div>
+</div>
 
 <!-- Sidebar overlay -->
 <div id="tv-sidebar">
@@ -674,8 +925,7 @@ async function loadPlaylist(url) {
     ensureEssentialFavs();
     showTVToast(`${channels.length} canais carregados!`);
     showApp();
-    renderTabs();
-    renderChannels();
+    renderTvRows();
   } catch (err) {
     showTVToast('Erro ao carregar lista: ' + err.message);
     console.error('[M3U Load]', err);
@@ -1301,6 +1551,75 @@ function renderChannels() {
 }
 
 // ──────────────────────────────────────────────────────────────
+// HOME: fileiras estilo Netflix
+// Task 4 — estrutura e tiles de canais; Task 5 — VOD e dados reais
+// ──────────────────────────────────────────────────────────────
+function buildTileHtml(ch) {
+  const logoHtml = ch.logo
+    ? `<img class="tv-tile-cover" src="${ch.logo}" alt="" onerror="this.style.display='none'">`
+    : '';
+  const liveHtml = ch.live
+    ? '<div class="tv-tile-live" aria-label="Canal ao vivo"><div class="tv-tile-live-dot" aria-hidden="true"></div>AO VIVO</div>'
+    : '';
+  return `<div class="tv-tile" data-focusable data-ch-id="${ch.id}" tabindex="0" role="listitem">
+    ${logoHtml}${liveHtml}
+    <div class="tv-tile-overlay">
+      <div class="tv-tile-name">${ch.name}</div>
+      ${ch.category ? `<div class="tv-tile-meta">${ch.category}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderTvRows() {
+  const rowsEl = document.getElementById('tv-rows');
+  if (!rowsEl) return;
+
+  const channels = _state.channels || [];
+  const recents  = _state.recents
+    .map(id => channels.find(c => c.id === id))
+    .filter(Boolean)
+    .slice(0, 10);
+
+  let html = '';
+
+  // Fileira: Continuar assistindo
+  if (recents.length) {
+    html += `<section class="tv-row" id="row-recents">
+      <h2 class="tv-row-label">Continuar assistindo</h2>
+      <div class="tv-row-track" role="list">${recents.map(buildTileHtml).join('')}</div>
+    </section>`;
+  }
+
+  // Fileira: Canais ao vivo
+  html += `<section class="tv-row" id="row-live">
+    <h2 class="tv-row-label">Canais ao vivo</h2>
+    <div class="tv-row-track" role="list">
+      ${channels.length
+        ? channels.slice(0, 30).map(buildTileHtml).join('')
+        : '<p class="tv-row-empty">Nenhum canal carregado</p>'}
+    </div>
+  </section>`;
+
+  rowsEl.innerHTML = html;
+
+  // Clique em tile de canal → abre morph + inicia reprodução
+  rowsEl.querySelectorAll('.tv-tile[data-ch-id]').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const chId = parseInt(tile.dataset.chId, 10);
+      const ch   = channels.find(c => c.id === chId);
+      if (!ch) return;
+      currentBufferStageIndex = 0;
+      reconnectCircuitBreaker.reset();
+      openMorph(tile, 'tv-player-scene');
+      // selectChannel gerencia o estado e a reprodução;
+      // o delay (~morph duration) evita que o player tente
+      // exibir antes que a tela esteja em foco.
+      setTimeout(() => selectChannel(ch), 360);
+    });
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
 // UI HELPERS
 // ──────────────────────────────────────────────────────────────
 function showApp() {
@@ -1427,6 +1746,92 @@ function updateDebug() {
   if (bufInfo && _state.playing) {
     bufInfo.textContent = `Buffer: ${buf.toFixed(1)}s | ${currentStreamType.toUpperCase()} | Stage ${currentBufferStageIndex}`;
   }
+}
+
+// ──────────────────────────────────────────────────────────────
+// MORPH — cartão selecionado expande para tela inteira
+// O próprio cartão focado SE TORNA a tela cheia — nunca um modal.
+// prefers-reduced-motion: corte instantâneo, sem animação.
+// ──────────────────────────────────────────────────────────────
+function morphIsOpen() {
+  const m = document.getElementById('tv-morph');
+  return m && m.classList.contains('tv-morph-open');
+}
+
+function openMorph(cardEl, sceneName) {
+  const morph = document.getElementById('tv-morph');
+  if (!morph) return;
+
+  // Captura o rect ANTES de qualquer mudança de layout
+  const rect = cardEl.getBoundingClientRect();
+
+  // Esconde todas as cenas; ativa a solicitada
+  ['tv-player-scene', 'tv-detail-scene'].forEach(id => {
+    const s = document.getElementById(id);
+    if (s) s.classList.remove('tv-scene-active');
+  });
+  const scene = document.getElementById(sceneName);
+  if (scene) scene.classList.add('tv-scene-active');
+
+  // Posição inicial = posição do cartão na tela
+  morph.style.top          = rect.top    + 'px';
+  morph.style.left         = rect.left   + 'px';
+  morph.style.width        = rect.width  + 'px';
+  morph.style.height       = rect.height + 'px';
+  morph.style.borderRadius = '12px';
+
+  morph.classList.add('tv-morph-open');
+  morph.setAttribute('aria-hidden', 'false');
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) {
+    morph.style.top          = '0';
+    morph.style.left         = '0';
+    morph.style.width        = '100vw';
+    morph.style.height       = '100vh';
+    morph.style.borderRadius = '0';
+    return;
+  }
+
+  // Ativa transição CSS após o primeiro frame (garante que a posição inicial renderizou)
+  requestAnimationFrame(() => {
+    morph.classList.add('tv-morph-expanding');
+    morph.style.top          = '0';
+    morph.style.left         = '0';
+    morph.style.width        = '100vw';
+    morph.style.height       = '100vh';
+    morph.style.borderRadius = '0';
+  });
+}
+
+function closeMorph() {
+  const morph = document.getElementById('tv-morph');
+  if (!morph) return;
+
+  function cleanup() {
+    morph.classList.remove('tv-morph-open', 'tv-morph-expanding');
+    morph.setAttribute('aria-hidden', 'true');
+    ['tv-player-scene', 'tv-detail-scene'].forEach(id => {
+      const s = document.getElementById(id);
+      if (s) s.classList.remove('tv-scene-active');
+    });
+    stopStream();
+    setState({ playing: false });
+    setTimeout(focusFirstFocusable, 50);
+  }
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) {
+    cleanup();
+    return;
+  }
+  // Anima de volta para a posição original (simplificado: colapsa para o topo-esq)
+  morph.classList.remove('tv-morph-expanding');
+  morph.style.top    = '0';
+  morph.style.left   = '0';
+  morph.style.width  = '200px';
+  morph.style.height = '120px';
+  morph.addEventListener('transitionend', cleanup, { once: true });
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1579,16 +1984,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
 
-    // Botão Voltar do controle: fecha a sidebar, ou sobe dos cards pras
-    // abas, ou abre a sidebar.
+    // Botão Voltar do controle: fecha morph → fecha sidebar → abre sidebar
     if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'XF86Back') {
-      if (sidebarOpen) { closeSidebar(); return; }
-      if (active && active.closest('#tv-channel-row')) {
-        const tab = document.querySelector('.tv-tab.active') || document.querySelector('.tv-tab');
-        if (tab) tab.focus();
-      } else {
-        openSidebar();
-      }
+      if (morphIsOpen())  { closeMorph();   return; }
+      if (sidebarOpen)    { closeSidebar(); return; }
+      openSidebar();
       return;
     }
 
@@ -1648,9 +2048,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mostra onboarding; se houver canais demo, carrega app mesmo assim
     if (!IS_TV) {
       // Modo desenvolvimento: mostra app com canais demo
+      _state.channels = DEMO_CHANNELS;
       showApp();
-      renderTabs();
-      renderChannels();
+      renderTvRows();
     }
   }
 
