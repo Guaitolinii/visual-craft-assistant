@@ -42,6 +42,19 @@ MIN_PROVIDERS_WITH_TITLES = 1
 # de considerar a fase de busca morta. "Busca sem resultado" não é erro e
 # não conta aqui - é o caso honesto de título que a TMDB não conhece.
 MAX_SEARCH_ERROR_RATIO = 0.5
+# Catálogo Xtream TRUNCADO (painel instável devolve uma lista válida, mas só
+# uma fração dos títulos) passa por todas as guardas acima. Por isso o total
+# de títulos casados de hoje é comparado, por tipo de mídia, com o do
+# vod-providers.json anterior (o workflow faz checkout da branch vod-data
+# antes de rodar, então o arquivo de ontem está no diretório): hoje abaixo
+# dessa fração do anterior = falha.
+MIN_MATCH_RATIO_VS_PREVIOUS = 0.2
+# Só compara quando o arquivo anterior tinha pelo menos isso de títulos
+# casados naquele tipo: a semente vazia da primeira execução ({}), ou uma
+# base anterior pequena demais, não servem de referência. Para aceitar uma
+# queda real e legítima, basta voltar o arquivo da vod-data para a semente.
+MIN_PREVIOUS_MATCHES_FOR_DROP_CHECK = 50
+OUTPUT_FILE = "vod-providers.json"
 
 
 class UpstreamFailure(Exception):
@@ -235,6 +248,43 @@ def build_map_for(base, user, password, tmdb_api_key, xtream_action, media_type)
     return out
 
 
+def load_previous_match_counts(path=OUTPUT_FILE):
+    """Quantos títulos casados o arquivo anterior tinha em cada tipo:
+    {"movies": n | None, "series": n | None}. None = sem referência para
+    aquele tipo (arquivo ausente, ilegível, JSON inválido ou formato
+    inesperado) - isso nunca aborta, só pula a comparação daquele tipo."""
+    counts = {"movies": None, "series": None}
+    try:
+        with open(path, "rb") as f:
+            previous = _parse_json_bytes(f.read())
+    except (OSError, ValueError) as exc:
+        if not isinstance(exc, FileNotFoundError):
+            print(f"[aviso] {path} anterior ilegível, comparação com ontem pulada: "
+                  f"{type(exc).__name__}", file=sys.stderr)
+        return counts
+    if isinstance(previous, dict):
+        for kind in counts:
+            if isinstance(previous.get(kind), dict):
+                counts[kind] = len(previous[kind])
+    return counts
+
+
+def check_no_sharp_drop(previous_counts, today):
+    """Levanta UpstreamFailure se algum tipo de mídia casou bem menos
+    títulos hoje do que na execução anterior (ver
+    MIN_MATCH_RATIO_VS_PREVIOUS). today: {"movies": mapa, "series": mapa}."""
+    for kind, current_map in today.items():
+        before = previous_counts.get(kind)
+        if before is None or before < MIN_PREVIOUS_MATCHES_FOR_DROP_CHECK:
+            continue
+        now = len(current_map)
+        if now < before * MIN_MATCH_RATIO_VS_PREVIOUS:
+            media_type = "movie" if kind == "movies" else "tv"
+            raise UpstreamFailure(
+                f"só {now} títulos casados hoje ({media_type}) contra {before} na execução anterior "
+                f"(mínimo {MIN_MATCH_RATIO_VS_PREVIOUS:.0%}) - catálogo Xtream provavelmente truncado")
+
+
 def main():
     base = os.environ.get("VOD_XTREAM_BASE")
     user = os.environ.get("VOD_XTREAM_USER")
@@ -246,11 +296,16 @@ def main():
         print(f"[erro] variáveis de ambiente ausentes: {', '.join(missing)}", file=sys.stderr)
         sys.exit(EXIT_MISSING_ENV)
 
+    # Contagem do arquivo anterior lida antes de tudo (é o de ontem, vindo do
+    # checkout da vod-data) para detectar um catálogo truncado hoje.
+    previous_counts = load_previous_match_counts()
+
     # Os dois mapas são montados ANTES de abrir o arquivo: qualquer falha
     # total (de filmes ou de séries) sai daqui sem tocar no JSON anterior.
     try:
         movies = build_map_for(base, user, password, tmdb_api_key, "get_vod_streams", "movie")
         series = build_map_for(base, user, password, tmdb_api_key, "get_series", "tv")
+        check_no_sharp_drop(previous_counts, {"movies": movies, "series": series})
     except UpstreamFailure as exc:
         print(f"[erro] {exc}", file=sys.stderr)
         print("[erro] vod-providers.json NÃO foi gravado - o último arquivo bom continua valendo.", file=sys.stderr)
@@ -261,7 +316,7 @@ def main():
         "movies": movies,
         "series": series,
     }
-    with open("vod-providers.json", "w", encoding="utf-8") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print("[✓] vod-providers.json gravado.")
 

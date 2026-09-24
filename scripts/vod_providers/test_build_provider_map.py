@@ -160,11 +160,10 @@ def fake_http(catalogs=None, discover_ids=None, search_ids=None,
     return _get
 
 
-class TestMainUpstreamGuards(unittest.TestCase):
-    """Falha TOTAL do Xtream/TMDB: sai com erro e NÃO grava o JSON (o passo
-    do workflow falha e o último arquivo bom da branch vod-data fica). Fontes
-    saudáveis com poucos ou zero casamentos: grava normalmente. O arquivo
-    pré-existente simula o checkout da branch vod-data no workflow."""
+class MainHarness:
+    """Roda main() num diretório temporário, sem rede. LAST_GOOD é o
+    vod-providers.json pré-existente - simula o checkout da branch vod-data
+    no workflow (o arquivo bom da execução anterior)."""
 
     LAST_GOOD = '{"generatedAt": "ontem", "movies": {"x|2020": ["netflix"]}, "series": {}}'
 
@@ -203,6 +202,16 @@ class TestMainUpstreamGuards(unittest.TestCase):
     def read_written(self):
         with open("vod-providers.json", encoding="utf-8") as f:
             return json.load(f)
+
+    def set_previous(self, text):
+        with open("vod-providers.json", "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+class TestMainUpstreamGuards(MainHarness, unittest.TestCase):
+    """Falha TOTAL do Xtream/TMDB: sai com erro e NÃO grava o JSON (o passo
+    do workflow falha e o último arquivo bom da branch vod-data fica). Fontes
+    saudáveis com poucos ou zero casamentos: grava normalmente."""
 
     # (a) catálogo que não é lista -> erro, arquivo intocado
     def test_catalog_not_a_list_aborts_without_writing(self):
@@ -277,6 +286,116 @@ class TestMainUpstreamGuards(unittest.TestCase):
                 self.run_main(fake_http())
         self.assertEqual(cm.exception.code, 1)
         self.assertIn("TMDB_API_KEY", self.stderr.getvalue())
+
+
+def previous_file(n_movies, n_series):
+    """vod-providers.json de uma execução anterior com n casamentos por tipo."""
+    return json.dumps({
+        "generatedAt": "ontem",
+        "movies": {f"filme antigo {i}|2020": ["netflix"] for i in range(n_movies)},
+        "series": {f"serie antiga {i}|": ["globoplay"] for i in range(n_series)},
+    })
+
+
+def bulk_http(n_movies, n_series):
+    """Fontes saudáveis em que cada título do catálogo casa com a Netflix:
+    o mapa de hoje sai com exatamente n_movies filmes e n_series séries."""
+    movies = [{"name": f"Filme {i}", "year": "2020"} for i in range(n_movies)]
+    series = [{"name": f"Serie {i}", "releaseDate": "2019-01-01"} for i in range(n_series)]
+    search_ids = {("movie", f"Filme {i}"): 10_000 + i for i in range(n_movies)}
+    search_ids.update({("tv", f"Serie {i}"): 20_000 + i for i in range(n_series)})
+    return fake_http(
+        catalogs={"get_vod_streams": movies, "get_series": series},
+        search_ids=search_ids,
+        discover_ids={("movie", 8): [10_000 + i for i in range(n_movies)],
+                      ("tv", 8): [20_000 + i for i in range(n_series)]},
+    )
+
+
+class TestMainSharpDropGuard(MainHarness, unittest.TestCase):
+    """Catálogo Xtream truncado (lista válida, mas uma fração do real): as
+    guardas de falha total não pegam, então o número de títulos casados de
+    hoje é comparado, por tipo de mídia, com o da execução anterior (o
+    vod-providers.json que o workflow deixa no diretório ao fazer checkout
+    da branch vod-data)."""
+
+    # Execução anterior saudável: bem acima do mínimo para comparar.
+    LAST_GOOD = previous_file(500, 200)
+
+    # (a) queda brusca num tipo de mídia -> erro, arquivo intocado
+    def test_truncated_movie_catalog_aborts_without_writing(self):
+        # 50 filmes casados hoje contra 500 ontem (10%) - painel instável.
+        err = self.assert_aborted_without_writing(bulk_http(50, 200))
+        self.assertIn("movie", err)
+        self.assertIn("50", err)
+        self.assertIn("500", err)
+
+    def test_truncated_series_catalog_aborts_even_if_movies_are_fine(self):
+        self.assert_aborted_without_writing(bulk_http(500, 10))
+
+    def test_tiny_run_from_healthy_looking_sources_aborts(self):
+        # O caso real do painel: fontes "saudáveis", só que 2 títulos casados.
+        self.assert_aborted_without_writing(fake_http())
+
+    # (b) contagem próxima ou maior -> grava, exit 0
+    def test_count_close_to_previous_writes_the_file(self):
+        self.run_main(bulk_http(400, 150))
+        out = self.read_written()
+        self.assertEqual(len(out["movies"]), 400)
+        self.assertEqual(len(out["series"]), 150)
+
+    def test_count_higher_than_previous_writes_the_file(self):
+        self.run_main(bulk_http(900, 300))
+        out = self.read_written()
+        self.assertEqual(len(out["movies"]), 900)
+        self.assertEqual(len(out["series"]), 300)
+
+    def test_count_exactly_at_the_threshold_writes_the_file(self):
+        movies = int(500 * bpm.MIN_MATCH_RATIO_VS_PREVIOUS)
+        series = int(200 * bpm.MIN_MATCH_RATIO_VS_PREVIOUS)
+        self.run_main(bulk_http(movies, series))
+        self.assertEqual(len(self.read_written()["movies"]), movies)
+
+    def test_previous_type_below_minimum_is_not_compared(self):
+        # Ontem só 40 séries casadas (abaixo do mínimo para servir de
+        # referência): hoje 2 (5%) não aborta, porque séries nem são comparadas.
+        self.set_previous(previous_file(500, 40))
+        self.run_main(bulk_http(450, 2))
+        out = self.read_written()
+        self.assertEqual(len(out["movies"]), 450)
+        self.assertEqual(len(out["series"]), 2)
+
+    # (c) sem arquivo anterior / só a semente -> comparação pulada
+    def test_first_run_without_previous_file_writes_the_file(self):
+        os.remove("vod-providers.json")
+        self.run_main(fake_http())
+        self.assertEqual(len(self.read_written()["movies"]), 2)
+
+    def test_empty_seed_file_does_not_trigger_the_check(self):
+        self.set_previous('{"generatedAt": null, "movies": {}, "series": {}}')
+        self.run_main(fake_http())
+        self.assertEqual(len(self.read_written()["series"]), 2)
+
+    # (d) arquivo anterior ilegível/malformado -> comparação pulada, sem crash
+    def test_unparseable_previous_file_is_skipped(self):
+        self.set_previous('{"generatedAt": "ontem", "movies": {"x|2020": [')
+        self.run_main(fake_http())
+        self.assertEqual(len(self.read_written()["movies"]), 2)
+
+    def test_previous_file_with_wrong_shape_is_skipped(self):
+        for bad in ('[]', '"texto"', 'null', '{"movies": "x", "series": 42}',
+                    '{"movies": ["a", "b"]}'):
+            with self.subTest(previous=bad):
+                self.set_previous(bad)
+                self.run_main(fake_http())
+                self.assertEqual(len(self.read_written()["movies"]), 2)
+
+    def test_previous_file_with_invalid_utf8_is_skipped(self):
+        with open("vod-providers.json", "wb") as f:
+            f.write(b'\xff\xfe{"movies": \x80}')
+        self.run_main(fake_http())
+        self.assertEqual(len(self.read_written()["movies"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
