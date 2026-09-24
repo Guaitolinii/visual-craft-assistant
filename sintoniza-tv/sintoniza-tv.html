@@ -250,6 +250,70 @@
       display: block;
     }
 
+    /* ── Task 6: Ficha de Série / VOD ── */
+    #tv-detail-scene {
+      background: var(--tv-bg);
+      color: var(--tv-ink);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    #tv-detail-backdrop {
+      position: absolute;
+      top: 0; right: 0;
+      width: 70%;
+      height: 80vh;
+      background-size: cover;
+      background-position: top right;
+      mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
+      -webkit-mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
+      z-index: 0;
+      opacity: 0.6;
+    }
+    .tv-detail-content {
+      position: relative;
+      z-index: 10;
+      padding: calc(64px + var(--safe-v)) var(--safe-h) var(--safe-v);
+      max-width: 65vw;
+    }
+    #tv-detail-title {
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 3.5rem;
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+      text-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .tv-detail-meta {
+      display: flex;
+      gap: 1rem;
+      font-size: 1.1rem;
+      color: var(--tv-muted);
+      margin-bottom: 1.5rem;
+    }
+    #tv-detail-plot {
+      font-size: 1.1rem;
+      line-height: 1.5;
+      color: var(--tv-ink);
+      opacity: 0.9;
+      margin-bottom: 2.5rem;
+      max-width: 90%;
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .tv-detail-actions {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    #tv-detail-episodes {
+      margin-top: 2rem;
+      width: 100vw;
+      margin-left: calc(var(--safe-h) * -1);
+    }
+    #tv-detail-episodes .tv-row { margin-bottom: 2rem; }
+
     /* prefers-reduced-motion: corte instantâneo, sem animação de escala */
     @media (prefers-reduced-motion: reduce) {
       .tv-tile { transition: none; }
@@ -407,6 +471,19 @@
 
   <!-- Ficha de série — Task 6 adiciona: backdrop, sinopse, fileiras de episódios -->
   <div id="tv-detail-scene">
+    <div id="tv-detail-backdrop"></div>
+    <div class="tv-detail-content">
+      <h1 id="tv-detail-title"></h1>
+      <div class="tv-detail-meta">
+        <span id="tv-detail-year"></span>
+        <span id="tv-detail-rating"></span>
+      </div>
+      <p id="tv-detail-plot"></p>
+      <div class="tv-detail-actions">
+        <button id="tv-detail-play-btn" class="tv-btn" data-focusable>Assistir</button>
+      </div>
+      <div id="tv-detail-episodes"></div>
+    </div>
   </div>
 </div>
 
@@ -1042,6 +1119,144 @@ async function loadTvVodCatalog() {
   } catch (err) {
     showTVToast('Erro ao carregar catálogo: ' + err.message);
   }
+}
+
+// ─ Helpers para Ficha de Série (Task 6) ──────────────────────────────────
+function seasonsOf(episodes) {
+  return Array.from(new Set(episodes.map(e => Number(e.season)).filter(n => n > 0))).sort((a, b) => a - b);
+}
+
+// Escapa HTML para injeção via template literals
+function escapeHtmlText(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+// Inicia reprodução unificada para filmes e episódios (semelhante ao selectChannel)
+function playTvVodSelection(url, meta) {
+  if (!url) { showTVToast("Não foi possível obter o link de reprodução."); return; }
+  currentBufferStageIndex = 0;
+  reconnectCircuitBreaker.reset();
+  
+  const pseudoChannel = {
+    id: meta.id,
+    name: meta.title || "Sem título",
+    category: meta.contType === "series" ? "Série" : "Filme",
+    logo: meta.cover || null,
+    url,
+    isVod: true
+  };
+  
+  setState({ selected: pseudoChannel, playing: false });
+  updateChannelInfo(pseudoChannel); // Reutiliza header nativo
+  stopStream();
+  playStream(url);
+}
+
+// Abre a Ficha de Série / VOD
+function openTvDetailScene(item, tileEl) {
+  const isSeries = !!item.series_id;
+  
+  document.getElementById('tv-detail-title').textContent = item.name || item.title || 'Sem título';
+  const cover = item.stream_icon || item.cover || '';
+  const backdrop = document.getElementById('tv-detail-backdrop');
+  if (cover) {
+    backdrop.style.backgroundImage = `url("${escapeHtmlText(cover)}")`;
+    backdrop.style.display = 'block';
+  } else {
+    backdrop.style.display = 'none';
+  }
+  
+  const year = item.year || (item.releaseDate ? String(item.releaseDate).slice(0, 4) : '');
+  document.getElementById('tv-detail-year').textContent = year;
+  const rating = item.rating && Number(item.rating) > 0 ? `★ ${item.rating}` : '';
+  document.getElementById('tv-detail-rating').textContent = rating;
+  document.getElementById('tv-detail-plot').textContent = item.plot || 'Nenhuma sinopse disponível.';
+  
+  const playBtn = document.getElementById('tv-detail-play-btn');
+  const epsContainer = document.getElementById('tv-detail-episodes');
+  
+  if (!isSeries) {
+    epsContainer.innerHTML = '';
+    playBtn.style.display = 'inline-flex';
+    // Substitui node pra limpar listeners antigos
+    const newPlayBtn = playBtn.cloneNode(true);
+    playBtn.parentNode.replaceChild(newPlayBtn, playBtn);
+    
+    newPlayBtn.addEventListener('click', () => {
+      openMorph(tileEl, 'tv-player-scene');
+      setTimeout(() => {
+        const url = buildVodStreamUrl(_tvVodCreds, item.stream_id, item.container_extension);
+        playTvVodSelection(url, { id: item.stream_id, contType: "vod", title: item.name || item.title, cover });
+      }, 360);
+    });
+    setTimeout(() => newPlayBtn.focus(), 100);
+  } else {
+    playBtn.style.display = 'none';
+    epsContainer.innerHTML = '<p class="tv-row-empty">Carregando episódios...</p>';
+    
+    fetch(xtreamApiUrl(_tvVodCreds, "get_series_info", { series_id: item.series_id }))
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        const episodes = Object.values(data.episodes || {}).flat().map(sanitizeVodItem);
+        if (!episodes.length) {
+          epsContainer.innerHTML = '<p class="tv-row-empty">Nenhum episódio encontrado.</p>';
+          return;
+        }
+        
+        const seasons = seasonsOf(episodes);
+        let html = '';
+        seasons.forEach(s => {
+          const seasonEps = episodes.filter(ep => Number(ep.season) === s);
+          html += `<section class="tv-row">
+            <h2 class="tv-row-label">Temporada ${s}</h2>
+            <div class="tv-row-track" role="list">
+              ${seasonEps.map(ep => {
+                const epCover = (ep.info && ep.info.movie_image) ? ep.info.movie_image : cover;
+                const epTitle = `${ep.episode_num ? `E${ep.episode_num} ` : ''}${ep.title || (ep.info && ep.info.name) || 'Episódio'}`;
+                return `<div class="tv-tile ep-tile" data-focusable data-ep-id="${escapeHtmlText(ep.id)}" tabindex="0" role="listitem">
+                  ${epCover ? `<img class="tv-tile-cover" src="${escapeHtmlText(epCover)}" alt="" onerror="this.style.display='none'">` : ''}
+                  <div class="tv-tile-overlay">
+                    <div class="tv-tile-name">${escapeHtmlText(epTitle)}</div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </section>`;
+        });
+        epsContainer.innerHTML = html;
+        
+        epsContainer.querySelectorAll('.ep-tile').forEach(epTile => {
+          epTile.addEventListener('click', () => {
+            const epId = epTile.dataset.epId;
+            const ep = episodes.find(e => String(e.id) === String(epId));
+            if (!ep) return;
+            openMorph(epTile, 'tv-player-scene');
+            setTimeout(() => {
+              const url = buildSeriesEpisodeUrl(_tvVodCreds, ep.id, ep.container_extension);
+              const seriesName = item.name || item.title || "";
+              const epNumStr = ep.episode_num ? `S${String(ep.season).padStart(2,'0')}E${String(ep.episode_num).padStart(2,'0')}` : `S${String(ep.season).padStart(2,'0')}`;
+              const fullTitle = `${seriesName} · ${epNumStr}`;
+              playTvVodSelection(url, { id: ep.id, contType: "series", title: fullTitle, cover });
+            }, 360);
+          });
+        });
+        
+        // Move o foco para o primeiro episódio da primeira fileira
+        setTimeout(() => {
+          const firstEp = epsContainer.querySelector('.ep-tile');
+          if (firstEp) firstEp.focus();
+        }, 100);
+      })
+      .catch(err => {
+        epsContainer.innerHTML = `<p class="tv-row-empty">Erro ao carregar episódios: ${err.message}</p>`;
+      });
+  }
+  
+  openMorph(tileEl, 'tv-detail-scene');
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1831,10 +2046,15 @@ function renderTvRows() {
   // ── Wire: tile de VOD → morph (Task 6: ficha de série; Task 7: player) ──
   rowsEl.querySelectorAll('.tv-tile[data-vod-id]').forEach(tile => {
     tile.addEventListener('click', () => {
-      if (!tile.dataset.vodId) return;
-      // Task 6 abrirá a ficha de série; Task 7 iniciará o player.
-      // Por ora apenas abre o morph (scene ativada em Task 6/7).
-      openMorph(tile, 'tv-player-scene');
+      const vodId = tile.dataset.vodId;
+      if (!vodId) return;
+      // Recupera o item a partir da cache global
+      const allItems = dedupeVodItemsByTitle(Object.values(_tvVodCatalogCache.itemsByCategory).flat());
+      const item = allItems.find(i => String(i.stream_id) === vodId || String(i.series_id) === vodId);
+      if (!item) return;
+      
+      // Abre a Ficha de Série (Task 6)
+      openTvDetailScene(item, tile);
     });
   });
 }
