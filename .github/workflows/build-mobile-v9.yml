@@ -9,7 +9,7 @@ on:
       - "scripts/prepare-mobile.js"
       - "android/**"
       - "ios/**"
-      - ".github/workflows/build-mobile.yml"
+      - ".github/workflows/build-mobile-v9.yml"
   workflow_dispatch:
 
 jobs:
