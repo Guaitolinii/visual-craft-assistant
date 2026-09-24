@@ -513,6 +513,146 @@ function parseM3U(text) {
   return channels;
 }
 
+// ══════════════════════════════════════════════════════════════
+// XTREAM / VOD / PROVEDORES — helpers puros
+// ══════════════════════════════════════════════════════════════
+// Cópia verbatim das mesmas funções de sintoniza-link.html. tests/vod/
+// tv-vod-parity.test.js garante que as duas cópias nunca divirjam.
+
+function parseXtreamCredentials(m3uUrl) {
+  let url;
+  try {
+    url = new URL(m3uUrl);
+  } catch (e) {
+    return null;
+  }
+  const username = url.searchParams.get('username');
+  const password = url.searchParams.get('password');
+  if (!username || !password) return null;
+
+  // Preserve explicit port in the base URL (e.g., :80 for http://)
+  // because JavaScript's URL parser normalizes away default ports
+  const host = url.host;
+  const portMatch = m3uUrl.match(/^[^:]+:\/\/[^/\?#]+:(\d+)/);
+  const port = portMatch ? portMatch[1] : null;
+  const normalizedHost = port ? host.replace(/:.*$/, '') + ':' + port : host;
+
+  return { base: `${url.protocol}//${normalizedHost}`, username, password };
+}
+
+function buildVodStreamUrl(creds, streamId, containerExtension) {
+  const ext = containerExtension || 'mp4';
+  return `${creds.base}/movie/${creds.username}/${creds.password}/${streamId}.${ext}`;
+}
+
+function buildSeriesEpisodeUrl(creds, episodeId, containerExtension) {
+  const ext = containerExtension || 'mp4';
+  return `${creds.base}/series/${creds.username}/${creds.password}/${episodeId}.${ext}`;
+}
+
+function xtreamApiUrl(creds, action, extraParams) {
+  const params = new URLSearchParams({
+    username: creds.username,
+    password: creds.password,
+    action,
+    ...(extraParams || {}),
+  });
+  return `${creds.base}/player_api.php?${params.toString()}`;
+}
+
+// get_vod_streams (filmes) e get_series (séries) usam campos diferentes para
+// ano e data de adição: filmes têm "year"/"added", séries têm "releaseDate"
+// (ex: "2019-05-10") e "last_modified" no lugar. Sem isso, item.year/added
+// ficam sempre undefined para séries - o dedup abaixo degradaria para
+// casar só por nome (perdendo a proteção do ano) e "Novidades" ordenaria por
+// undefined para toda série (sem ordenação real nenhuma).
+function vodItemYearKey(item) {
+  return item.year || String(item.releaseDate || "").slice(0, 4);
+}
+function vodItemAddedTs(item) {
+  return Number(item.added || item.last_modified || 0);
+}
+
+// Colapsa duplicatas exatas de catálogo (mesmo nome + mesmo ano) mantendo a
+// cópia mais recentemente adicionada. Chavear por nome+ano (e não só nome)
+// evita fundir filmes diferentes que compartilham um título traduzido (ex:
+// "O Guarda-Costas" 1992 vs 2004) e nunca funde sequências com nomes
+// diferentes (ex: os títulos de Harry Potter). Pura (tests/vod/dedupe-vod-items.test.js).
+function dedupeVodItemsByTitle(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = `${(item.name || "").trim().toLowerCase()}|${vodItemYearKey(item)}`;
+    const existing = groups.get(key);
+    if (!existing || vodItemAddedTs(item) > vodItemAddedTs(existing)) {
+      groups.set(key, item);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+// ─── Selo de streaming: cruzamento com o JSON gerado pelo GitHub Actions ───
+// Mesma forma de chave usada por dedupeVodItemsByTitle (nome+ano em
+// minúsculas) para que o mapa gerado offline (Python, ver
+// scripts/vod_providers/build_provider_map.py) e o catálogo carregado no
+// app apontem exatamente para a mesma entrada, sem normalização extra.
+function providerKeyForItem(item) {
+  return `${(item.name || "").trim().toLowerCase()}|${vodItemYearKey(item)}`;
+}
+
+// Não muta os itens de entrada (o cache _vodCatalogCache.itemsByCategory
+// guarda os mesmos objetos em várias chaves; mutar aqui vazaria o campo
+// para outras cópias antes delas passarem por este mesmo cruzamento).
+function attachProviders(items, providerMap) {
+  return items.map(item => ({
+    ...item,
+    streamingProviders: providerMap[providerKeyForItem(item)] || [],
+  }));
+}
+
+// Uma fileira por streaming, na ordem dada, só para quem tem pelo menos um
+// título (evita fileira vazia). Título com mais de um streaming aparece em
+// cada fileira correspondente. Fecha com "outros" para quem não caiu em
+// nenhuma fileira de providerOrder - inclusive quem só tem streaming fora
+// dessa lista (ex: id novo no mapa gerado que o app ainda não exibe) - e
+// assim nunca descarta um item do catálogo.
+function groupItemsByProvider(items, providerOrder) {
+  const groups = providerOrder.map(id => ({
+    providerId: id,
+    items: items.filter(it => (it.streamingProviders || []).includes(id)),
+  })).filter(g => g.items.length > 0);
+  const outros = items.filter(it => !providerOrder.some(id => (it.streamingProviders || []).includes(id)));
+  if (outros.length) groups.push({ providerId: "outros", items: outros });
+  return groups;
+}
+
+// Cores de marca por streaming (mesmas do protótipo aprovado) - texto
+// simples em vez de logo (evita reproduzir marca registrada), mas com a
+// cor certa de cada serviço para reconhecimento rápido no cartão. As
+// chaves são as mesmas ids curtas que o mapa gerado (PROVIDERS_BR em
+// scripts/vod_providers/build_provider_map.py) grava em streamingProviders.
+const PROVIDERS_BR = {
+  netflix:   { label: "Netflix",     bg: "#E50914", fg: "#fff" },
+  prime:     { label: "Prime Video", bg: "#12b3f0", fg: "#04222e" },
+  max:       { label: "Max",         bg: "#3b2fe3", fg: "#fff" },
+  disney:    { label: "Disney+",     bg: "#0c2a8c", fg: "#fff" },
+  apple:     { label: "Apple TV+",   bg: "#16181d", fg: "#fff" },
+  paramount: { label: "Paramount+",  bg: "#0064ff", fg: "#fff" },
+  globoplay: { label: "Globoplay",   bg: "#ff2d55", fg: "#fff" },
+};
+// Ordem das fileiras no modo "Agrupar por streaming" (providerOrder de
+// groupItemsByProvider) - id fora desta lista cai em "outros".
+const PROVIDER_ORDER = ["netflix", "prime", "max", "disney", "apple", "paramount", "globoplay"];
+
+// Ordena pelo timestamp real "added"/"last_modified" da API (não a categoria
+// estática "Lançamentos") e corta no limite — usada para montar a fileira
+// "Novidades". Pura (tests/vod/dedupe-vod-items.test.js).
+function selectNewestVodItems(items, limit) {
+  return items
+    .slice()
+    .sort((a, b) => vodItemAddedTs(b) - vodItemAddedTs(a))
+    .slice(0, limit);
+}
+
 // ──────────────────────────────────────────────────────────────
 // CARREGAMENTO DA LISTA M3U
 // ──────────────────────────────────────────────────────────────
