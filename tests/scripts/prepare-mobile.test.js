@@ -33,6 +33,19 @@ test("injectDefaults replaces tokens with empty string when env values are absen
   assert.equal(out, `value="" value=""`);
 });
 
+test("injectDefaults keeps $ sequences verbatim ($$, $&, $', $`)", () => {
+  const value = "http://h/get.php?username=u&password=pa$$w$&rd$'$`";
+  const out = injectDefaults(`"__DEFAULT_CHANNELS_URL__"`, { DEFAULT_CHANNELS_URL: value });
+  assert.equal(out, `"${value}"`);
+});
+
+test("injectDefaults escapes the value for a JS string literal (quote, backslash, newline, </script>)", () => {
+  const out = injectDefaults(`"__DEFAULT_VOD_URL__"`, { DEFAULT_VOD_URL: `a"b\\c\nd</script>` });
+  assert.equal(out, `"a\\"b\\\\c\\nd\\u003c/script>"`);
+  // E o literal resultante volta exatamente ao valor original.
+  assert.equal(JSON.parse(out), `a"b\\c\nd</script>`);
+});
+
 test("sintoniza-link.html carries the placeholder tokens, never a literal credential default", () => {
   const source = readFileSync(path.join(ROOT, "sintoniza-link.html"), "utf8");
   assert.ok(source.includes("__DEFAULT_CHANNELS_URL__"), "missing __DEFAULT_CHANNELS_URL__ token");

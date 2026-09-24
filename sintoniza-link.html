@@ -4524,7 +4524,45 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", DEFAULTS_SEEDED:"sint_defaults_seeded" };
+
+// URLs padrão do build: scripts/prepare-mobile.js troca cada token pela URL
+// vinda do secret (ou por "" num build sem secrets). Aberto sem passar pelo
+// build (npm run dev), o token fica como está e resolveInjectedDefault o
+// trata como "sem padrão". A credencial nunca fica neste arquivo-fonte.
+const INJECTED_DEFAULTS = { channels: "__DEFAULT_CHANNELS_URL__", vod: "__DEFAULT_VOD_URL__" };
+
+function resolveInjectedDefault(value) {
+  const v = String(value || "").trim();
+  return v.startsWith("__DEFAULT_") ? "" : v;
+}
+
+// Grava as URLs padrão no armazenamento na primeira abertura, para o app já
+// abrir funcionando (carrega a lista, mostra Filmes/Séries) sem digitar nada.
+// Tudo que já lê LS.URL / LS.VOD_URL (auto-load, abas VOD, recarregar, copiar
+// link, indicadores) passa a funcionar sem mudança. Regras:
+// - nunca sobrescreve uma URL que o usuário já salvou;
+// - semeia cada uma UMA vez (marca em LS.DEFAULTS_SEEDED): se o usuário
+//   limpar depois, continua limpo nas próximas aberturas;
+// - sem padrão real (token ou ""), não grava nem marca nada.
+function seedInjectedDefaults(storage, defaults) {
+  let seeded = {};
+  try { seeded = JSON.parse(storage.getItem(LS.DEFAULTS_SEEDED) || "{}") || {}; } catch (e) { seeded = {}; }
+  const targets = [["channels", LS.URL], ["vod", LS.VOD_URL]];
+  let changed = false;
+  for (const [name, key] of targets) {
+    const value = resolveInjectedDefault(defaults[name]);
+    if (!value || seeded[name]) continue;
+    if (!storage.getItem(key)) {
+      storage.setItem(key, value);
+      // Lista de canais padrão é sempre por URL (mesmo que o ?lista= faz).
+      if (name === "channels") storage.setItem(LS.MODE, "url");
+    }
+    seeded[name] = true;
+    changed = true;
+  }
+  if (changed) storage.setItem(LS.DEFAULTS_SEEDED, JSON.stringify(seeded));
+}
 
 function parseXtreamCredentials(m3uUrl) {
   let url;
@@ -5806,18 +5844,12 @@ function playVodSelection(url, meta) {
 }
 
 function loadSettingsForm() {
-  // Sem lista salva, cai no padrão injetado no build (scripts/prepare-mobile.js
-  // troca o token pela URL do secret, ou por "" sem secrets).
-  const rawUrl  = localStorage.getItem(LS.URL)  || "__DEFAULT_CHANNELS_URL__";
+  const url  = localStorage.getItem(LS.URL)  || "";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
   const proxy = localStorage.getItem(LS.PROXY) || "";
   const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
-  const rawVodUrl = localStorage.getItem(LS.VOD_URL) || "__DEFAULT_VOD_URL__";
-  // Token não substituído (ex.: npm run dev, sem passar pelo prepare-mobile)
-  // vira campo em branco, como antes.
-  const url    = rawUrl.startsWith("__DEFAULT_") ? "" : rawUrl;
-  const vodUrl = rawVodUrl.startsWith("__DEFAULT_") ? "" : rawVodUrl;
+  const vodUrl = localStorage.getItem(LS.VOD_URL) || "";
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
@@ -5952,6 +5984,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // depois que EPG_REFRESH_INTERVAL_MS tiver passado desde a última vez.
   refreshEpgIfStale();
   setInterval(refreshEpgIfStale, 30 * 60 * 1000);
+
+  // URLs padrão do build (canais e Filmes/Séries): gravadas na primeira
+  // abertura, depois do ?lista= (link compartilhado tem prioridade) e antes
+  // da checagem das abas VOD e do auto-load logo abaixo.
+  seedInjectedDefaults(localStorage, INJECTED_DEFAULTS);
 
   // Filmes/Séries: só mostra as abas se já houver credenciais Xtream salvas.
   updateVodTabsVisibility();

@@ -26,14 +26,18 @@ const PURE_HELPER_NAMES = [
   "safeFileBase", "buildDownloadEntry", "enqueueDownloads", "nextQueuedDownload", "updateDownload",
   "removeDownload", "resetInterruptedDownloads", "groupDownloads", "formatDownloadProgress", "seasonsOf",
   "providerKeyForItem", "attachProviders", "groupItemsByProvider",
+  "resolveInjectedDefault", "seedInjectedDefaults",
 ];
 
 function toHostRealm(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
-export function loadVodHelpers() {
-  const html = readFileSync(LINK_HTML_PATH, "utf8");
+// transformHtml (opcional) permite carregar a página como o build a gera -
+// ex.: com os tokens de URL padrão já substituídos por injectDefaults.
+export function loadVodHelpers({ transformHtml } = {}) {
+  const rawHtml = readFileSync(LINK_HTML_PATH, "utf8");
+  const html = transformHtml ? transformHtml(rawHtml) : rawHtml;
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)];
   const mainScript = scripts[scripts.length - 1][1];
 
@@ -100,6 +104,7 @@ export function loadVodHelpers() {
       "\nthis.filterVodItemsByQuery = typeof filterVodItemsByQuery !== 'undefined' ? filterVodItemsByQuery : undefined;" +
       "\nthis.dedupeVodItemsByTitle = typeof dedupeVodItemsByTitle !== 'undefined' ? dedupeVodItemsByTitle : undefined;" +
       "\nthis.selectNewestVodItems = typeof selectNewestVodItems !== 'undefined' ? selectNewestVodItems : undefined;" +
+      "\nthis.INJECTED_DEFAULTS = typeof INJECTED_DEFAULTS !== 'undefined' ? JSON.parse(JSON.stringify(INJECTED_DEFAULTS)) : undefined;" +
       PURE_HELPER_NAMES.map(n => `\nthis.${n} = typeof ${n} !== 'undefined' ? ${n} : undefined;`).join(""),
     context
   );

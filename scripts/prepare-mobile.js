@@ -12,10 +12,23 @@ const WWW = path.join(ROOT, "www");
 // ao onboarding em branco de hoje). Nunca lê nem escreve a credencial no
 // arquivo-fonte versionado - só no www/ gerado, que build-mobile.yml sobe
 // como artefato de download, não como commit.
+//
+// O token fica dentro de um literal de string JS ("..."), então o valor é
+// escapado para esse contexto: JSON.stringify cuida de aspas, barra
+// invertida e quebras de linha, e "<" vira < para um "</script>" no
+// valor não fechar a tag. A substituição usa a forma com função: com uma
+// string, replaceAll interpretaria "$$", "$&" etc. e corromperia uma senha
+// com "$" sem erro nenhum.
+function escapeForJsString(value) {
+  return JSON.stringify(String(value)).slice(1, -1).replace(/</g, "\\u003c");
+}
+
 export function injectDefaults(html, env) {
+  const channels = escapeForJsString(env.DEFAULT_CHANNELS_URL || "");
+  const vod = escapeForJsString(env.DEFAULT_VOD_URL || "");
   return html
-    .replaceAll("__DEFAULT_CHANNELS_URL__", env.DEFAULT_CHANNELS_URL || "")
-    .replaceAll("__DEFAULT_VOD_URL__", env.DEFAULT_VOD_URL || "");
+    .replaceAll("__DEFAULT_CHANNELS_URL__", () => channels)
+    .replaceAll("__DEFAULT_VOD_URL__", () => vod);
 }
 
 function main() {
