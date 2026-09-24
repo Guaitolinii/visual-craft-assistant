@@ -38,6 +38,9 @@ jobs:
           echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preparar www/
+        env:
+          DEFAULT_CHANNELS_URL: ${{ secrets.DEFAULT_CHANNELS_URL }}
+          DEFAULT_VOD_URL: ${{ secrets.DEFAULT_VOD_URL }}
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar Android
@@ -72,6 +75,9 @@ jobs:
           echo "cap: $(npx cap --version 2>&1 || echo FALHOU)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preparar www/
+        env:
+          DEFAULT_CHANNELS_URL: ${{ secrets.DEFAULT_CHANNELS_URL }}
+          DEFAULT_VOD_URL: ${{ secrets.DEFAULT_VOD_URL }}
         run: node scripts/prepare-mobile.js
 
       - name: Sincronizar iOS
