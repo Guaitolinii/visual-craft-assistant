@@ -5806,12 +5806,18 @@ function playVodSelection(url, meta) {
 }
 
 function loadSettingsForm() {
-  const url  = localStorage.getItem(LS.URL)  || "";
+  // Sem lista salva, cai no padrão injetado no build (scripts/prepare-mobile.js
+  // troca o token pela URL do secret, ou por "" sem secrets).
+  const rawUrl  = localStorage.getItem(LS.URL)  || "__DEFAULT_CHANNELS_URL__";
   const mode = localStorage.getItem(LS.MODE) || "url";
   const fit  = localStorage.getItem(LS.FIT)  || "contain";
   const proxy = localStorage.getItem(LS.PROXY) || "";
   const epgUrl = localStorage.getItem(LS.EPG_URL) || "";
-  const vodUrl = localStorage.getItem(LS.VOD_URL) || "";
+  const rawVodUrl = localStorage.getItem(LS.VOD_URL) || "__DEFAULT_VOD_URL__";
+  // Token não substituído (ex.: npm run dev, sem passar pelo prepare-mobile)
+  // vira campo em branco, como antes.
+  const url    = rawUrl.startsWith("__DEFAULT_") ? "" : rawUrl;
+  const vodUrl = rawVodUrl.startsWith("__DEFAULT_") ? "" : rawVodUrl;
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
