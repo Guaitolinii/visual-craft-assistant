@@ -9,6 +9,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tv = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "sintoniza-tv.html"), "utf8");
 const tvNav = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "tv-nav.js"), "utf8");
 
+test("appinfo.json desliga o histórico automático do webOS, senão Voltar sempre fecha o app", () => {
+  // Por padrão, o webOS liga o botão Voltar ao histórico de navegação do
+  // navegador (history.pushState/popstate); como este app nunca usa isso,
+  // o histórico está sempre vazio, e a própria LG documenta que "uma vez
+  // que a pilha do histórico está vazia, a plataforma trata a saída" - ou
+  // seja, ela FECHA O APP direto para o menu da TV, mesmo com o keydown
+  // handler do app reconhecendo a tecla e chamando preventDefault().
+  // disableBackHistoryAPI:true desliga esse comportamento automático e
+  // devolve o controle total do botão para o app (ver
+  // webostv.developer.lge.com/develop/guides/back-button).
+  const appinfo = JSON.parse(readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "appinfo.json"), "utf8"));
+  assert.equal(appinfo.disableBackHistoryAPI, true);
+});
+
 test("botão Voltar do controle da LG (keyCode 461, event.key vem como 'Unidentified') abre o menu", () => {
   // Sem isso, "Voltar" não faz nada nessa TV - e como não existe outro
   // jeito visível de abrir a barra lateral/Configurações, o app fica

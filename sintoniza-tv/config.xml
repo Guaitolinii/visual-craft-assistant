@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="https://sintoniza.app"
-        version="1.9.2">
+        version="1.9.3">
 
   <tizen:application
     id="SintonizaIPTV.app"
