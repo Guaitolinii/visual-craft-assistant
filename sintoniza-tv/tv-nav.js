@@ -1,47 +1,55 @@
 /**
- * tv-nav.js — Motor de Navegação Espacial D-pad
+ * tv-nav.js — Motor de Navegação Espacial D-pad (único)
  * Sintoniza IPTV — Versão Smart TV
  *
  * Implementa navegação por controle remoto usando getBoundingClientRect()
  * para encontrar o elemento focusável mais próximo na direção pressionada.
+ *
+ * Regras de design (doc de reconstrução, seção 3.1):
+ *  1. Sempre usa document.activeElement como fonte de verdade (nunca _currentFocus sombra).
+ *  2. Nunca bloqueia direções inteiras só porque o foco está num <input>.
+ *  3. Carregado via <script src="tv-nav.js"> ANTES do script principal.
  */
 
 (function (global) {
   'use strict';
 
   // ── Mapeamento de teclas do controle remoto ──────────────────────────────
-  const KEY_MAP = {
+  var KEY_MAP = {
     ArrowUp: 'up', Up: 'up',
     ArrowDown: 'down', Down: 'down',
     ArrowLeft: 'left', Left: 'left',
     ArrowRight: 'right', Right: 'right',
     Enter: 'ok', Return: 'ok',
     Escape: 'back', GoBack: 'back', XF86Back: 'back',
-    // Tizen key codes (alguns modelos antigos usam keyCode)
-    38: 'up', 40: 'down', 37: 'left', 39: 'right', 13: 'ok',
-    // Botões coloridos do controle
+    MediaPlayPause: 'playpause', MediaPlay: 'playpause', MediaPause: 'playpause',
     ColorF0Red: 'red', ColorF1Green: 'green',
     ColorF2Yellow: 'yellow', ColorF3Blue: 'blue',
-    Info: 'info', XF86Info: 'info',
+    Info: 'info', XF86Info: 'info'
+  };
+  // Tizen key codes (alguns modelos antigos usam keyCode)
+  var KEY_CODE_MAP = {
+    38: 'up', 40: 'down', 37: 'left', 39: 'right', 13: 'ok',
+    10009: 'back', 10252: 'playpause',
+    403: 'red', 404: 'green', 405: 'yellow', 406: 'blue', 457: 'info'
   };
 
-  // ── Estado do navegador ───────────────────────────────────────────────────
-  let _currentFocus = null;
-  let _enabled = true;
-  let _onBack = null;
-  let _onKey = null;   // callback genérico para teclas especiais
+  var _enabled = true;
+  var _onBack = null;
+  var _onKey = null;
+  // Quando o teclado on-screen está aberto, ele consome certas teclas
+  var _osk = null; // { isOpen, handleKey } — injetado pelo componente de teclado
 
   // ── Utilitários de geometria ──────────────────────────────────────────────
   function center(rect) {
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
-  // Distância entre centros no espaço 2D (com peso na direção principal)
   function directedDistance(fromRect, toRect, dir) {
-    const from = center(fromRect);
-    const to   = center(toRect);
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
+    var from = center(fromRect);
+    var to   = center(toRect);
+    var dx = to.x - from.x;
+    var dy = to.y - from.y;
 
     switch (dir) {
       case 'up':    return Math.abs(dy) * 1.0 + Math.abs(dx) * 0.5;
@@ -52,9 +60,8 @@
     }
   }
 
-  // Verifica se `toRect` está na direção `dir` a partir de `fromRect`
   function isInDirection(fromRect, toRect, dir) {
-    const TOLERANCE = 12; // px de tolerância para alinhamento
+    var TOLERANCE = 12;
     switch (dir) {
       case 'up':    return toRect.bottom   <= fromRect.top    + TOLERANCE;
       case 'down':  return toRect.top      >= fromRect.bottom - TOLERANCE;
@@ -66,73 +73,79 @@
 
   // ── Seleção de elementos focusáveis ─────────────────────────────────────
   function getFocusables() {
-    // Todos os elementos com [data-focusable] que estão visíveis e não desabilitados
-    return Array.from(document.querySelectorAll('[data-focusable]')).filter(el => {
+    return Array.from(document.querySelectorAll('[data-focusable]')).filter(function (el) {
       if (el.disabled) return false;
-      if (el.closest('[hidden]')) return false;
-      const style = getComputedStyle(el);
+      if (el.closest('[hidden]') || el.closest('.hidden')) return false;
+      var style = getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden') return false;
-      const rect = el.getBoundingClientRect();
+      var rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     });
   }
 
-  // ── Aplicar/remover foco visual ──────────────────────────────────────────
+  // ── Aplicar foco visual ──────────────────────────────────────────────────
   function applyFocus(el) {
-    if (_currentFocus && _currentFocus !== el) {
-      _currentFocus.classList.remove('tv-focus');
-      _currentFocus.setAttribute('aria-selected', 'false');
+    // Limpa foco visual anterior
+    var prev = document.querySelector('.tv-focus');
+    if (prev && prev !== el) {
+      prev.classList.remove('tv-focus');
+      prev.setAttribute('aria-selected', 'false');
     }
-    _currentFocus = el;
+
     if (!el) return;
 
     el.classList.add('tv-focus');
     el.setAttribute('aria-selected', 'true');
     el.focus({ preventScroll: true });
-
-    // Scroll suave para manter o elemento visível
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
 
   // ── Navegação principal ───────────────────────────────────────────────────
   function navigate(dir) {
-    const focusables = getFocusables();
+    var focusables = getFocusables();
     if (focusables.length === 0) return;
 
-    // Sem foco atual: foca o primeiro elemento
-    if (!_currentFocus || !document.contains(_currentFocus)) {
+    // Fonte de verdade: document.activeElement (nunca variável interna)
+    var current = document.activeElement;
+    if (!current || current === document.body || current === document.documentElement) {
       applyFocus(focusables[0]);
       return;
     }
 
-    const currentRect = _currentFocus.getBoundingClientRect();
-    const candidates = focusables
-      .filter(el => el !== _currentFocus)
-      .filter(el => isInDirection(currentRect, el.getBoundingClientRect(), dir));
+    var currentRect = current.getBoundingClientRect();
+    var candidates = focusables.filter(function (el) {
+      return el !== current && isInDirection(currentRect, el.getBoundingClientRect(), dir);
+    });
 
     if (candidates.length === 0) return; // Borda — sem movimento
 
-    // Encontra o mais próximo na direção
-    const best = candidates.reduce((prev, el) => {
-      const d1 = directedDistance(currentRect, prev.getBoundingClientRect(), dir);
-      const d2 = directedDistance(currentRect, el.getBoundingClientRect(), dir);
+    var best = candidates.reduce(function (prev, el) {
+      var d1 = directedDistance(currentRect, prev.getBoundingClientRect(), dir);
+      var d2 = directedDistance(currentRect, el.getBoundingClientRect(), dir);
       return d2 < d1 ? el : prev;
     });
 
     applyFocus(best);
   }
 
-  // ── Ações de teclado ─────────────────────────────────────────────────────
+  // ── Handler principal de teclado ─────────────────────────────────────────
   function handleKeydown(e) {
     if (!_enabled) return;
 
-    // Ignora se o foco está em um input de texto
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-      if (e.key !== 'Escape' && e.key !== 'GoBack') return;
-    }
-
-    const action = KEY_MAP[e.key] || KEY_MAP[e.keyCode];
+    var action = KEY_MAP[e.key] || KEY_CODE_MAP[e.keyCode];
     if (!action) return;
+
+    // Se o teclado on-screen está aberto E quer consumir a tecla, delega
+    if (_osk && typeof _osk.isOpen === 'function' && _osk.isOpen()) {
+      if (typeof _osk.handleKey === 'function') {
+        var consumed = _osk.handleKey(action, e);
+        if (consumed) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+    }
 
     e.preventDefault();
     e.stopPropagation();
@@ -146,10 +159,11 @@
         break;
 
       case 'ok':
-        if (_currentFocus) {
-          _currentFocus.click();
+        var current = document.activeElement;
+        if (current && current !== document.body) {
+          current.click();
         } else {
-          const focusables = getFocusables();
+          var focusables = getFocusables();
           if (focusables.length > 0) applyFocus(focusables[0]);
         }
         break;
@@ -158,67 +172,77 @@
         if (_onBack) _onBack();
         break;
 
+      case 'playpause':
+        if (_onKey) _onKey('playpause', e);
+        break;
+
       default:
         if (_onKey) _onKey(action, e);
     }
   }
 
   // ── API pública ──────────────────────────────────────────────────────────
-  const TVNav = {
+  var TVNav = {
     /**
      * Inicializa o motor de navegação.
      * @param {object} opts
      * @param {function} opts.onBack   — callback para o botão Voltar
-     * @param {function} opts.onKey    — callback para teclas especiais (info, red, green…)
+     * @param {function} opts.onKey    — callback para teclas especiais
      */
-    init(opts = {}) {
+    init: function (opts) {
+      opts = opts || {};
       _onBack = opts.onBack || null;
       _onKey  = opts.onKey  || null;
       document.addEventListener('keydown', handleKeydown, true);
       // Foca o primeiro elemento após um tick para garantir DOM pronto
-      setTimeout(() => {
-        const els = getFocusables();
+      setTimeout(function () {
+        var els = getFocusables();
         if (els.length > 0) applyFocus(els[0]);
       }, 100);
     },
 
+    /** Registra o componente de teclado on-screen */
+    registerOSK: function (osk) {
+      _osk = osk;
+    },
+
     /** Foca um elemento específico pelo seletor ou elemento */
-    focusEl(elOrSelector) {
-      const el = typeof elOrSelector === 'string'
+    focusEl: function (elOrSelector) {
+      var el = typeof elOrSelector === 'string'
         ? document.querySelector(elOrSelector)
         : elOrSelector;
       if (el) applyFocus(el);
     },
 
     /** Foca o primeiro elemento focusável */
-    focusFirst() {
-      const els = getFocusables();
+    focusFirst: function () {
+      var els = getFocusables();
       if (els.length > 0) applyFocus(els[0]);
     },
 
-    /** Retorna o elemento atualmente focado */
-    getCurrent() {
-      return _currentFocus;
+    /** Retorna o elemento atualmente focado (document.activeElement) */
+    getCurrent: function () {
+      return document.activeElement;
     },
 
-    /** Ativa/desativa a navegação (útil quando modal está aberto) */
-    setEnabled(val) {
+    /** Ativa/desativa a navegação */
+    setEnabled: function (val) {
       _enabled = val;
     },
 
-    /** Remove o foco visual sem destruir o estado */
-    blur() {
-      if (_currentFocus) {
-        _currentFocus.classList.remove('tv-focus');
-      }
-      _currentFocus = null;
+    /** Remove o foco visual */
+    blur: function () {
+      var prev = document.querySelector('.tv-focus');
+      if (prev) prev.classList.remove('tv-focus');
     },
 
     /** Destrói o motor (remove listeners) */
-    destroy() {
+    destroy: function () {
       document.removeEventListener('keydown', handleKeydown, true);
-      _currentFocus = null;
     },
+
+    /** Re-exporta para testes */
+    _getFocusables: getFocusables
   };
 
   global.TVNav = TVNav;

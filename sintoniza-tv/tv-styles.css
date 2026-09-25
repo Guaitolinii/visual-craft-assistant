@@ -1,12 +1,16 @@
 /**
- * tv-styles.css — 10-foot UI Design System
+ * tv-styles.css — 10-foot UI Design System (fonte única de CSS)
  * Sintoniza IPTV — Versão Smart TV (LG webOS + Samsung Tizen)
+ *
+ * Reconstrução v9.1: consolidou o <style> inline da <head> e o tv-styles.css
+ * original num arquivo só. Cada seção tem comentário de origem.
  *
  * Princípios:
  *  - Fonte mínima 22px (legível a 3m)
  *  - Foco visual de alto contraste para controle remoto
- *  - Layout horizontal: player em cima, catálogo embaixo em faixas
+ *  - Layout Netflix: home em fileiras, player via morph
  *  - Sem scroll vertical — navegação por D-pad
+ *  - Sem uso de propriedade `inset` (Chromium < 87)
  */
 
 /* ─── Reset & Base ──────────────────────────────────────────────────────── */
@@ -19,12 +23,12 @@
 }
 
 :root {
-  /* Paleta de cores */
+  /* Paleta original */
   --bg:          #0a0a0f;
   --bg-surface:  #13131d;
   --bg-card:     #1c1c2b;
   --bg-card-h:   #252538;
-  --accent:      #f97316;       /* laranja quente */
+  --accent:      #f97316;
   --accent-dim:  #c2410c;
   --text-1:      #f4f4f8;
   --text-2:      #9898b0;
@@ -34,7 +38,18 @@
   --live-red:    #ef4444;
   --success:     #22c55e;
 
-  /* Safe zone da TV (evita overscan nas bordas) */
+  /* Design tokens Netflix (Task 4) */
+  --tv-bg:       #0a0c11;
+  --tv-surface:  #171b26;
+  --tv-surface2: #212739;
+  --tv-line:     #2b3245;
+  --tv-ink:      #f2f4f9;
+  --tv-muted:    #8b93a8;
+  --tv-accent:   #22cdd6;
+  --tv-focus:    #ffffff;
+  --tv-live:     #ff3b4e;
+
+  /* Safe zone da TV */
   --safe-h: 5vw;
   --safe-v: 4vh;
 
@@ -61,28 +76,37 @@ html, body {
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   user-select: none;
-  cursor: none; /* TV não tem cursor */
+  cursor: none;
 }
 
-/* ─── Layout Raiz ────────────────────────────────────────────────────────── */
+/* ─── Ícone SVG inline ──────────────────────────────────────────────────── */
+.icon { display:inline-flex; align-items:center; justify-content:center; }
+.icon svg { width:1em; height:1em; }
+
+/* ─── Layout Raiz (Task 4: sobrescreve o grid) ──────────────────────────── */
 #tv-app {
-  display: grid;
-  grid-template-rows: 56vh 1fr;
+  display: block;
+  position: relative;
   width: 1920px;
   height: 1080px;
   overflow: hidden;
 }
 
-/* ─── Zona Superior: Player ──────────────────────────────────────────────── */
+/* ─── Zona do Player ────────────────────────────────────────────────────── */
 #tv-player-zone {
   display: grid;
   grid-template-columns: 1fr 380px;
   gap: 0;
   background: #000;
-  position: relative;
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 50;
 }
 
-/* Vídeo principal */
+#tv-player-zone.hidden {
+  display: none;
+}
+
 #tv-video {
   width: 100%;
   height: 100%;
@@ -91,7 +115,7 @@ html, body {
   background: #000;
 }
 
-/* Painel de info do canal (lado direito do player) */
+/* Painel de info do canal (direita) */
 #tv-channel-info {
   display: flex;
   flex-direction: column;
@@ -99,6 +123,11 @@ html, body {
   padding: 32px 40px;
   background: linear-gradient(90deg, transparent, rgba(10,10,15,0.95));
   gap: 12px;
+  transition: opacity 300ms ease;
+}
+#tv-channel-info.tv-hud-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .tv-live-badge {
@@ -160,7 +189,7 @@ html, body {
   border: 2px solid rgba(255,255,255,0.2);
   background: rgba(255,255,255,0.08);
   color: var(--text-1);
-  cursor: none;
+  cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 
@@ -172,7 +201,7 @@ html, body {
 /* Overlay de carregamento do player */
 #tv-loader {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -205,7 +234,7 @@ html, body {
 /* Overlay de erro */
 #tv-error {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -219,10 +248,16 @@ html, body {
 #tv-error h3 { font-size: var(--font-lg); color: var(--text-1); }
 #tv-error p  { font-size: var(--font-sm); color: var(--text-2); }
 
+/* Correção de hierarquia de heading: h3→h2 na sobreposição de erro */
+.tv-player-error-title {
+  font-size: var(--font-lg);
+  color: var(--text-1);
+}
+
 /* Overlay de arte (canal não selecionado) */
 #tv-art {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -251,7 +286,158 @@ html, body {
   pointer-events: none;
 }
 
-/* ─── Zona Inferior: Catálogo ─────────────────────────────────────────────── */
+/* ─── Home: fileiras estilo Netflix (Task 4) ────────────────────────────── */
+#tv-home {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: var(--tv-bg);
+  overflow: hidden;
+  font-family: 'Figtree', 'Outfit', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+#tv-rows {
+  flex: 1;
+  overflow: hidden;
+  padding: calc(56px + var(--safe-v)) var(--safe-h) var(--safe-v);
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+/* ── Row ─────────────────────────────────────────────────────────── */
+.tv-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.tv-row-label {
+  font-family: 'Bricolage Grotesque', 'Outfit', system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--tv-ink);
+  letter-spacing: -0.025em;
+  line-height: 1;
+  margin: 0;
+}
+
+.tv-row-track {
+  display: flex;
+  gap: 18px;
+  overflow: hidden;
+}
+
+.tv-row-empty {
+  font-size: 20px;
+  color: var(--tv-muted);
+  padding: 20px 0;
+  font-style: italic;
+  margin: 0;
+}
+
+/* ── Tile ────────────────────────────────────────────────────────── */
+.tv-tile {
+  flex: 0 0 220px;
+  height: 140px;
+  background: var(--tv-surface);
+  border-radius: 12px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  border: 2px solid transparent;
+  transition: border-color 100ms, transform 100ms;
+}
+
+.tv-tile:focus,
+.tv-tile.tv-focus {
+  border-color: var(--tv-focus);
+  transform: scale(1.05);
+  z-index: 2;
+}
+
+.tv-tile-cover {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tv-tile-overlay {
+  position: relative;
+  padding: 10px 12px 12px;
+  background: linear-gradient(to top, rgba(10,12,17,0.92) 0%, transparent 100%);
+  z-index: 1;
+}
+
+.tv-tile-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--tv-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.tv-tile-meta {
+  font-size: 13px;
+  color: var(--tv-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* AO VIVO — exceção sancionada: dado genuinamente ao vivo */
+.tv-tile-live {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tv-live);
+  letter-spacing: 0.07em;
+  z-index: 2;
+}
+
+.tv-tile-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tv-live);
+  animation: tv-tile-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tv-tile-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* Selo de streaming (canto superior direito do tile) */
+.tv-provider-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.4;
+  z-index: 2;
+}
+
+/* ─── Zona Inferior: Catálogo (legado, mantido por compatibilidade) ──────── */
 #tv-catalog-zone {
   display: flex;
   flex-direction: column;
@@ -277,7 +463,7 @@ html, body {
   color: var(--text-2);
   background: transparent;
   border: 2px solid transparent;
-  cursor: none;
+  cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s, background 0.15s;
 }
@@ -315,16 +501,17 @@ html, body {
   justify-content: center;
   gap: 10px;
   padding: 16px 12px;
-  cursor: none;
+  cursor: pointer;
   position: relative;
   overflow: hidden;
   transition: transform 0.15s, background 0.15s, border-color 0.15s;
+  animation: tv-fadeIn 0.3s ease both;
 }
 
 .tv-channel-card::before {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: linear-gradient(135deg, rgba(255,255,255,0.03), transparent);
   border-radius: inherit;
 }
@@ -400,7 +587,6 @@ html, body {
 
 
 /* ─── Foco Visual D-pad ─────────────────────────────────────────────────── */
-/* Este é o elemento mais importante para UX de TV */
 [data-focusable].tv-focus,
 [data-focusable]:focus-visible {
   outline: none;
@@ -458,7 +644,7 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── Sidebar Overlay (abre com botão Voltar no catálogo) ─────────────────── */
+/* ─── Sidebar Overlay ───────────────────────────────────────────────────── */
 #tv-sidebar {
   position: absolute;
   top: 0;
@@ -500,7 +686,7 @@ html, body {
   color: var(--text-2);
   font-size: var(--font-sm);
   font-weight: 500;
-  cursor: none;
+  cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
 
@@ -540,40 +726,56 @@ html, body {
   transform: translateX(-50%) translateY(0);
 }
 
-/* ─── Tela de Onboarding (carregar lista) ────────────────────────────────── */
-#tv-onboarding {
+/* ─── Tela de Configurações (antes: Onboarding) ─────────────────────────── */
+#tv-settings-scene {
   position: absolute;
-  inset: 0;
-  display: flex;
+  top: 0; right: 0; bottom: 0; left: 0;
+  display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 24px;
-  background: var(--bg);
-  z-index: 200;
+  background: var(--tv-bg);
+  z-index: 40;
 }
 
-#tv-onboarding.hidden { display: none; }
+#tv-settings-scene.active {
+  display: flex;
+}
 
-#tv-onboarding h1 {
+#tv-settings-scene h2 {
+  font-family: 'Bricolage Grotesque', 'Outfit', system-ui, sans-serif;
   font-size: var(--font-2xl);
   font-weight: 800;
-  color: var(--text-1);
+  color: var(--tv-ink);
 }
 
-#tv-onboarding h1 span { color: var(--accent); }
+#tv-settings-scene h2 span { color: var(--accent); }
 
-#tv-onboarding p {
+#tv-settings-scene p.tv-settings-desc {
   font-size: var(--font-base);
-  color: var(--text-2);
+  color: var(--tv-muted);
   text-align: center;
   max-width: 600px;
 }
 
-.tv-onboarding-input-group {
+.tv-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 700px;
+}
+
+.tv-settings-field label {
+  font-size: var(--font-sm);
+  color: var(--tv-muted);
+  font-weight: 600;
+}
+
+.tv-settings-field-row {
   display: flex;
   gap: 12px;
-  width: 700px;
+  align-items: center;
 }
 
 .tv-input {
@@ -588,7 +790,8 @@ html, body {
   cursor: text;
 }
 
-.tv-input:focus {
+.tv-input:focus,
+.tv-input.tv-focus {
   border-color: var(--accent);
   outline: none;
 }
@@ -605,7 +808,7 @@ html, body {
   font-size: var(--font-sm);
   font-weight: 700;
   border: 2px solid var(--accent);
-  cursor: none;
+  cursor: pointer;
   transition: background 0.15s, transform 0.15s;
   font-family: inherit;
 }
@@ -614,6 +817,226 @@ html, body {
   background: transparent;
   color: var(--text-2);
   border-color: rgba(255,255,255,0.15);
+}
+
+/* ─── Banner "sem lista" na Home ─────────────────────────────────────────── */
+.tv-empty-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 40px;
+  text-align: center;
+}
+
+.tv-empty-banner h2 {
+  font-family: 'Bricolage Grotesque', 'Outfit', system-ui, sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--tv-ink);
+}
+
+.tv-empty-banner p {
+  font-size: var(--font-base);
+  color: var(--tv-muted);
+  max-width: 500px;
+}
+
+/* ─── Morph overlay ─────────────────────────────────────────────────────── */
+#tv-morph {
+  position: fixed;
+  z-index: 200;
+  background: var(--tv-bg);
+  border-radius: 12px;
+  overflow: hidden;
+  display: none;
+}
+
+#tv-morph.tv-morph-open {
+  display: block;
+}
+
+#tv-morph.tv-morph-expanding {
+  transition:
+    top    360ms cubic-bezier(.4,0,.2,1),
+    left   360ms cubic-bezier(.4,0,.2,1),
+    width  360ms cubic-bezier(.4,0,.2,1),
+    height 360ms cubic-bezier(.4,0,.2,1),
+    border-radius 360ms cubic-bezier(.4,0,.2,1);
+}
+
+#tv-morph.tv-morph-transparent {
+  background: transparent;
+}
+
+/* Cenas dentro do morph */
+#tv-player-scene,
+#tv-detail-scene {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  display: none;
+}
+
+#tv-player-scene.tv-scene-active,
+#tv-detail-scene.tv-scene-active {
+  display: block;
+}
+
+/* ── Task 6: Ficha de Série / VOD ── */
+#tv-detail-scene {
+  background: var(--tv-bg);
+  color: var(--tv-ink);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#tv-detail-backdrop {
+  position: absolute;
+  top: 0; right: 0;
+  width: 70%;
+  height: 80vh;
+  background-size: cover;
+  background-position: top right;
+  mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
+  z-index: 0;
+  opacity: 0.6;
+}
+.tv-detail-content {
+  position: relative;
+  z-index: 10;
+  padding: calc(64px + var(--safe-v)) var(--safe-h) var(--safe-v);
+  max-width: 65vw;
+}
+#tv-detail-title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 1rem;
+  text-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.tv-detail-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 1.1rem;
+  color: var(--tv-muted);
+  margin-bottom: 1.5rem;
+}
+#tv-detail-plot {
+  font-size: 1.1rem;
+  line-height: 1.5;
+  color: var(--tv-ink);
+  opacity: 0.9;
+  margin-bottom: 2.5rem;
+  max-width: 90%;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-detail-actions {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+#tv-detail-episodes {
+  margin-top: 2rem;
+  width: 100vw;
+  margin-left: calc(var(--safe-h) * -1);
+}
+#tv-detail-episodes .tv-row { margin-bottom: 2rem; }
+
+/* ─── Teclado On-Screen ─────────────────────────────────────────────────── */
+#tv-osk {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 300;
+  display: none;
+  background: rgba(10,12,17,0.95);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+#tv-osk.active {
+  display: flex;
+}
+
+.tv-osk-display {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--tv-ink);
+  background: var(--bg-card);
+  border: 2px solid var(--tv-line);
+  border-radius: var(--radius);
+  padding: 16px 24px;
+  min-width: 700px;
+  text-align: left;
+  min-height: 64px;
+  word-break: break-all;
+  font-family: 'Outfit', monospace, system-ui;
+}
+
+.tv-osk-label {
+  font-size: var(--font-sm);
+  color: var(--tv-muted);
+  text-align: center;
+}
+
+.tv-osk-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tv-osk-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tv-osk-key {
+  min-width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--tv-surface2);
+  color: var(--tv-ink);
+  font-size: 22px;
+  font-weight: 600;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms, transform 100ms;
+  padding: 0 12px;
+  font-family: inherit;
+}
+
+.tv-osk-key.wide {
+  min-width: 120px;
+  font-size: 18px;
+}
+
+.tv-osk-key.extra-wide {
+  min-width: 200px;
+  font-size: 18px;
+}
+
+.tv-osk-key.action {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tv-osk-key:focus,
+.tv-osk-key.tv-focus {
+  border-color: var(--tv-focus);
+  background: var(--accent);
+  color: #fff;
+  transform: scale(1.08);
+  z-index: 1;
 }
 
 /* ─── Telemetria (debug overlay) ─────────────────────────────────────────── */
@@ -641,10 +1064,6 @@ html, body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.tv-channel-card {
-  animation: tv-fadeIn 0.3s ease both;
-}
-
 /* ─── Barra de status (Watchdog) ─────────────────────────────────────────── */
 #tv-status-bar {
   position: absolute;
@@ -670,4 +1089,12 @@ html, body {
 #tv-status-bar.visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ─── prefers-reduced-motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .tv-tile { transition: none; }
+  .tv-tile-live-dot { animation: none; }
+  #tv-morph.tv-morph-expanding { transition: none; }
+  .tv-osk-key { transition: none; }
 }

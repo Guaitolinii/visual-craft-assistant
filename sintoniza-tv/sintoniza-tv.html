@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
@@ -13,378 +13,70 @@
   <!-- Fontes do home estilo Netflix (Task 4) -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" />
 
+  <!-- Motor de navegação D-pad (único — carregado antes do script principal) -->
+  <script src="tv-nav.js"></script>
+
   <!-- Bibliotecas de player -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
 
-  <!-- CSS de TV -->
+  <!-- CSS de TV (fonte única — consolidado) -->
   <link rel="stylesheet" href="tv-styles.css" />
-
-  <style>
-    /* Variáveis de ícone SVG embutidas (substitui Lucide CDN) */
-    .icon { display:inline-flex; align-items:center; justify-content:center; }
-    .icon svg { width:1em; height:1em; }
-
-    /* ── Task 4: Design tokens (home Netflix) ────────────────────────── */
-    /* Prefixo --tv-* para não colidir com --bg/--accent laranja do tema atual. */
-    :root {
-      --tv-bg:       #0a0c11;
-      --tv-surface:  #171b26;
-      --tv-surface2: #212739;
-      --tv-line:     #2b3245;
-      --tv-ink:      #f2f4f9;
-      --tv-muted:    #8b93a8;
-      --tv-accent:   #22cdd6;   /* teal — mesmo do selo de streaming */
-      --tv-focus:    #ffffff;   /* branco puro no foco (não o accent, pra não brigar com o selo) */
-      --tv-live:     #ff3b4e;
-    }
-
-    /* ── Task 4: Layout base — sobrescreve o grid 2-zonas do tv-styles.css ── */
-    #tv-app {
-      display: block;
-      position: relative;
-    }
-
-    /* Zona do player fica escondida por padrão; o morph a revelará (Task 7) */
-    #tv-player-zone.hidden {
-      display: none;
-    }
-    #tv-player-zone {
-      position: absolute;
-      inset: 0;
-      z-index: 50;
-    }
-
-    /* Correção de hierarquia de heading: h3→h2 na sobreposição de erro */
-    .tv-player-error-title {
-      font-size: var(--font-lg);
-      color: var(--text-1);
-    }
-
-    /* ── Task 4: Home — fileiras estilo Netflix ──────────────────────── */
-    #tv-home {
-      position: absolute;
-      inset: 0;
-      background: var(--tv-bg);
-      overflow: hidden;
-      font-family: 'Figtree', 'Outfit', system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-    }
-
-    #tv-rows {
-      flex: 1;
-      overflow: hidden;
-      padding: calc(56px + var(--safe-v)) var(--safe-h) var(--safe-v);
-      display: flex;
-      flex-direction: column;
-      gap: 40px;
-    }
-
-    /* ── Row ─────────────────────────────────────────────────────────── */
-    .tv-row {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-
-    .tv-row-label {
-      font-family: 'Bricolage Grotesque', 'Outfit', system-ui, sans-serif;
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--tv-ink);
-      letter-spacing: -0.025em;
-      line-height: 1;
-      margin: 0;
-    }
-
-    .tv-row-track {
-      display: flex;
-      gap: 18px;
-      overflow: hidden;
-    }
-
-    .tv-row-empty {
-      font-size: 20px;
-      color: var(--tv-muted);
-      padding: 20px 0;
-      font-style: italic;
-      margin: 0;
-    }
-
-    /* ── Tile ────────────────────────────────────────────────────────── */
-    .tv-tile {
-      flex: 0 0 220px;
-      height: 140px;
-      background: var(--tv-surface);
-      border-radius: 12px;
-      cursor: none;
-      position: relative;
-      overflow: hidden;
-      outline: none;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      border: 2px solid transparent;
-      transition: border-color 100ms, transform 100ms;
-    }
-
-    .tv-tile:focus {
-      border-color: var(--tv-focus);
-      transform: scale(1.05);
-      z-index: 2;
-    }
-
-    .tv-tile-cover {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .tv-tile-overlay {
-      position: relative;
-      padding: 10px 12px 12px;
-      background: linear-gradient(to top, rgba(10,12,17,0.92) 0%, transparent 100%);
-      z-index: 1;
-    }
-
-    .tv-tile-name {
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--tv-ink);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      line-height: 1.2;
-    }
-
-    .tv-tile-meta {
-      font-size: 13px;
-      color: var(--tv-muted);
-      margin-top: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* AO VIVO — exceção sancionada: dado genuinamente ao vivo */
-    .tv-tile-live {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--tv-live);
-      letter-spacing: 0.07em;
-      z-index: 2;
-    }
-
-    .tv-tile-live-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--tv-live);
-      animation: tv-tile-pulse 1.6s ease-in-out infinite;
-    }
-
-    @keyframes tv-tile-pulse {
-      0%, 100% { opacity: 1;   transform: scale(1);    }
-      50%       { opacity: 0.4; transform: scale(0.75); }
-    }
-
-    /* Selo de streaming (canto superior direito do tile) */
-    .tv-provider-badge {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      line-height: 1.4;
-      z-index: 2;
-    }
-
-    /* ── Morph overlay: o cartão VIRA a tela inteira ─────────────────── */
-    /* JS define top/left/width/height via style="" (posição inicial = rect do cartão).
-       Depois de um rAF, adiciona .tv-morph-expanding que ativa a transição CSS,
-       e sobrescreve os inline styles para 0/0/100vw/100vh. */
-    #tv-morph {
-      position: fixed;
-      z-index: 200;
-      background: var(--tv-bg);
-      border-radius: 12px;
-      overflow: hidden;
-      display: none;
-    }
-
-    #tv-morph.tv-morph-open {
-      display: block;
-    }
-
-    #tv-morph.tv-morph-expanding {
-      transition:
-        top    360ms cubic-bezier(.4,0,.2,1),
-        left   360ms cubic-bezier(.4,0,.2,1),
-        width  360ms cubic-bezier(.4,0,.2,1),
-        height 360ms cubic-bezier(.4,0,.2,1),
-        border-radius 360ms cubic-bezier(.4,0,.2,1);
-    }
-
-    /* Cenas dentro do morph — ocultas até serem ativadas */
-    #tv-player-scene,
-    #tv-detail-scene {
-      position: absolute;
-      inset: 0;
-      display: none;
-    }
-
-    #tv-player-scene.tv-scene-active,
-    #tv-detail-scene.tv-scene-active {
-      display: block;
-    }
-
-    /* ── Task 7: Player unificado ── */
-    #tv-morph.tv-morph-transparent {
-      background: transparent;
-    }
-    #tv-channel-info {
-      transition: opacity 300ms ease;
-    }
-    #tv-channel-info.tv-hud-hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    /* ── Task 6: Ficha de Série / VOD ── */
-    #tv-detail-scene {
-      background: var(--tv-bg);
-      color: var(--tv-ink);
-      overflow-y: auto;
-      overflow-x: hidden;
-    }
-    #tv-detail-backdrop {
-      position: absolute;
-      top: 0; right: 0;
-      width: 70%;
-      height: 80vh;
-      background-size: cover;
-      background-position: top right;
-      mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
-      -webkit-mask-image: linear-gradient(to right, transparent, black 40%), linear-gradient(to bottom, black 60%, transparent);
-      z-index: 0;
-      opacity: 0.6;
-    }
-    .tv-detail-content {
-      position: relative;
-      z-index: 10;
-      padding: calc(64px + var(--safe-v)) var(--safe-h) var(--safe-v);
-      max-width: 65vw;
-    }
-    #tv-detail-title {
-      font-family: 'Bricolage Grotesque', sans-serif;
-      font-size: 3.5rem;
-      font-weight: 700;
-      line-height: 1.1;
-      margin-bottom: 1rem;
-      text-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    }
-    .tv-detail-meta {
-      display: flex;
-      gap: 1rem;
-      font-size: 1.1rem;
-      color: var(--tv-muted);
-      margin-bottom: 1.5rem;
-    }
-    #tv-detail-plot {
-      font-size: 1.1rem;
-      line-height: 1.5;
-      color: var(--tv-ink);
-      opacity: 0.9;
-      margin-bottom: 2.5rem;
-      max-width: 90%;
-      display: -webkit-box;
-      -webkit-line-clamp: 4;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .tv-detail-actions {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 3rem;
-    }
-    #tv-detail-episodes {
-      margin-top: 2rem;
-      width: 100vw;
-      margin-left: calc(var(--safe-h) * -1);
-    }
-    #tv-detail-episodes .tv-row { margin-bottom: 2rem; }
-
-    /* prefers-reduced-motion: corte instantâneo, sem animação de escala */
-    @media (prefers-reduced-motion: reduce) {
-      .tv-tile { transition: none; }
-      .tv-tile-live-dot { animation: none; }
-      #tv-morph.tv-morph-expanding { transition: none; }
-    }
-  </style>
 </head>
 <body>
 
 <!-- ══════════════════════════════════════════════════════════
-     ONBOARDING — Aparece quando não há lista M3U carregada
+     CONFIGURAÇÕES — scene acessível pela sidebar, nunca bloqueante
 ═══════════════════════════════════════════════════════════════ -->
-<div id="tv-onboarding">
-  <h1><span>Sintoniza</span> IPTV</h1>
-  <p>Informe a URL da sua lista M3U para começar a assistir</p>
-  <div class="tv-onboarding-input-group">
-    <input
-      id="tv-m3u-url"
-      class="tv-input"
-      type="url"
-      placeholder="http://127.0.0.1:8088/lista.m3u"
-      autocomplete="off"
-      data-focusable
-    />
-    <button id="tv-load-btn" class="tv-btn" data-focusable>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      Carregar
-    </button>
+<div id="tv-settings-scene">
+  <h2><span>Sintoniza</span> — Configurações</h2>
+  <p class="tv-settings-desc">Informe suas URLs para começar a assistir. Pressione OK sobre o campo para abrir o teclado.</p>
+
+  <div class="tv-settings-field">
+    <label>URL da lista M3U</label>
+    <div class="tv-settings-field-row">
+      <input id="tv-m3u-url" class="tv-input" type="url" readonly
+        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+    </div>
   </div>
-  <p style="font-size:18px;color:#5c5c78;margin-top:24px">EPG — guia de programação (opcional)</p>
-  <div class="tv-onboarding-input-group">
-    <input
-      id="tv-epg-url"
-      class="tv-input"
-      type="url"
-      placeholder="http://seu-provedor.com/xmltv.php?username=...&password=..."
-      autocomplete="off"
-      data-focusable
-    />
+
+  <div class="tv-settings-field">
+    <label>EPG — guia de programação (opcional)</label>
+    <div class="tv-settings-field-row">
+      <input id="tv-epg-url" class="tv-input" type="url" readonly
+        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+    </div>
   </div>
-  <p style="font-size:18px;color:#5c5c78;margin-top:24px">Filmes e Séries — URL do catálogo (opcional)</p>
-  <div class="tv-onboarding-input-group">
-    <input
-      id="tv-vod-url"
-      class="tv-input"
-      type="url"
-      placeholder="http://seu-provedor.com/get.php?username=...&amp;password=...&amp;type=m3u_plus"
-      autocomplete="off"
-      data-focusable
-    />
+
+  <div class="tv-settings-field">
+    <label>Filmes e Séries — catálogo (opcional)</label>
+    <div class="tv-settings-field-row">
+      <input id="tv-vod-url" class="tv-input" type="url" readonly
+        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+    </div>
   </div>
-  <p style="font-size:18px;color:#5c5c78">Pressione OK no controle para selecionar o campo e usar o teclado da TV</p>
+
+  <button id="tv-settings-save" class="tv-btn" data-focusable style="margin-top:16px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+    Salvar e Carregar
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     TECLADO ON-SCREEN (navegável por D-pad)
+═══════════════════════════════════════════════════════════════ -->
+<div id="tv-osk" aria-label="Teclado virtual">
+  <div class="tv-osk-label" id="tv-osk-label">Digitando URL</div>
+  <div class="tv-osk-display" id="tv-osk-display"></div>
+  <div class="tv-osk-grid" id="tv-osk-grid">
+    <!-- Populado por JS -->
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
      APP PRINCIPAL
 ═══════════════════════════════════════════════════════════════ -->
-<div id="tv-app" style="display:none">
+<div id="tv-app">
 
   <!-- Header fixo com logo e relógio -->
   <div id="tv-header">
@@ -513,6 +205,10 @@
   <div class="tv-sidebar-item" id="sb-reload-list" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
     Recarregar lista
+  </div>
+  <div class="tv-sidebar-item" id="sb-settings" data-focusable tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Configurações
   </div>
   <div class="tv-sidebar-item" id="sb-debug" data-focusable tabindex="0">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1068,7 +764,7 @@ async function loadTvVodCatalog() {
   const vodUrl = localStorage.getItem('sint_vod_url') || '';
   const creds = parseXtreamCredentials(vodUrl);
   if (!creds) {
-    showTVToast('Configure a URL de Filmes/Séries no menu inicial.');
+    showTVToast('Configure a URL de Filmes/Séries em Configurações.');
     return;
   }
   _tvVodCreds = creds;
@@ -1277,13 +973,11 @@ async function loadPlaylist(url) {
 
     const cats = [...new Set(channels.map(c => c.category).filter(Boolean))].sort();
     setState({ channels, categories: cats, activeTab: 'Todos' });
-    // 'sint_url' é a MESMA chave usada pelo app web (sintoniza.html)
-  // Isso permite que a URL configurada no browser seja automaticamente
-  // reconhecida pela TV, sem precisar reconfigurar.
-  localStorage.setItem('sint_url', url);
+    localStorage.setItem('sint_url', url);
     ensureEssentialFavs();
     showTVToast(`${channels.length} canais carregados!`);
-    showApp();
+    // Fecha Configurações se estava aberta
+    hideSettingsScene();
     renderTvRows();
   } catch (err) {
     showTVToast('Erro ao carregar lista: ' + err.message);
@@ -2007,8 +1701,33 @@ function renderTvRows() {
 // UI HELPERS
 // ──────────────────────────────────────────────────────────────
 function showApp() {
-  document.getElementById('tv-onboarding').classList.add('hidden');
-  document.getElementById('tv-app').style.display = '';
+  // Compat: o app agora fica sempre visível, sem onboarding bloqueante.
+  // Esta função é mantida para não quebrar chamadas existentes.
+  hideSettingsScene();
+}
+
+function showSettingsScene() {
+  var scene = document.getElementById('tv-settings-scene');
+  if (scene) scene.classList.add('active');
+  // Pré-preenche com valores salvos
+  var m3u = document.getElementById('tv-m3u-url');
+  if (m3u) m3u.value = localStorage.getItem('sint_url') || '';
+  var epg = document.getElementById('tv-epg-url');
+  if (epg) epg.value = localStorage.getItem('sint_epg_url') || '';
+  var vod = document.getElementById('tv-vod-url');
+  if (vod) vod.value = localStorage.getItem('sint_vod_url') || '';
+  // Foca o primeiro campo
+  setTimeout(function () { TVNav.focusEl('#tv-m3u-url'); }, 100);
+}
+
+function hideSettingsScene() {
+  var scene = document.getElementById('tv-settings-scene');
+  if (scene) scene.classList.remove('active');
+}
+
+function isSettingsOpen() {
+  var scene = document.getElementById('tv-settings-scene');
+  return scene && scene.classList.contains('active');
 }
 
 function showLoader(msg) {
@@ -2255,10 +1974,10 @@ function openSidebar() {
 }
 
 function closeSidebar() {
-  const sb = document.getElementById('tv-sidebar');
+  var sb = document.getElementById('tv-sidebar');
   if (sb) sb.classList.remove('open');
   sidebarOpen = false;
-  setTimeout(focusFirstFocusable, 50);
+  setTimeout(function () { TVNav.focusFirst(); }, 50);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -2277,24 +1996,13 @@ function showHud() {
   }, 5000);
 }
 
-// Detecta genericamente qualquer <button>, <input> ou elemento com
-// tabindex="0" visível na tela - sem exigir um atributo especial por
-// elemento - e move o foco pro mais próximo na direção pressionada via
-// getBoundingClientRect().
+// Compat wrappers — código legado que referencia estas funções.
+// O motor único agora é TVNav (tv-nav.js).
 function getFocusableEls() {
-  return Array.from(document.querySelectorAll(
-    'button:not(:disabled):not([style*="display: none"]):not([style*="display:none"]), ' +
-    '[tabindex="0"]:not([style*="display: none"]):not([style*="display:none"]), ' +
-    'input:not(:disabled):not([style*="display: none"]):not([style*="display:none"])'
-  )).filter((el) => {
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  });
+  return TVNav._getFocusables ? TVNav._getFocusables() : [];
 }
-
 function focusFirstFocusable() {
-  const el = document.querySelector('button:not(:disabled), [tabindex="0"], input');
-  if (el) el.focus();
+  TVNav.focusFirst();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -2363,14 +2071,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_state.selected && _state.selected.url) playStream(_state.selected.url);
   });
 
-  // Onboarding: carregar lista
-  onClick('tv-load-btn', () => {
-    const m3uEl = document.getElementById('tv-m3u-url');
-    const url = m3uEl && m3uEl.value ? m3uEl.value.trim() : '';
-    const epgEl = document.getElementById('tv-epg-url');
-    const epgUrl = epgEl && epgEl.value ? epgEl.value.trim() : '';
-    const vodEl = document.getElementById('tv-vod-url');
-    const vodUrl = vodEl && vodEl.value ? vodEl.value.trim() : '';
+  // Configurações: salvar e carregar
+  onClick('tv-settings-save', function () {
+    var m3uEl = document.getElementById('tv-m3u-url');
+    var url = m3uEl && m3uEl.value ? m3uEl.value.trim() : '';
+    var epgEl = document.getElementById('tv-epg-url');
+    var epgUrl = epgEl && epgEl.value ? epgEl.value.trim() : '';
+    var vodEl = document.getElementById('tv-vod-url');
+    var vodUrl = vodEl && vodEl.value ? vodEl.value.trim() : '';
     if (epgUrl) {
       localStorage.setItem('sint_epg_url', epgUrl);
       localStorage.removeItem('sint_epg_cache');
@@ -2408,110 +2116,207 @@ document.addEventListener('DOMContentLoaded', () => {
     closeSidebar();
     const url = localStorage.getItem('sint_url');
     if (url) loadPlaylist(url);
-    else showTVToast('Nenhuma lista salva. Vá ao menu inicial.');
+    else showTVToast('Nenhuma lista salva. Abra Configurações.');
   });
-  onClick('sb-debug', () => {
-    const dbg = document.getElementById('tv-debug');
+  onClick('sb-settings', function () {
+    closeSidebar();
+    showSettingsScene();
+  });
+  onClick('sb-debug', function () {
+    var dbg = document.getElementById('tv-debug');
     if (dbg) dbg.classList.toggle('hidden');
     closeSidebar();
   });
 
-  // Motor D-pad: ver getFocusableEls()/focusFirstFocusable() acima.
-  document.addEventListener('keydown', (e) => {
-    showHud();
-    const active = document.activeElement;
+  // ────────────────────────────────────────────────────────────────
+  // TECLADO ON-SCREEN (OSK)
+  // ────────────────────────────────────────────────────────────────
+  var OSK_LAYOUTS = {
+    lower: [
+      ['1','2','3','4','5','6','7','8','9','0'],
+      ['q','w','e','r','t','y','u','i','o','p'],
+      ['a','s','d','f','g','h','j','k','l'],
+      ['z','x','c','v','b','n','m'],
+      [':','/','.','?','=','&','-','_','@','~']
+    ],
+    upper: [
+      ['1','2','3','4','5','6','7','8','9','0'],
+      ['Q','W','E','R','T','Y','U','I','O','P'],
+      ['A','S','D','F','G','H','J','K','L'],
+      ['Z','X','C','V','B','N','M'],
+      [':','/','.','?','=','&','-','_','@','~']
+    ]
+  };
+  var oskTarget = null;
+  var oskMode = 'lower';
+  var oskOpen = false;
 
-    // Media keys (LG/Tizen remotes)
-    if (['MediaPlayPause', 'MediaPlay', 'MediaPause'].includes(e.key)) {
-      e.preventDefault();
-      const playBtn = document.getElementById('tv-play-btn');
-      if (playBtn) playBtn.click();
+  function buildOskGrid() {
+    var grid = document.getElementById('tv-osk-grid');
+    if (!grid) return;
+    var layout = OSK_LAYOUTS[oskMode];
+    var html = '';
+    for (var r = 0; r < layout.length; r++) {
+      html += '<div class="tv-osk-row">';
+      for (var c = 0; c < layout[r].length; c++) {
+        html += '<button class="tv-osk-key" data-focusable data-osk-char="' +
+          layout[r][c].replace(/&/g,'&amp;').replace(/"/g,'&quot;') +
+          '">' + layout[r][c].replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</button>';
+      }
+      html += '</div>';
+    }
+    // Linha de ações
+    html += '<div class="tv-osk-row">';
+    html += '<button class="tv-osk-key wide" data-focusable data-osk-action="shift">' + (oskMode === 'lower' ? '⇧ Maiúscula' : '⇩ Minúscula') + '</button>';
+    html += '<button class="tv-osk-key extra-wide" data-focusable data-osk-action="space">Espaço</button>';
+    html += '<button class="tv-osk-key wide" data-focusable data-osk-action="backspace">← Apagar</button>';
+    html += '<button class="tv-osk-key wide" data-focusable data-osk-action="clear">Limpar</button>';
+    html += '<button class="tv-osk-key wide action" data-focusable data-osk-action="done">Concluir</button>';
+    html += '</div>';
+    grid.innerHTML = html;
+
+    // Click handlers para cada tecla
+    var keys = grid.querySelectorAll('.tv-osk-key');
+    for (var i = 0; i < keys.length; i++) {
+      keys[i].addEventListener('click', onOskKeyClick);
+    }
+  }
+
+  function onOskKeyClick(e) {
+    if (!oskTarget) return;
+    var btn = e.currentTarget;
+    var ch = btn.getAttribute('data-osk-char');
+    var action = btn.getAttribute('data-osk-action');
+    if (ch) {
+      oskTarget.value = (oskTarget.value || '') + ch;
+    } else if (action === 'space') {
+      oskTarget.value = (oskTarget.value || '') + ' ';
+    } else if (action === 'backspace') {
+      oskTarget.value = (oskTarget.value || '').slice(0, -1);
+    } else if (action === 'clear') {
+      oskTarget.value = '';
+    } else if (action === 'shift') {
+      oskMode = oskMode === 'lower' ? 'upper' : 'lower';
+      buildOskGrid();
+      setTimeout(function () { TVNav.focusFirst(); }, 50);
+      return;
+    } else if (action === 'done') {
+      closeOsk();
       return;
     }
+    // Atualiza display
+    var disp = document.getElementById('tv-osk-display');
+    if (disp) disp.textContent = oskTarget.value || '';
+  }
 
-    // Botão Voltar do controle: fecha morph → fecha sidebar → abre sidebar
-    if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'XF86Back') {
-      if (morphIsOpen())  { closeMorph();   return; }
-      if (sidebarOpen)    { closeSidebar(); return; }
-      openSidebar();
-      return;
+  function openOsk(inputEl) {
+    oskTarget = inputEl;
+    oskMode = 'lower';
+    oskOpen = true;
+    var osk = document.getElementById('tv-osk');
+    if (osk) osk.classList.add('active');
+    var disp = document.getElementById('tv-osk-display');
+    if (disp) disp.textContent = inputEl.value || '';
+    var label = document.getElementById('tv-osk-label');
+    if (label) {
+      var fieldLabel = inputEl.closest('.tv-settings-field');
+      label.textContent = fieldLabel ? fieldLabel.querySelector('label').textContent : 'Digitando';
     }
+    buildOskGrid();
+    setTimeout(function () { TVNav.focusFirst(); }, 100);
+  }
 
-    if (!active || active === document.body) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        focusFirstFocusable();
-      }
-      return;
+  function closeOsk() {
+    oskOpen = false;
+    var osk = document.getElementById('tv-osk');
+    if (osk) osk.classList.remove('active');
+    // Volta foco para o campo que estava editando
+    if (oskTarget) {
+      setTimeout(function () { TVNav.focusEl(oskTarget); }, 50);
     }
+    oskTarget = null;
+  }
 
-    if (active.tagName === 'INPUT' && ['Enter', 'Escape', 'ArrowDown', 'ArrowUp'].indexOf(e.key) === -1) return;
-
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1) {
-      e.preventDefault();
-      const focusables = getFocusableEls();
-      const currentRect = active.getBoundingClientRect();
-      let bestMatch = null;
-      let minDistance = Infinity;
-
-      for (const f of focusables) {
-        if (f === active) continue;
-        const r = f.getBoundingClientRect();
-        let dx = 0, dy = 0, isValid = false;
-
-        if (e.key === 'ArrowUp') { dy = currentRect.top - r.bottom; isValid = dy >= 0; dx = Math.abs(currentRect.left - r.left); }
-        else if (e.key === 'ArrowDown') { dy = r.top - currentRect.bottom; isValid = dy >= 0; dx = Math.abs(currentRect.left - r.left); }
-        else if (e.key === 'ArrowLeft') { dx = currentRect.left - r.right; isValid = dx >= 0; dy = Math.abs(currentRect.top - r.top); }
-        else if (e.key === 'ArrowRight') { dx = r.left - currentRect.right; isValid = dx >= 0; dy = Math.abs(currentRect.top - r.top); }
-
-        if (isValid) {
-          const distance = dy * dy + dx * dx;
-          if (distance < minDistance) { minDistance = distance; bestMatch = f; }
-        }
+  // Registra o OSK no TVNav para interceptar teclas quando aberto
+  TVNav.registerOSK({
+    isOpen: function () { return oskOpen; },
+    handleKey: function (action) {
+      // Quando o OSK está aberto, TVNav delega pra cá.
+      // Retorna true se consumiu a tecla, false se TVNav deve processar.
+      if (action === 'back') {
+        closeOsk();
+        return true;
       }
-
-      if (bestMatch) {
-        bestMatch.focus();
-        bestMatch.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      }
-    }
-
-    if (e.key === 'Enter' && active.tagName !== 'BUTTON') {
-      e.preventDefault();
-      active.click();
+      // Direções e OK: deixa TVNav navegar normalmente entre as teclas do OSK
+      return false;
     }
   });
 
-  setTimeout(focusFirstFocusable, 100);
+  // Clique em inputs com data-osk-target abre o OSK
+  var oskInputs = document.querySelectorAll('[data-osk-target]');
+  for (var i = 0; i < oskInputs.length; i++) {
+    oskInputs[i].addEventListener('click', function () {
+      openOsk(this);
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // INICIALIZAÇÃO DO TVNav (motor único de navegação D-pad)
+  // ────────────────────────────────────────────────────────────────
+  TVNav.init({
+    onBack: function () {
+      // OSK aberto → fecha OSK
+      if (oskOpen) { closeOsk(); return; }
+      // Configurações abertas → fecha
+      if (isSettingsOpen()) { hideSettingsScene(); TVNav.focusFirst(); return; }
+      // Morph aberto → fecha morph
+      if (morphIsOpen()) { closeMorph(); return; }
+      // Sidebar aberta → fecha sidebar
+      if (sidebarOpen) { closeSidebar(); return; }
+      // Nada aberto → abre sidebar
+      openSidebar();
+    },
+    onKey: function (action) {
+      showHud();
+      if (action === 'playpause') {
+        var playBtn = document.getElementById('tv-play-btn');
+        if (playBtn) playBtn.click();
+      }
+    }
+  });
 
   // Semeia URLs padrão do build no localStorage (uma vez, sem sobrescrever)
   seedTvInjectedDefaults();
 
-  // Pré-popula campos do onboarding com o que está salvo
-  const m3uInput = document.getElementById('tv-m3u-url');
-  if (m3uInput) m3uInput.value = localStorage.getItem('sint_url') || '';
-  const epgInput = document.getElementById('tv-epg-url');
-  if (epgInput) epgInput.value = localStorage.getItem('sint_epg_url') || '';
-  const vodInput = document.getElementById('tv-vod-url');
-  if (vodInput) vodInput.value = localStorage.getItem('sint_vod_url') || '';
+  // ────────────────────────────────────────────────────────────────
+  // LEITURA DE QUERYSTRING (?lista=, ?epg=, ?vod=)
+  // ────────────────────────────────────────────────────────────────
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var qsLista = params.get('lista');
+    var qsEpg   = params.get('epg');
+    var qsVod   = params.get('vod');
+    if (qsLista) localStorage.setItem('sint_url', qsLista);
+    if (qsEpg)   localStorage.setItem('sint_epg_url', qsEpg);
+    if (qsVod)   localStorage.setItem('sint_vod_url', qsVod);
+  } catch (ignore) { /* URLSearchParams pode não existir em Chromium muito antigo */ }
 
-  // Carrega lista salva automaticamente
-  // Lê 'sint_url' — compatível com o app web sintoniza.html
-  const savedUrl = localStorage.getItem('sint_url');
+  // ────────────────────────────────────────────────────────────────
+  // BOOT: sempre vai direto para a Home (nunca bloqueante)
+  // ────────────────────────────────────────────────────────────────
+  var savedUrl = localStorage.getItem('sint_url');
   if (savedUrl) {
     loadPlaylist(savedUrl);
   } else {
-    // Mostra onboarding; se houver canais demo, carrega app mesmo assim
+    // Sem URL salva: mostra Home com estado vazio amigável
     if (!IS_TV) {
-      // Modo desenvolvimento: mostra app com canais demo
       _state.channels = DEMO_CHANNELS;
-      showApp();
-      renderTvRows();
     }
+    renderTvRows();
   }
 
   // Visibilidade da aba (suspender watchdog)
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener('visibilitychange', function () {
     if (document.hidden) stopWatchdog();
     else if (_state.playing && _state.selected && _state.selected.url) startWatchdog(_state.selected.url);
   });
