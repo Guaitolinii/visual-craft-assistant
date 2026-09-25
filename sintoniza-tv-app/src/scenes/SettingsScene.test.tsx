@@ -21,6 +21,10 @@ describe('SettingsScene', () => {
     fireEvent.click(screen.getByTestId('field-m3u'));
     fireEvent.click(screen.getByText('h'));
     fireEvent.click(screen.getByText('t'));
+    // O teclado SUBSTITUI a tela de Configurações enquanto está aberto
+    // (não fica por cima) - "field-m3u" só volta ao DOM depois de
+    // "Concluir", que é quando dá pra conferir o valor digitado nele.
+    fireEvent.click(screen.getByText('Concluir'));
     expect(screen.getByTestId('field-m3u')).toHaveTextContent('ht');
   });
 

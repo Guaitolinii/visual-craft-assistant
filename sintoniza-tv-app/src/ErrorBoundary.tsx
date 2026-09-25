@@ -19,7 +19,9 @@ export class ErrorBoundary extends Component<{ children: ComponentChildren }, St
     if (this.state.error) {
       return (
         <div style={{
-          position: 'fixed', inset: 0, background: '#1a0000', color: '#ffdddd',
+          // top/right/bottom/left, não "inset" (não suportado pelo
+          // Chromium desta TV).
+          position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, background: '#1a0000', color: '#ffdddd',
           fontFamily: 'monospace', padding: 48, fontSize: 22, lineHeight: 1.5, overflow: 'auto',
         }}>
           <h1 style={{ color: '#ff6666', fontSize: 32 }}>Erro ao iniciar o Sintoniza</h1>

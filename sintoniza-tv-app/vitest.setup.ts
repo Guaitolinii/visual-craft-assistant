@@ -1,4 +1,14 @@
 import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/preact';
+
+// Sem isso, cada render() num teste ficava no DOM até o fim do arquivo -
+// o 2º/3º teste do mesmo describe() encontrava elementos duplicados
+// (do teste anterior + o novo), e getByText/getByTestId falhava com
+// "multiple elements found".
+afterEach(() => {
+  cleanup();
+});
 
 const localStorageMock = (function() {
   let store: Record<string, string> = {};
