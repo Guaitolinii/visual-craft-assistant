@@ -1,6 +1,6 @@
 {
   "id": "com.sintoniza.iptv",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "vendor": "Sintoniza",
   "type": "web",
   "main": "sintoniza-tv.html",
