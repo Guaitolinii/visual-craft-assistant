@@ -89,10 +89,30 @@ test("existe teclado on-screen (id=tv-osk)", () => {
   assert.match(tv, /id="tv-osk"/);
 });
 
-test("campos de URL usam data-osk-target para teclado on-screen", () => {
-  assert.match(tv, /id="tv-m3u-url"[^>]*data-osk-target/);
-  assert.match(tv, /id="tv-epg-url"[^>]*data-osk-target/);
-  assert.match(tv, /id="tv-vod-url"[^>]*data-osk-target/);
+test("campos de URL são <input> de verdade (não readonly), para colar continuar funcionando", () => {
+  // readonly bloqueava COLAR via ponteiro do Magic Remote e via o teclado
+  // remoto do app LG ThinQ do celular - que já funcionava no modelo antigo
+  // de login. Cada campo agora tem um botão "⌨" ao lado (data-osk-target-for)
+  // só para quem está navegando apenas com o D-pad físico.
+  assert.doesNotMatch(tv, /id="tv-m3u-url"[^>]*readonly/);
+  assert.doesNotMatch(tv, /id="tv-epg-url"[^>]*readonly/);
+  assert.doesNotMatch(tv, /id="tv-vod-url"[^>]*readonly/);
+  assert.match(tv, /data-osk-target-for="tv-m3u-url"/);
+  assert.match(tv, /data-osk-target-for="tv-epg-url"/);
+  assert.match(tv, /data-osk-target-for="tv-vod-url"/);
+});
+
+test("nenhum .focus() cru fora do motor de navegação (só TVNav.focusEl/TVNav.init)", () => {
+  // .focus() direto muda o foco de verdade, mas não move o realce visual
+  // (.tv-focus) nem o aria-selected - dava a impressão de que o D-pad
+  // parava de funcionar assim que o menu lateral abria, porque o destaque
+  // branco ficava preso no elemento focado antes. TVNav.focusEl faz as
+  // duas coisas juntas.
+  // tv-nav.js (arquivo separado) tem sua própria applyFocus() com .focus()
+  // interno - correto, é a implementação do motor. Aqui só verificamos o
+  // script principal de sintoniza-tv.html.
+  const rawFocusCalls = tv.match(/[A-Za-z_$][\w$]*\.focus\(\)/g) || [];
+  assert.deepEqual(rawFocusCalls, [], "achou .focus() direto - use TVNav.focusEl(...) para manter o realce visual sincronizado");
 });
 
 test("não existe bloqueio de ArrowLeft/ArrowRight em inputs", () => {

@@ -1,6 +1,6 @@
 {
   "id": "com.sintoniza.iptv",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "disableBackHistoryAPI": true,
   "vendor": "Sintoniza",
   "type": "web",

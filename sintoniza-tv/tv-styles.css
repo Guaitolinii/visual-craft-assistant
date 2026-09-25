@@ -805,6 +805,24 @@ html, body {
   outline: none;
 }
 
+.tv-osk-open-btn {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  border: 2px solid rgba(255,255,255,0.1);
+  background: var(--bg-card);
+  color: var(--text-1);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.tv-osk-open-btn:focus,
+.tv-osk-open-btn.tv-focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .tv-btn {
   display: flex;
   align-items: center;

@@ -75,29 +75,38 @@
 ═══════════════════════════════════════════════════════════════ -->
 <div id="tv-settings-scene">
   <h2><span>Sintoniza</span> — Configurações</h2>
-  <p class="tv-settings-desc">Informe suas URLs para começar a assistir. Pressione OK sobre o campo para abrir o teclado.</p>
+  <p class="tv-settings-desc">Cole a URL direto no campo (funciona com o controle no modo ponteiro, com o app LG ThinQ do celular, ou colando de outro jeito), ou use o botão do teclado ao lado para digitar só com o D-pad.</p>
 
+  <!-- Os 3 campos são <input> de verdade (não mais readonly): assim o
+       "colar" que já funcionava no modelo antigo de login (ponteiro do
+       Magic Remote e o teclado remoto do app LG ThinQ) continua
+       funcionando aqui. O botão "⌨" ao lado é só para quem está usando
+       apenas o D-pad físico, que abre o teclado on-screen navegável -
+       ver docs/superpowers/plans/2026-09-24-tv-app-reconstrucao.md. -->
   <div class="tv-settings-field">
     <label>URL da lista M3U</label>
     <div class="tv-settings-field-row">
-      <input id="tv-m3u-url" class="tv-input" type="url" readonly
-        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+      <input id="tv-m3u-url" class="tv-input" type="url"
+        placeholder="Cole aqui ou use o teclado ao lado" data-focusable />
+      <button class="tv-osk-open-btn" data-focusable data-osk-target-for="tv-m3u-url" aria-label="Abrir teclado on-screen para este campo">⌨</button>
     </div>
   </div>
 
   <div class="tv-settings-field">
     <label>EPG — guia de programação (opcional)</label>
     <div class="tv-settings-field-row">
-      <input id="tv-epg-url" class="tv-input" type="url" readonly
-        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+      <input id="tv-epg-url" class="tv-input" type="url"
+        placeholder="Cole aqui ou use o teclado ao lado" data-focusable />
+      <button class="tv-osk-open-btn" data-focusable data-osk-target-for="tv-epg-url" aria-label="Abrir teclado on-screen para este campo">⌨</button>
     </div>
   </div>
 
   <div class="tv-settings-field">
     <label>Filmes e Séries — catálogo (opcional)</label>
     <div class="tv-settings-field-row">
-      <input id="tv-vod-url" class="tv-input" type="url" readonly
-        placeholder="Pressione OK para digitar" data-focusable data-osk-target />
+      <input id="tv-vod-url" class="tv-input" type="url"
+        placeholder="Cole aqui ou use o teclado ao lado" data-focusable />
+      <button class="tv-osk-open-btn" data-focusable data-osk-target-for="tv-vod-url" aria-label="Abrir teclado on-screen para este campo">⌨</button>
     </div>
   </div>
 
@@ -934,7 +943,7 @@ function openTvDetailScene(item, tileEl) {
         playTvVodSelection(url, { id: item.stream_id, contType: "vod", title: item.name || item.title, cover });
       }, 360);
     });
-    setTimeout(() => newPlayBtn.focus(), 100);
+    setTimeout(() => TVNav.focusEl(newPlayBtn), 100);
   } else {
     playBtn.style.display = 'none';
     epsContainer.innerHTML = '<p class="tv-row-empty">Carregando episódios...</p>';
@@ -992,7 +1001,7 @@ function openTvDetailScene(item, tileEl) {
         // Move o foco para o primeiro episódio da primeira fileira
         setTimeout(() => {
           const firstEp = epsContainer.querySelector('.ep-tile');
-          if (firstEp) firstEp.focus();
+          if (firstEp) TVNav.focusEl(firstEp);
         }, 100);
       })
       .catch(err => {
@@ -2011,10 +2020,12 @@ function openSidebar() {
   const sb = document.getElementById('tv-sidebar');
   if (sb) sb.classList.add('open');
   sidebarOpen = true;
-  setTimeout(() => {
-    const home = document.getElementById('sb-home');
-    if (home) home.focus();
-  }, 50);
+  // TVNav.focusEl (não a chamada de foco nativa direta): move o foco DE VERDADE e
+  // também a marcação visual (.tv-focus) para dentro do menu. Chamar só
+  // .focus() aqui deixava o realce branco preso no card da Home que
+  // estava focado antes, então parecia que o D-pad não fazia nada dentro
+  // do menu, mesmo o foco real já tendo entrado nele.
+  setTimeout(() => { TVNav.focusEl('#sb-home'); }, 50);
 }
 
 function closeSidebar() {
@@ -2149,7 +2160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (favRow) {
       const first = favRow.querySelector('.tv-tile');
       if (first) {
-        first.focus();
+        TVNav.focusEl(first);
         first.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     } else {
@@ -2296,11 +2307,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Clique em inputs com data-osk-target abre o OSK
-  var oskInputs = document.querySelectorAll('[data-osk-target]');
-  for (var i = 0; i < oskInputs.length; i++) {
-    oskInputs[i].addEventListener('click', function () {
-      openOsk(this);
+  // Botão "⌨" ao lado de cada campo abre o teclado on-screen para ELE
+  // (não mais o próprio campo - ele agora é um <input> de verdade, para
+  // colar continuar funcionando com o ponteiro do Magic Remote e com o
+  // app LG ThinQ do celular, do mesmo jeito que já funcionava no modelo
+  // antigo de login).
+  var oskOpenButtons = document.querySelectorAll('[data-osk-target-for]');
+  for (var i = 0; i < oskOpenButtons.length; i++) {
+    oskOpenButtons[i].addEventListener('click', function () {
+      var target = document.getElementById(this.getAttribute('data-osk-target-for'));
+      if (target) openOsk(target);
     });
   }
 
