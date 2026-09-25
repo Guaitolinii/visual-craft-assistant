@@ -27,10 +27,17 @@
     ColorF2Yellow: 'yellow', ColorF3Blue: 'blue',
     Info: 'info', XF86Info: 'info'
   };
-  // Tizen key codes (alguns modelos antigos usam keyCode)
+  // Tizen/webOS key codes: o botão Voltar do controle da LG chega com
+  // event.key === "Unidentified" (documentado pela própria LG - ver
+  // webostv.developer.lge.com/develop/guides/back-button), então só dá
+  // para reconhecê-lo pelo keyCode 461. Sem isso, "Voltar" não faz nada
+  // nessa TV - e como abrir o menu lateral depende só do Voltar (não há
+  // botão de menu visível na tela), o app inteiro fica sem acesso a
+  // Configurações. 10009 é o keyCode equivalente do controle da Samsung
+  // Tizen (mantido para não perder compatibilidade com o outro lado).
   var KEY_CODE_MAP = {
     38: 'up', 40: 'down', 37: 'left', 39: 'right', 13: 'ok',
-    10009: 'back', 10252: 'playpause',
+    461: 'back', 10009: 'back', 10252: 'playpause',
     403: 'red', 404: 'green', 405: 'yellow', 406: 'blue', 457: 'info'
   };
 

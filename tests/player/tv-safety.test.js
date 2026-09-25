@@ -7,6 +7,16 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tv = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "sintoniza-tv.html"), "utf8");
+const tvNav = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "tv-nav.js"), "utf8");
+
+test("botão Voltar do controle da LG (keyCode 461, event.key vem como 'Unidentified') abre o menu", () => {
+  // Sem isso, "Voltar" não faz nada nessa TV - e como não existe outro
+  // jeito visível de abrir a barra lateral/Configurações, o app fica
+  // completamente preso na Home. Ver webostv.developer.lge.com/develop/
+  // guides/back-button (a LG documenta que o campo "key" vem "Unidentified"
+  // para esse botão - só dá para reconhecer pelo keyCode).
+  assert.match(tvNav, /461:\s*['"]back['"]/);
+});
 
 test("TV limpa nome/categoria/logo vindos da lista M3U", () => {
   assert.match(tv, /function sanitizeLabel\(/);
