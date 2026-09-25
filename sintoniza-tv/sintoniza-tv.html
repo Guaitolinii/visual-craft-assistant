@@ -42,7 +42,12 @@
     });
   })();
   </script>
-  <meta name="viewport" content="width=1920, initial-scale=1" />
+  <!-- "width=1920" não é respeitado por este Chromium de TV (o viewport
+       real reportado é 1280x720, devicePixelRatio 1.5); usamos
+       device-width, que é o que o navegador de fato já entrega, e
+       deixamos o CSS (100vw/100vh + vw/vh nas zonas de segurança) se
+       adaptar a qualquer resolução real. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sintoniza IPTV — Smart TV</title>
   <meta name="description" content="Sintoniza IPTV — versão Smart TV para LG webOS e Samsung Tizen." />
 

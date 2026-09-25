@@ -66,8 +66,17 @@
 }
 
 html, body {
-  width: 1920px;
-  height: 1080px;
+  /* Não travar em 1920x1080: essa TV real reporta um viewport de
+     1280x720 (devicePixelRatio 1.5 dá a mesma área física), apesar do
+     <meta name="viewport" content="width=1920..."> pedir 1920 - esse
+     meta não é respeitado neste Chromium de TV. Travar em px fixo aqui
+     fazia o documento inteiro virar uma "moldura" de 1920x1080 maior
+     que a tela real, e só o canto superior esquerdo (~1280x720) ficava
+     visível - sidebar, fileiras completas e todo o resto existiam, só
+     que fora da área que a TV realmente exibe. vw/vh sempre acompanham
+     o viewport real, em qualquer resolução. */
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text-1);
@@ -87,8 +96,8 @@ html, body {
 #tv-app {
   display: block;
   position: relative;
-  width: 1920px;
-  height: 1080px;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -650,7 +659,7 @@ html, body {
   top: 0;
   left: 0;
   width: 380px;
-  height: 1080px;
+  height: 100vh;
   background: rgba(10,10,15,0.96);
   backdrop-filter: blur(20px);
   z-index: 50;

@@ -9,6 +9,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tv = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "sintoniza-tv.html"), "utf8");
 const tvNav = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "tv-nav.js"), "utf8");
 
+test("html/body/#tv-app/#tv-sidebar usam vw/vh, não px fixo, para o layout inteiro", () => {
+  // Confirmado ao vivo numa LG real (modelo 43LM631C0SB): o viewport
+  // reportado é 1280x720, não 1920x1080, apesar da resolução física do
+  // painel - travar essas regras em "1920px"/"1080px" fazia o documento
+  // inteiro virar uma moldura maior que a tela real, e só o canto
+  // superior esquerdo (~1280x720) ficava visível; sidebar e fileiras
+  // completas existiam, só que fora da área que a TV mostra.
+  const css = readFileSync(path.join(__dirname, "..", "..", "sintoniza-tv", "tv-styles.css"), "utf8");
+  assert.doesNotMatch(css, /\b(width|height):\s*192\d(\.\d+)?px/, "achou largura/altura em px fixo perto de 1920 - use vw/vh");
+  assert.doesNotMatch(css, /\b(width|height):\s*108\d(\.\d+)?px/, "achou largura/altura em px fixo perto de 1080 - use vw/vh");
+  assert.match(css, /html,\s*body\s*\{[^}]*width:\s*100vw/);
+  assert.match(css, /html,\s*body\s*\{[^}]*height:\s*100vh/);
+});
+
 test("appinfo.json desliga o histórico automático do webOS, senão Voltar sempre fecha o app", () => {
   // Por padrão, o webOS liga o botão Voltar ao histórico de navegação do
   // navegador (history.pushState/popstate); como este app nunca usa isso,
