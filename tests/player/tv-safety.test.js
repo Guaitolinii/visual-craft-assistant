@@ -79,3 +79,14 @@ test("leitura de querystring (?lista=, ?epg=, ?vod=) está implementada", () => 
   assert.match(tv, /params\.get\('epg'\)/);
   assert.match(tv, /params\.get\('vod'\)/);
 });
+
+test("existe uma rede de segurança visível para erros não capturados (window.onerror mostra overlay na tela)", () => {
+  assert.match(tv, /id="tv-fatal-error"/);
+  assert.match(tv, /window\.addEventListener\(\s*['"]error['"]/);
+  assert.match(tv, /window\.addEventListener\(\s*['"]unhandledrejection['"]/);
+});
+
+test("a rede de segurança é o PRIMEIRO <script> inline do documento (roda antes de qualquer outro código)", () => {
+  const firstInlineScript = tv.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/)[1];
+  assert.match(firstInlineScript, /tv-fatal-error/);
+});

@@ -1,7 +1,47 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
+  <!-- Rede de segurança: se qualquer script depois deste falhar (erro de
+       runtime, promise rejeitada sem .catch), mostra a mensagem NA TELA em
+       vez de deixar o app travado em silêncio (ver docs/superpowers/plans/
+       2026-09-25-tv-app-boot-crash-e-boas-praticas.md, seção 2.3 e 1). Fica
+       antes de qualquer outro <script> de propósito. -->
+  <style>
+    #tv-fatal-error {
+      display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 999999;
+      background: #1a0000; color: #ffdddd; font-family: monospace;
+      padding: 48px; overflow: auto; font-size: 22px; line-height: 1.5;
+    }
+    #tv-fatal-error.active { display: block; }
+    #tv-fatal-error h1 { color: #ff6666; font-size: 32px; margin-bottom: 16px; }
+    #tv-fatal-error pre { white-space: pre-wrap; word-break: break-word; font-size: 18px; opacity: .85; }
+  </style>
+  <div id="tv-fatal-error"><h1>Erro ao iniciar o Sintoniza</h1><pre id="tv-fatal-error-msg"></pre></div>
+  <script>
+  (function () {
+    var shown = false;
+    function show(label, detail) {
+      // Mostra só o PRIMEIRO erro (os seguintes costumam ser efeito cascata
+      // do primeiro) para não confundir quem está lendo a tela.
+      if (shown) return;
+      shown = true;
+      var el = document.getElementById('tv-fatal-error');
+      var msg = document.getElementById('tv-fatal-error-msg');
+      if (el && msg) {
+        msg.textContent = label + '\n\n' + detail;
+        el.classList.add('active');
+      }
+    }
+    window.addEventListener('error', function (e) {
+      show('Erro de JavaScript', (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?') + '\n' + (e.message || e.error || 'sem mensagem'));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var reason = e.reason;
+      show('Promise rejeitada sem tratamento', (reason && reason.stack) || (reason && reason.message) || String(reason));
+    });
+  })();
+  </script>
   <meta name="viewport" content="width=1920, initial-scale=1" />
   <title>Sintoniza IPTV — Smart TV</title>
   <meta name="description" content="Sintoniza IPTV — versão Smart TV para LG webOS e Samsung Tizen." />
