@@ -6,7 +6,7 @@
        runtime, promise rejeitada sem .catch), mostra a mensagem NA TELA em
        vez de deixar o app travado em silêncio (ver docs/superpowers/plans/
        2026-09-25-tv-app-boot-crash-e-boas-praticas.md, seção 2.3 e 1). Fica
-       antes de qualquer outro <script> de propósito. -->
+       antes de qualquer outro script de propósito. -->
   <style>
     #tv-fatal-error {
       display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 999999;
@@ -629,12 +629,12 @@ function buildSeriesEpisodeUrl(creds, episodeId, containerExtension) {
 }
 
 function xtreamApiUrl(creds, action, extraParams) {
-  const params = new URLSearchParams({
+  const paramsObj = Object.assign({
     username: creds.username,
     password: creds.password,
-    action,
-    ...(extraParams || {}),
-  });
+    action: action
+  }, extraParams || {});
+  const params = new URLSearchParams(paramsObj);
   return `${creds.base}/player_api.php?${params.toString()}`;
 }
 
@@ -681,8 +681,7 @@ function providerKeyForItem(item) {
 // guarda os mesmos objetos em várias chaves; mutar aqui vazaria o campo
 // para outras cópias antes delas passarem por este mesmo cruzamento).
 function attachProviders(items, providerMap) {
-  return items.map(item => ({
-    ...item,
+  return items.map(item => Object.assign({}, item, {
     streamingProviders: providerMap[providerKeyForItem(item)] || [],
   }));
 }
@@ -739,7 +738,7 @@ function selectNewestVodItems(items, limit) {
 // ─ Sanitização de item VOD (verbatim de sintoniza-link.html) ─────────────
 function sanitizeVodItem(item) {
   if (!item || typeof item !== 'object') return item;
-  const out = { ...item };
+  const out = Object.assign({}, item);
   ['name', 'title', 'plot', 'category_name'].forEach(k => { if (out[k] != null) out[k] = sanitizeLabel(out[k]); });
   ['stream_icon', 'cover'].forEach(k => { if (out[k] != null) out[k] = sanitizeImageUrl(out[k]); });
   return out;
@@ -784,7 +783,7 @@ async function fetchTvVodProviderMap() {
     const res = await fetch(VOD_PROVIDERS_URL, { cache: 'no-cache' });
     if (!res.ok) return {};
     const data = await res.json();
-    return { ...(data.movies || {}), ...(data.series || {}) };
+    return Object.assign({}, data.movies || {}, data.series || {});
   } catch (e) {
     return {};
   }
@@ -1297,7 +1296,7 @@ async function detectStreamType(url) {
     try {
       const r = await fetch(m3u8, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
       if (r.ok) { console.log('[detectStreamType] .ts → HLS promovido'); return { type: 'hls', url: m3u8 }; }
-    } catch {}
+    } catch (e) {}
     return { type: 'mpegts', url };
   }
   if (url.includes('/live/') || url.includes('/stream')) return { type: 'hls', url };
@@ -1309,8 +1308,8 @@ function stopStream() {
   stopWatchdog();
   if (mpegPrebufTimer)   { clearInterval(mpegPrebufTimer);   mpegPrebufTimer   = null; }
   if (mpegPrebufTimeout) { clearTimeout(mpegPrebufTimeout);  mpegPrebufTimeout = null; }
-  if (hlsInstance)  { try { hlsInstance.destroy();  } catch {} hlsInstance   = null; }
-  if (mpegtsPlayer) { try { mpegtsPlayer.destroy(); } catch {} mpegtsPlayer  = null; }
+  if (hlsInstance)  { try { hlsInstance.destroy();  } catch (e) {} hlsInstance   = null; }
+  if (mpegtsPlayer) { try { mpegtsPlayer.destroy(); } catch (e) {} mpegtsPlayer  = null; }
   const video = document.getElementById('tv-video');
   if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
   isReloading = false;

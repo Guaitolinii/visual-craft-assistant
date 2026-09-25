@@ -21,17 +21,16 @@ import * as acorn from "acorn";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TV_HTML_PATH = path.join(__dirname, "..", "..", "sintoniza-tv", "sintoniza-tv.html");
 
-// Teto real observado ao vivo nesta TV (ver seção 1.1 do plano): aceita
-// async/await, desestruturação, spread de objeto, catch sem parâmetro
-// (tudo isso é ES2019) - mas REJEITA optional chaining `?.` (ES2020).
-// Usamos ecmaVersion 2019 como o teto seguro.
-const MAX_SAFE_ECMA_VERSION = 2019;
+// Teto real observado ao vivo nesta TV: aceita async/await (ES2017)
+// mas REJEITA spread de objeto `{...obj}` (ES2018) e optional chaining `?.` (ES2020).
+// Usamos ecmaVersion 2017 como o teto seguro.
+const MAX_SAFE_ECMA_VERSION = 2017;
 
 function extractInlineScripts(html) {
   return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 }
 
-test("todo bloco <script> inline de sintoniza-tv.html tem sintaxe aceita até ES2019 (teto real da TV)", () => {
+test("todo bloco <script> inline de sintoniza-tv.html tem sintaxe aceita até ES2017 (teto real da TV)", () => {
   const html = readFileSync(TV_HTML_PATH, "utf8");
   const scripts = extractInlineScripts(html);
   assert.ok(scripts.length > 0, "nenhum bloco <script> inline encontrado - o teste não estaria testando nada");
