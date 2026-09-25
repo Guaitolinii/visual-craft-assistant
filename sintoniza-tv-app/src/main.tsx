@@ -1,8 +1,13 @@
+// sintoniza-tv-app/src/main.tsx
 import { render } from 'preact';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 import './styles.css';
 
+// Rede de segurança global: cobre erros que o Error Boundary do React/Preact
+// NÃO pega (erros em event handlers, callbacks assíncronos, Promises sem
+// .catch) - ver Tarefa 6 e docs/superpowers/plans/
+// 2026-09-25-tv-app-boot-crash-e-boas-praticas.md, seção 2.3.
 let fatalShown = false;
 function showFatal(label: string, detail: string) {
   if (fatalShown) return;

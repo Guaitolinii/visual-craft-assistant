@@ -1,10 +1,11 @@
+// sintoniza-tv-app/vite.config.ts
 import { defineConfig } from 'vite';
-import preact from '@preact/preset-vite';
+import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
 
 export default defineConfig({
   plugins: [
-    preact(),
+    react(),
     legacy({
       targets: ['chrome >= 68', 'samsung >= 6'],
       additionalLegacyPolyfills: ['regenerator-runtime/runtime'],
@@ -13,7 +14,11 @@ export default defineConfig({
     }),
   ],
   build: {
-    target: 'es2017',
+    target: 'es2017', 
     outDir: 'dist',
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

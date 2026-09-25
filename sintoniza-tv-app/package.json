@@ -10,20 +10,21 @@
     "package:tv": "node scripts/package-tv.mjs"
   },
   "dependencies": {
-    "preact": "^10.24.0",
     "@noriginmedia/norigin-spatial-navigation": "^3.3.0",
+    "@noriginmedia/norigin-spatial-navigation-react": "^3.3.0",
     "hls.js": "^1.5.17",
-    "mpegts.js": "^1.7.3"
+    "mpegts.js": "^1.7.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.9.0",
+    "@testing-library/jest-dom": "^6.6.0",
     "@vitejs/plugin-legacy": "^8.2.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^25.0.0",
     "terser": "^5.36.0",
     "typescript": "^5.7.0",
     "vite": "^8.1.5",
-    "vitest": "^3.0.0",
-    "jsdom": "^25.0.0",
-    "@testing-library/preact": "^3.2.4",
-    "@testing-library/jest-dom": "^6.6.0"
+    "vitest": "^3.0.0"
   }
 }
