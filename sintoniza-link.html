@@ -1175,6 +1175,8 @@
     .ott-qr svg { width: 11rem; height: 11rem; background: #fff; padding: .6rem; border-radius: .6rem; }
     .ott-qr p { color: #9CA3AF; font-size: .8rem; max-width: 16rem; }
     .ott-err { color: #FCA5A5; font-size: .9rem; }
+    body:not(.ott-mode) .ott-only { display: none; }
+    body.ott-mode [data-manual-list] { display: none !important; }
   </style>
 </head>
 <body>
@@ -1577,7 +1579,17 @@
         <p>Cole aqui a URL da sua lista M3U. Os canais substituirão o catálogo de demonstração automaticamente.</p>
       </header>
 
-      <div class="settings-card">
+      <div class="settings-card ott-only" id="ott-account-card">
+        <h2 style="font-size:1.1rem;font-weight:600">Conta Sintoniza</h2>
+        <p id="ott-account-name" style="margin-top:.4rem;font-weight:600"></p>
+        <p id="ott-account-summary" style="margin-top:.25rem;color:var(--muted-fg)"></p>
+        <div class="settings-actions">
+          <a class="btn-primary" id="ott-account-panel" target="_blank" rel="noopener" href="#" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">Gerenciar minha conta</a>
+          <button class="btn-ghost" id="ott-unlink-btn" type="button">Desvincular este aparelho</button>
+        </div>
+      </div>
+
+      <div class="settings-card" data-manual-list>
         <div class="tab-row">
           <button class="tab-btn active" id="tab-url">Endereço da lista</button>
           <button class="tab-btn" id="tab-file">Arquivo .m3u</button>
@@ -1638,7 +1650,7 @@
         </div>
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card" data-manual-list>
         <label class="url-label">
           <span>EPG — guia de programação (opcional)</span>
           <div class="url-input-wrap">
@@ -1657,7 +1669,7 @@
         </div>
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card" data-manual-list>
         <label class="url-label">
           <span>Filmes/Séries — credenciais Xtream (opcional)</span>
           <div class="url-input-wrap">
@@ -7110,8 +7122,18 @@ function ottShowBlocked(d) {
   ottShowGate("blocked");
 }
 
-// Cartão "Conta Sintoniza" nas Configurações (preenchido na Task M3)
-function ottRenderAccountCard() {}
+// Cartão "Conta Sintoniza" nas Configurações: nome, teste de 7 dias/assinatura e atalhos
+function ottRenderAccountCard() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem(OTT_KEYS.ACCOUNT) || "null"); } catch (e) { account = null; }
+  const nome = (account && account.nome) || "Minha conta";
+  const resumo = ottAccountSummary(account, Date.now());
+  document.getElementById("ott-account-name").textContent = nome;
+  const sumEl = document.getElementById("ott-account-summary");
+  sumEl.textContent = resumo.text;
+  sumEl.style.color = resumo.tone === "ok" ? "var(--muted-fg)" : "#b91c1c";
+  document.getElementById("ott-account-panel").href = (_ott.cfg && _ott.cfg.panelUrl) || OTT_PANEL_URL;
+}
 
 // Acesso liberado: guarda a conta, aplica as listas (recarrega o app se mudaram) e abre o app
 function ottOnOk(d) {
@@ -7123,6 +7145,12 @@ function ottOnOk(d) {
   }
   ottHideGate();
   document.body.classList.add("ott-mode");
+  // Configurações: com conta, as listas vêm da conta (os cartões de lista manual ficam escondidos)
+  const head = document.querySelector("#settings-view .settings-header");
+  if (head) {
+    head.querySelector("h1").textContent = "Sua conta";
+    head.querySelector("p:last-child").textContent = "Suas listas de canais, filmes e séries vêm da sua conta Sintoniza e se atualizam sozinhas.";
+  }
   ottRenderAccountCard();
   ottScheduleRevalidate();
 }
@@ -7172,6 +7200,7 @@ function ottWire() {
   document.getElementById("ott-retry").addEventListener("click", () => { ottShowGate("loading"); ottBoot(); });
   document.getElementById("ott-blocked-recheck").addEventListener("click", () => { ottShowGate("loading"); ottCheck(); });
   document.getElementById("ott-blocked-unlink").addEventListener("click", ottUnlink);
+  document.getElementById("ott-unlink-btn").addEventListener("click", ottUnlink);
   document.getElementById("ott-copy-code").addEventListener("click", async () => {
     const ok = await copyTextToClipboard(document.getElementById("ott-code").textContent);
     showToast(ok ? "Código copiado." : "Não foi possível copiar o código.");
