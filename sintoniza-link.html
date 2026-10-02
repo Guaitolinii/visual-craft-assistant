@@ -3926,10 +3926,31 @@ function toggleFsFit() {
   syncFsFitButton();
 }
 
+// Orientação do aparelho (plugin nativo) na tela cheia. Entrar e sair LIBERAM o sensor (respeita o
+// "girar automaticamente" do aparelho); só o botão de girar trava uma orientação. Antes, sair da tela
+// cheia travava em retrato e a rotação nunca mais voltava no Android.
+function getFsOrientationCall({ phase, wantLandscape }) {
+  if (phase === "rotate") return { method: "lock", options: { orientation: wantLandscape ? "landscape" : "portrait" } };
+  return { method: "unlock", options: {} };
+}
+
+// Girou o aparelho sozinho (rotação automática): o botão de girar passa a refletir a posição real.
+function syncFsOrientationFromViewport() {
+  if (!isNativePluginAvailable("ScreenOrientation")) return;
+  if (!document.getElementById("player-screen").classList.contains("pseudo-fullscreen")) return;
+  _fs.wantLandscape = window.innerWidth > window.innerHeight;
+}
+
+function callFsOrientation(phase) {
+  const call = getFsOrientationCall({ phase, wantLandscape: _fs.wantLandscape });
+  callNativePlugin("ScreenOrientation", call.method, call.options);
+}
+
 function enterPseudoFullscreen() {
   const el = document.getElementById("player-screen");
   if (_state.section !== "settings" && !el.classList.contains("mini-player")) lockPlayerAnchor();
   _fs.wantLandscape = false;
+  callFsOrientation("enter");
   setFsLocked(false);
   el.classList.add("pseudo-fullscreen");
   document.body.classList.add("fs-open");
@@ -3947,9 +3968,7 @@ function exitPseudoFullscreen() {
   hideFsControls();
   el.classList.remove("pseudo-fullscreen", "rotated");
   document.body.classList.remove("fs-open");
-  // Com o plugin, devolve o app para a vertical (a interface do app não
-  // foi desenhada para a horizontal no celular).
-  if (_fs.wantLandscape) callNativePlugin("ScreenOrientation", "lock", { orientation: "portrait" });
+  callFsOrientation("exit"); // libera o sensor (não trava mais em retrato)
   _fs.wantLandscape = false;
   callNativePlugin("StatusBar", "show");
   setPlayerMode();
@@ -3958,7 +3977,7 @@ function exitPseudoFullscreen() {
 
 function toggleFsRotation() {
   _fs.wantLandscape = !_fs.wantLandscape;
-  callNativePlugin("ScreenOrientation", "lock", { orientation: _fs.wantLandscape ? "landscape" : "portrait" });
+  callFsOrientation("rotate");
   applyFsLayout();
 }
 
@@ -6302,7 +6321,7 @@ document.addEventListener("DOMContentLoaded", () => {
     flashFsLockHint();
   });
   // Girou o aparelho (ou o plugin girou): reaplica o layout da tela cheia.
-  window.addEventListener("resize", applyFsLayout);
+  window.addEventListener("resize", () => { syncFsOrientationFromViewport(); applyFsLayout(); });
 
   // ── VIEW TOGGLE ──
   document.getElementById("view-grid-btn").addEventListener("click", () => {

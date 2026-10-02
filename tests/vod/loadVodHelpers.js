@@ -17,7 +17,7 @@ const PURE_HELPER_NAMES = [
   "getCatalogTabLayout", "getMobileTabForSection",
   "computePlayerMode", "computeScrolledAway", "isPlayerScrolledAway", "shouldDockSearch",
   "isInMyList", "toggleMyListEntry", "getMyListItems", "buildMyListEntry",
-  "getCardActions", "computeFsLayout", "isDoubleTap",
+  "getCardActions", "computeFsLayout", "isDoubleTap", "getFsOrientationCall",
   "resolvePlayerScrolledAway", "keepSelectionIfPresent",
   "sanitizeDiagnosticText", "describeCodecSupport", "buildPlaybackDiagnostic",
   "refineDirectPlayErrorMessage", "fileExtFromUrl", "formatBytes",
