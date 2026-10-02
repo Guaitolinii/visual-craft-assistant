@@ -1177,6 +1177,15 @@
     .ott-err { color: #FCA5A5; font-size: .9rem; }
     body:not(.ott-mode) .ott-only { display: none; }
     body.ott-mode [data-manual-list] { display: none !important; }
+    /* ════════════ ASSISTIR NA TV (folha de escolha da TV) ════════════ */
+    #tv-sheet { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,.6); display: flex; align-items: flex-end; justify-content: center; }
+    #tv-sheet.hidden { display: none; }
+    .tv-sheet-panel { width: 100%; max-width: 30rem; background: var(--card); border-radius: 1rem 1rem 0 0; padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .5rem; }
+    .tv-sheet-title { font-weight: 700; padding: .25rem .25rem .5rem; }
+    #tv-sheet-list { display: flex; flex-direction: column; gap: .5rem; }
+    .tv-sheet-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 3rem; padding: .5rem .9rem; border-radius: .75rem; border: 1px solid var(--border); background: var(--secondary); color: var(--foreground); font-size: 1rem; }
+    .tv-sheet-btn small { color: var(--muted-fg); }
+    body:not(.ott-mode) #tv-cast-btn { display: none; }
   </style>
 </head>
 <body>
@@ -1412,6 +1421,7 @@
         <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
       </button>
       <div class="player-controls-spacer"></div>
+      <button class="ctrl-btn" id="tv-cast-btn" type="button" aria-label="Assistir na TV" title="Assistir na TV" style="display:none"><i data-lucide="tv" style="width:20px;height:20px"></i></button>
       <button class="ctrl-btn" id="pip-btn" aria-label="Janela flutuante" title="Janela flutuante" style="display:none"><i data-lucide="picture-in-picture-2" style="width:20px;height:20px"></i></button>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
         <option value="contain">Original</option>
@@ -1755,6 +1765,15 @@
     <p class="action-sheet-title" id="action-sheet-title"></p>
     <div class="action-sheet-actions" id="action-sheet-actions"></div>
     <button class="action-sheet-cancel" id="action-sheet-cancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- Folha: escolher para qual TV enviar -->
+<div id="tv-sheet" class="hidden" aria-hidden="true">
+  <div class="tv-sheet-panel" role="dialog" aria-label="Assistir na TV">
+    <p class="tv-sheet-title" id="tv-sheet-title">Escolha a TV</p>
+    <div id="tv-sheet-list"></div>
+    <button type="button" class="action-sheet-cancel" id="tv-sheet-cancel">Cancelar</button>
   </div>
 </div>
 
@@ -6908,7 +6927,7 @@ async function openVodModal(item, vodType, creds) {
     playBtn.querySelector("span").textContent = "Assistir";
     playBtn.onclick = () => playVodSelection(
       buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item }
+      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: { kind: "vod", item } }
     );
     // Downloads (v8): "Baixar" o filme, só no app instalado.
     dlBtn.style.display = canDownload() ? "inline-flex" : "none";
@@ -6982,6 +7001,7 @@ function playEpisode({ episodeId, containerExtension, season, episodeNum, series
     title: formatEpisodeTitle(seriesName, season, episodeNum),
     cover: (series && (series.cover || series.stream_icon)) || null,
     vodItem: series || null,
+    castInfo: series ? { kind: "episode", item: series, extra: { season, episode: episodeNum } } : null,
   });
 }
 
@@ -7008,6 +7028,7 @@ function playVodSelection(url, meta) {
     vodContentType: meta.contType, // 'vod' | 'series' — usado pelo Continue Assistindo
     continueId,
     vodItem: meta.vodItem ? trimVodItem(meta.vodItem) : null, // filme/série de origem
+    castInfo: meta.castInfo || null, // {kind, item, extra}: o que o botão "Assistir na TV" envia
   };
   setState({ selected: pseudo, playing: false });
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -7076,6 +7097,8 @@ function render() {
   // Janela flutuante: modo automático do Android e botão só com algo tocando
   syncAutoPip();
   document.getElementById("pip-btn").style.display = (_state.selected && _state.playing && pipSupported()) ? "" : "none";
+  // Botão "Assistir na TV": só com algo selecionado (sem conta ativa o CSS esconde)
+  document.getElementById("tv-cast-btn").style.display = _state.selected ? "" : "none";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -7092,6 +7115,80 @@ function closeSidebar() {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebar-scrim").classList.remove("open");
   document.body.classList.remove("sidebar-open");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ASSISTIR NA TV (envio do celular para a TV da mesma conta)
+// Usa as funções ottCast* do bloco ott-core; só funciona com conta ativa.
+// ═══════════════════════════════════════════════════════════════
+let _castBusy = false;
+
+function closeTvSheet() {
+  const sheet = document.getElementById("tv-sheet");
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+}
+
+// Pergunta qual TV quando a conta tem mais de uma
+function chooseTv(tvs) {
+  return new Promise(resolve => {
+    const sheet = document.getElementById("tv-sheet");
+    const list = document.getElementById("tv-sheet-list");
+    list.innerHTML = tvs.map(t =>
+      `<button type="button" class="tv-sheet-btn" data-tv-id="${String(t.id).replace(/[^a-f0-9-]/gi, "")}">
+         <span>${escapeHtmlText(t.modelo)}</span><small>${t.online ? "online" : "sem sinal recente"}</small>
+       </button>`).join("");
+    const done = (id) => { closeTvSheet(); sheet.onclick = null; resolve(id); };
+    sheet.onclick = (e) => {
+      const btn = e.target.closest("[data-tv-id]");
+      if (btn) done(btn.dataset.tvId);
+      else if (e.target.id === "tv-sheet" || e.target.id === "tv-sheet-cancel") done(null);
+    };
+    sheet.classList.remove("hidden");
+    sheet.setAttribute("aria-hidden", "false");
+  });
+}
+
+// Fluxo completo: acha as TVs, envia e acompanha até a TV responder
+async function castToTv(kind, item, extra) {
+  if (_castBusy) return;
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!_ott.cfg || !token) { showToast("Entre na sua conta Sintoniza para enviar à TV."); return; }
+  const payload = ottBuildCastPayload(kind, item, extra);
+  if (!payload) { showToast("Não foi possível enviar este item para a TV."); return; }
+  _castBusy = true;
+  try {
+    const tvs = await ottCastTargets(_ott.cfg, token);
+    if (!tvs.length) { showToast("Nenhuma TV ativada na sua conta. Ative a TV com o código no painel."); return; }
+    const toId = tvs.length === 1 ? tvs[0].id : await chooseTv(tvs);
+    if (!toId) return;
+    const sent = await ottCastSend(_ott.cfg, token, toId, kind, payload);
+    showToast(ottCastStatusText("pending", ""), 2500);
+    // acompanha por até ~25 s; a TV consulta a cada 3 s
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const st = await ottCastStatus(_ott.cfg, token, sent.id);
+      if (ottCastIsFinal(st.estado)) { showToast(ottCastStatusText(st.estado, st.motivo), 4000); return; }
+      if (i === 1 && st.estado === "pending") showToast("Aguardando a TV...", 2500);
+    }
+    showToast(ottCastStatusText("expired", ""), 4500);
+  } catch (e) {
+    showToast(e.message || "Não foi possível enviar para a TV.", 4500);
+  } finally {
+    _castBusy = false;
+  }
+}
+
+// "Continue Assistindo": monta o castInfo a partir do que foi guardado
+// (filme precisa de stream_id; episódio, de series_id e do código SxxExx no título)
+function castInfoFromResume(item) {
+  const v = item && item.vodItem;
+  if (!v) return null;
+  if (item.type === "series") {
+    const code = /^S(\d+)E(\d+)$/i.exec(splitEpisodeTitle(item.title).code);
+    return v.series_id && code ? { kind: "episode", item: v, extra: { season: code[1], episode: code[2] } } : null;
+  }
+  return v.stream_id ? { kind: "vod", item: v } : null;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -7681,7 +7778,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = _vodCardsIndex[card.dataset.vodKey];
     if (!item) return;
     if (card.dataset.vodResume === "1") {
-      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null });
+      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null, castInfo: castInfoFromResume(item) });
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
@@ -8125,6 +8222,16 @@ document.addEventListener("DOMContentLoaded", () => {
   _downloads = resetInterruptedDownloads(loadDownloads());
   localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(_downloads));
   processDownloadQueue();
+
+  // ── ASSISTIR NA TV: botão da barra do player ──
+  document.getElementById("tv-cast-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    const sel = _state.selected;
+    if (!sel) return;
+    if (!sel.isVod) castToTv("channel", sel);
+    else if (sel.castInfo) castToTv(sel.castInfo.kind, sel.castInfo.item, sel.castInfo.extra);
+    else showToast("Não foi possível enviar este item para a TV.");
+  });
 
   // ── CONTA SINTONIZA: por último, para não interferir no boot do app ──
   ottBoot();
