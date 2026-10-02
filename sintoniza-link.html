@@ -5344,7 +5344,9 @@ function renderCatalog() {
     if (!_state.channels && !query) {
       icon  = "list-video";
       title = "Nenhuma lista carregada";
-      msg   = "Adicione a URL da sua lista M3U nas configurações para ver seus canais.";
+      msg   = document.body.classList.contains("ott-mode")
+        ? "Sua conta ainda não tem uma lista de canais liberada. Fale com o suporte ou gerencie sua conta no painel."
+        : "Adicione a URL da sua lista M3U nas configurações para ver seus canais.";
       extra = `<button class="go-settings">
                  <i data-lucide="settings" style="width:16px;height:16px"></i> Abrir Configurações
                </button>`;
