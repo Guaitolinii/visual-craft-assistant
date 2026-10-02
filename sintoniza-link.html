@@ -1186,6 +1186,18 @@
     .tv-sheet-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 3rem; padding: .5rem .9rem; border-radius: .75rem; border: 1px solid var(--border); background: var(--secondary); color: var(--foreground); font-size: 1rem; }
     .tv-sheet-btn small { color: var(--muted-fg); }
     body:not(.ott-mode) #tv-cast-btn { display: none; }
+    /* Botões "Assistir na TV" (canais, episódios, modal): só com conta ativa */
+    .tv-btn { border-radius: 999px; border: none; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 160ms; }
+    .channel-card .tv-btn {
+      position: absolute; top: .6rem; right: 3.2rem; padding: .35rem;
+      background: oklch(0.1 0.01 65 / 70%); color: oklch(0.98 0 0); backdrop-filter: blur(8px);
+    }
+    .channel-card .tv-btn:hover { transform: scale(1.15); }
+    .channel-list-item .tv-btn { margin: 0 .25rem; padding: .4rem; background: none; color: var(--muted-fg); }
+    .ep-tv-btn { width: 3rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--card); color: var(--foreground); display: flex; align-items: center; justify-content: center; }
+    /* só com conta ativa o botão do modal vira flex (sem conta, a regra abaixo o esconde) */
+    body.ott-mode #vod-modal-tv { display: inline-flex; align-items: center; gap: .5rem; }
+    body:not(.ott-mode) .tv-only { display: none; }
   </style>
 </head>
 <body>
@@ -1804,6 +1816,7 @@
           <i data-lucide="plus" style="width:18px;height:18px"></i> <span>Minha Lista</span>
         </button>
         <button class="btn-ghost" id="vod-modal-download" style="display:none"><i data-lucide="download" style="width:18px;height:18px"></i> <span>Baixar</span></button>
+        <button class="btn-ghost tv-only" id="vod-modal-tv" type="button"><i data-lucide="tv" style="width:18px;height:18px"></i> <span>Assistir na TV</span></button>
       </div>
 
       <div id="vod-modal-series-content" style="display:none">
@@ -5466,6 +5479,13 @@ function renderCatalog() {
   container.querySelectorAll("[data-fav-id]").forEach(el => {
     el.addEventListener("click", e => { e.stopPropagation(); toggleFav(+el.dataset.favId); });
   });
+  container.querySelectorAll("[data-tv-channel-id]").forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const ch = getChannels().find(c => c.id === +el.dataset.tvChannelId);
+      if (ch) castToTv("channel", ch);
+    });
+  });
   container.querySelectorAll("[data-epg-id]").forEach(el => {
     el.addEventListener("click", e => {
       e.stopPropagation();
@@ -5505,6 +5525,7 @@ function cardHTML(ch) {
       <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
         <i data-lucide="calendar-clock" style="width:12px;height:12px"></i> A seguir
       </button>` : ""}
+      <button class="tv-btn tv-only" type="button" data-tv-channel-id="${ch.id}" aria-label="Assistir ${ch.name} na TV"><i data-lucide="tv" style="width:16px;height:16px"></i></button>
       <button class="fav-btn ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
         <i data-lucide="heart" style="width:18px;height:18px${fav?";fill:currentColor":""}"></i>
       </button>
@@ -5539,6 +5560,7 @@ function listHTML(ch) {
       <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
         <i data-lucide="calendar-clock" style="width:12px;height:12px"></i> A seguir
       </button>` : ""}
+      <button class="tv-btn tv-only" type="button" data-tv-channel-id="${ch.id}" aria-label="Assistir ${ch.name} na TV"><i data-lucide="tv" style="width:16px;height:16px"></i></button>
       <button class="fav-btn-list ${fav?"fav-active":""}" data-fav-id="${ch.id}" aria-label="${fav?"Remover":"Adicionar"} favorito">
         <i data-lucide="heart" style="width:18px;height:18px${fav?";fill:currentColor":""}"></i>
       </button>
@@ -6920,6 +6942,7 @@ async function openVodModal(item, vodType, creds) {
   const playBtn = document.getElementById("vod-modal-play");
   const seriesContent = document.getElementById("vod-modal-series-content");
   const dlBtn = document.getElementById("vod-modal-download");
+  const tvBtn = document.getElementById("vod-modal-tv");
 
   if (!isSeries) {
     seriesContent.style.display = "none";
@@ -6929,6 +6952,9 @@ async function openVodModal(item, vodType, creds) {
       buildVodStreamUrl(creds, item.stream_id, item.container_extension),
       { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: { kind: "vod", item } }
     );
+    // Assistir na TV: o filme inteiro (a regra .tv-only esconde sem conta ativa)
+    tvBtn.style.display = "";
+    tvBtn.onclick = () => castToTv("vod", item);
     // Downloads (v8): "Baixar" o filme, só no app instalado.
     dlBtn.style.display = canDownload() ? "inline-flex" : "none";
     dlBtn.onclick = () => queueDownloads([buildDownloadEntry({
@@ -6939,6 +6965,9 @@ async function openVodModal(item, vodType, creds) {
     return;
   }
 
+  // Série: o envio à TV também é por episódio (botão em cada linha)
+  tvBtn.style.display = "none";
+  tvBtn.onclick = null;
   // Série: o download é por episódio/temporada/série completa (na lista).
   dlBtn.style.display = "none";
   dlBtn.onclick = null;
@@ -6973,10 +7002,12 @@ async function openVodModal(item, vodType, creds) {
       // Temporada/episódio vêm do provedor: número ou texto escapado.
       const epSeason = Number(ep.season) || 1;
       const epNum = escapeHtmlText(ep.episode_num ?? "");
+      // Botão da TV: irmão do .ep-btn (não pode haver botão dentro de botão)
+      const epTvBtn = `<button class="ep-tv-btn tv-only" type="button" data-ep-tv="${escapeHtmlText(ep.id)}" data-ep-season="${epSeason}" data-ep-num="${epNum}" aria-label="Assistir na TV"><i data-lucide="tv" style="width:18px;height:18px"></i></button>`;
       return `<div class="ep-row"><button class="ep-btn" data-ep-id="${escapeHtmlText(ep.id)}" data-ep-ext="${escapeHtmlText(ep.container_extension || "mp4")}" data-ep-season="${epSeason}" data-ep-num="${epNum}">
         <span>T${epSeason} E${epNum || "?"} — ${escapeHtmlText(epTitle)}</span>
         <i data-lucide="play" style="width:18px;height:18px"></i>
-      </button>${canDownload() ? `<button class="ep-dl-btn" data-ep-dl="${escapeHtmlText(ep.id)}" aria-label="Baixar episódio"><i data-lucide="download" style="width:18px;height:18px"></i></button>` : ""}</div>`;
+      </button>${epTvBtn}${canDownload() ? `<button class="ep-dl-btn" data-ep-dl="${escapeHtmlText(ep.id)}" aria-label="Baixar episódio"><i data-lucide="download" style="width:18px;height:18px"></i></button>` : ""}</div>`;
     }).join("");
     lucide.createIcons();
   } catch (err) {
@@ -7988,6 +8019,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("vod-modal-episodes").addEventListener("click", e => {
     // Downloads (v8): botão de baixar ao lado do episódio, por temporada ou
     // a série completa. Verificados antes do .ep-btn (que toca o episódio).
+    // Assistir na TV: envia o episódio (temporada e número) sem tocar aqui
+    const tvEp = e.target.closest("[data-ep-tv]");
+    if (tvEp) {
+      if (_vodModalItem) castToTv("episode", _vodModalItem.item, { season: tvEp.dataset.epSeason, episode: tvEp.dataset.epNum });
+      return;
+    }
     const dlEp = e.target.closest("[data-ep-dl]");
     if (dlEp) {
       const ep = _vodModalEpisodes.find(x => String(x.id) === dlEp.dataset.epDl);
