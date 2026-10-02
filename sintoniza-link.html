@@ -4049,6 +4049,13 @@ function pauseAfterPipClosed() {
   else { video.pause(); setState({ playing: false }); showPlayerArt(); }
 }
 
+// Dois toques seguidos, rápidos e perto um do outro = "duplo toque".
+// prev/now: { ts (ms), x, y } (x e y em pixels da tela)
+function isDoubleTap(prev, now, windowMs = 350, maxDistPx = 40) {
+  if (!prev) return false;
+  return now.ts - prev.ts <= windowMs && Math.hypot(now.x - prev.x, now.y - prev.y) <= maxDistPx;
+}
+
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
   if (isNativeApp()) {
@@ -6212,18 +6219,25 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("vod-skip-back-btn").addEventListener("click", () => skipBy(-10));
   document.getElementById("vod-skip-fwd-btn").addEventListener("click", () => skipBy(10));
 
-  // Duplo clique no vídeo = fullscreen
-  let _lastVideoTapTs = 0;
-  document.getElementById("player-video").addEventListener("click", () => {
-    const now = Date.now();
-    if (now - _lastVideoTapTs < 350) {
+  // Dois toques (ou duplo clique) em qualquer ponto da tela de reprodução abrem a tela cheia.
+  // Escuta a área inteira e não só o <video>: no Android o toque cai nas camadas por cima do vídeo.
+  // Na tela cheia quem trata o duplo toque (para sair) é o #fs-ui; no mini-player o toque expande o player.
+  const playerMedia = document.querySelector("#player-screen .player-media");
+  playerMedia.style.touchAction = "manipulation";
+  let _lastPlayerTap = null;
+  playerMedia.addEventListener("pointerup", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const screenEl = document.getElementById("player-screen");
+    if (screenEl.classList.contains("pseudo-fullscreen") || screenEl.classList.contains("mini-player")) { _lastPlayerTap = null; return; }
+    if (e.target.closest("button, input, a, .player-error")) { _lastPlayerTap = null; return; } // mexeu num controle
+    const tap = { ts: Date.now(), x: e.clientX, y: e.clientY };
+    if (isDoubleTap(_lastPlayerTap, tap)) {
+      _lastPlayerTap = null;
       toggleFullscreen();
-      _lastVideoTapTs = 0; // avoid a third tap re-triggering immediately
     } else {
-      _lastVideoTapTs = now;
+      _lastPlayerTap = tap;
     }
   });
-  document.getElementById("player-video").addEventListener("dblclick", toggleFullscreen);
 
   // Navegador comum (Fullscreen API real): mantém o ícone do botão único
   // sincronizado mesmo quando a saída da tela cheia é disparada fora do app
