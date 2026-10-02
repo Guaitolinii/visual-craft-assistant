@@ -2938,6 +2938,80 @@ async function ottDeviceUnlink(cfg, token, fetchImpl) {
   await ottCallRpc(cfg, "device_unlink", { p_token: token }, fetchImpl);
 }
 
+// ── Envio do celular para a TV (relé pela conta) ──
+const OTT_CAST_KINDS = ["channel", "vod", "episode"];
+
+// Recorta um texto no tamanho máximo do envio
+function ottClip(v, max) {
+  return String(v == null ? "" : v).trim().slice(0, max);
+}
+
+// Ano de um item (campo year ou início de releaseDate); 0 se não houver
+function ottYearOf(item) {
+  const raw = item && (item.year || String(item.releaseDate || "").slice(0, 4));
+  const n = parseInt(raw, 10);
+  return n >= 1900 && n <= 2100 ? n : 0;
+}
+
+// Conteúdo do envio: só nomes e ids (o link do stream, com usuário e senha, NUNCA vai)
+function ottBuildCastPayload(kind, item, extra) {
+  if (OTT_CAST_KINDS.indexOf(kind) < 0 || !item) return null;
+  if (kind === "channel") {
+    const name = ottClip(item.name, 120);
+    return name ? { name, group: ottClip(item.category, 80) } : null;
+  }
+  const title = ottClip(item.name || item.title, 120);
+  if (!title) return null;
+  if (kind === "vod") {
+    return { streamId: ottClip(item.stream_id, 40), title, year: ottYearOf(item) };
+  }
+  const e = extra || {};
+  const season = parseInt(e.season, 10);
+  const episode = parseInt(e.episode, 10);
+  if (!(season >= 0) || !(episode >= 0)) return null;
+  return { seriesId: ottClip(item.series_id, 40), title, season, episode };
+}
+
+// TVs ativas da mesma conta
+async function ottCastTargets(cfg, token, fetchImpl) {
+  const data = await ottCallRpc(cfg, "cast_targets", { p_token: token }, fetchImpl);
+  if (!data || data.status === "unknown_device") throw new Error("Este aparelho não está ativado. Abra o app e ative com o código.");
+  if (data.status !== "ok") throw new Error("Resposta inesperada do servidor.");
+  return (Array.isArray(data.tvs) ? data.tvs : [])
+    .filter((t) => t && ottStr(t.id))
+    .map((t) => ({ id: t.id, modelo: ottStr(t.modelo) || "TV", online: t.online === true }));
+}
+
+// Grava o comando para a TV; devolve o id para acompanhar
+async function ottCastSend(cfg, token, toId, kind, payload, fetchImpl) {
+  const data = await ottCallRpc(cfg, "cast_send", { p_token: token, p_to: toId, p_kind: kind, p_payload: payload }, fetchImpl);
+  if (!data || data.status === "unknown_device") throw new Error("Este aparelho não está ativado. Abra o app e ative com o código.");
+  if (data.status === "blocked") throw new Error("Seu acesso está encerrado. Renove no painel.");
+  if (data.status !== "ok" || !ottStr(data.id)) throw new Error("Resposta inesperada do servidor.");
+  return { id: data.id, online: data.online === true };
+}
+
+// Como está o comando enviado (pending, delivered, played, failed ou expired)
+async function ottCastStatus(cfg, token, id, fetchImpl) {
+  const data = await ottCallRpc(cfg, "cast_status", { p_token: token, p_id: id }, fetchImpl);
+  if (!data || data.status !== "ok") throw new Error("Não foi possível consultar o envio.");
+  return { estado: ottStr(data.estado), motivo: ottStr(data.motivo) };
+}
+
+// Estados finais: não precisa mais consultar
+function ottCastIsFinal(estado) {
+  return estado === "played" || estado === "failed" || estado === "expired";
+}
+
+// Texto para o usuário em cada estado
+function ottCastStatusText(estado, motivo) {
+  if (estado === "played") return "Tocando na TV";
+  if (estado === "delivered") return "A TV recebeu, abrindo...";
+  if (estado === "failed") return motivo || "A TV não conseguiu abrir este conteúdo.";
+  if (estado === "expired") return "A TV não respondeu. Confira se ela está ligada com o Sintoniza aberto.";
+  return "Enviando para a TV...";
+}
+
 // https://<painel>?codigo=ABCD-1234 ('' se faltar o painel ou o código)
 function ottActivationLink(panelUrl, code) {
   const base = String(panelUrl || "").trim().replace(/\/+$/, "");

@@ -17,7 +17,8 @@ export function loadOtt() {
     extractInlineScriptById(LINK_HTML_PATH, "ott-core") +
       `\n;this.__ott = { OTT_KEYS, OTT_LIST_KEYS, OTT_PANEL_URL, OTT_OFFLINE_GRACE_MS, ottParseConfig, ottLoadConfig, ottDetectDevice,
         ottParseDeviceConfig, ottApplyPlaylist, ottWithinGrace, ottParseIsoMs, ottFormatDateBr, ottDaysLeft, ottFormatCountdown,
-        ottCallRpc, ottDeviceStart, ottDeviceConfig, ottDeviceUnlink, ottActivationLink, ottQrSvgPath, ottDecide, ottAccountSummary };`,
+        ottCallRpc, ottDeviceStart, ottDeviceConfig, ottDeviceUnlink, ottActivationLink, ottQrSvgPath, ottDecide, ottAccountSummary,
+        ottBuildCastPayload, ottCastTargets, ottCastSend, ottCastStatus, ottCastIsFinal, ottCastStatusText };`,
     ctx
   );
   return ctx.__ott;
