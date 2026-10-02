@@ -4412,10 +4412,23 @@ function renderPageSection() {
 // abas (#player-screen é irmão persistente das views e fica acima delas).
 // Vira mini-player só quando algo está tocando e o player grande saiu da
 // tela na rolagem. Em Configurações nunca fica grande.
-function computePlayerMode({ section, hasActiveMedia, playerScrolledAway, isFullscreen }) {
+function computePlayerMode({ section, hasSelection, hasActiveMedia, playerScrolledAway, isFullscreen }) {
   if (isFullscreen) return "full";
+  // Nada selecionado: a área da tela de reprodução some (só volta ao escolher um canal/filme).
+  // Pausar um canal ao vivo mantém a seleção, então o botão de retomar continua visível.
+  if (!hasSelection) return "hidden";
   if (section === "settings") return hasActiveMedia ? "mini" : "hidden";
   return hasActiveMedia && playerScrolledAway ? "mini" : "full";
+}
+
+// Medida "o player grande saiu da tela" usada para virar mini-player.
+// - sem seleção não há o que minimizar (a âncora vazia mediria sempre "fora da tela");
+// - dentro da janela flutuante (PiP) o player fica fixo na janelinha e o layout é outro:
+//   mantém o valor anterior em vez de medir.
+function computeScrolledAway({ hasSelection, pipActive, anchorBottom, topbarBottom, previous }) {
+  if (!hasSelection) return false;
+  if (pipActive) return previous;
+  return isPlayerScrolledAway(anchorBottom, topbarBottom);
 }
 
 // O player grande conta como "fora da tela" quando sobram menos de 48px
@@ -4463,8 +4476,10 @@ function setPlayerMode() {
   _lastPlayerSection = _state.section;
   const isFullscreen = el.classList.contains("pseudo-fullscreen");
   const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
+  const hasSelection = !!_state.selected;
   const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
-  const mode = computePlayerMode({ section: _state.section, hasActiveMedia, playerScrolledAway: _playerScrolledAway, isFullscreen });
+  if (!hasSelection) _playerScrolledAway = false; // medida velha não pode "grudar" quando o player voltar
+  const mode = computePlayerMode({ section: _state.section, hasSelection, hasActiveMedia, playerScrolledAway: _playerScrolledAway, isFullscreen });
   const keepSlot = _state.section !== "settings" && (mode === "mini" || isFullscreen);
   if (keepSlot && !wasOutOfFlow) lockPlayerAnchor(); // mede antes de sair do fluxo
   if (!keepSlot) unlockPlayerAnchor();
@@ -4488,7 +4503,13 @@ function updateDocking() {
   const anchor = document.getElementById("player-anchor");
   if (!topbar || !anchor) return;
   const topbarBottom = topbar.getBoundingClientRect().bottom;
-  _playerScrolledAway = isPlayerScrolledAway(anchor.getBoundingClientRect().bottom, topbarBottom);
+  _playerScrolledAway = computeScrolledAway({
+    hasSelection: !!_state.selected,
+    pipActive: document.body.classList.contains("pip-active"),
+    anchorBottom: anchor.getBoundingClientRect().bottom,
+    topbarBottom,
+    previous: _playerScrolledAway,
+  });
   setPlayerMode();
 
   document.querySelectorAll(".search-dock-slot").forEach(slot => {

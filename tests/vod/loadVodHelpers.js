@@ -15,7 +15,7 @@ const PURE_HELPER_NAMES = [
   "shouldRetryDirectPlay", "describeDirectPlayError", "isContainerUnsupportedOnIOS", "shouldApplyResume",
   "formatEpisodeTitle", "formatEpisodeCode", "splitEpisodeTitle", "trimVodItem",
   "getCatalogTabLayout", "getMobileTabForSection",
-  "computePlayerMode", "isPlayerScrolledAway", "shouldDockSearch",
+  "computePlayerMode", "computeScrolledAway", "isPlayerScrolledAway", "shouldDockSearch",
   "isInMyList", "toggleMyListEntry", "getMyListItems", "buildMyListEntry",
   "getCardActions", "computeFsLayout",
   "resolvePlayerScrolledAway", "keepSelectionIfPresent",
