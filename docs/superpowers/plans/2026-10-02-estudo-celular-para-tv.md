@@ -1,6 +1,6 @@
 # Estudo: procurar no celular e enviar para a TV
 
-> **Status:** estudo e recomendação. **Nada disto foi implementado** (o pedido foi estudar). Se aprovado, vira um plano de implementação próprio (Fase 1 abaixo).
+> **Status:** Fase 1 IMPLEMENTADA (2026-10-02) — plano em `2026-10-02-celular-para-tv-fase1.md`. Diferenças em relação ao desenho abaixo: o casamento usa `streamId`/`seriesId` do provedor (os apps não têm `tvgId` nem `tmdbId`) com fallback por título; retomar posição, pausar/continuar pelo celular, dica de Wi-Fi e apelido da TV ficam para a Fase 2. Testado ponta a ponta contra o backend real e numa TV LG real (resposta em 2 a 5 s).
 
 ## 1. O que se quer
 
