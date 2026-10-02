@@ -628,6 +628,15 @@
     }
     .view-btn.active { background: var(--card); color: var(--foreground); box-shadow: 0 1px 3px oklch(0.1 0.01 65 / 10%); }
 
+    /* Aba Favoritos: escolher entre Canais, Filmes e Séries */
+    .fav-kind-tabs { display: flex; border-radius: .5rem; background: var(--secondary); padding: .2rem; gap: .15rem; }
+    .fav-kind-btn {
+      border: none; background: none; color: var(--muted-fg);
+      font-weight: 600; font-size: .85rem; padding: .5rem .85rem; border-radius: .35rem;
+      transition: background 140ms, color 140ms;
+    }
+    .fav-kind-btn.active { background: var(--card); color: var(--foreground); box-shadow: 0 1px 3px oklch(0.1 0.01 65 / 10%); }
+
     /* GRID */
     .channel-grid {
       display: grid;
@@ -1407,6 +1416,11 @@
             <h2 id="catalog-title">Início</h2>
           </div>
           <div class="section-controls">
+            <div class="fav-kind-tabs" id="fav-kind-tabs" role="tablist" aria-label="O que mostrar nos favoritos" style="display:none">
+              <button class="fav-kind-btn active" data-fav-kind="channels" role="tab" aria-selected="true">Canais</button>
+              <button class="fav-kind-btn" data-fav-kind="vod" role="tab" aria-selected="false">Filmes</button>
+              <button class="fav-kind-btn" data-fav-kind="series" role="tab" aria-selected="false">Séries</button>
+            </div>
             <div class="view-toggle">
               <button class="view-btn active" id="view-grid-btn" aria-label="Grade">
                 <i data-lucide="grid-2x2" style="width:18px;height:18px"></i>
@@ -2037,6 +2051,30 @@ const DEMO_CHANNELS = [
   { id:3, name:"Exemplo Filmes",category:"Filmes",    initials:"EF",  color:"logo-c2", status:"Demo — adicione sua lista", live:false, url:null, logo:null, progress:42 },
 ];
 
+// ─── Aba Favoritos: Canais, Filmes ou Séries ───
+// Filmes e séries favoritos são os títulos da "Minha Lista".
+// (Fica antes do _state porque o estado inicial já usa normalizeFavKind e FAV_KIND_KEY.)
+const FAV_KIND_KEY = "sint_fav_kind";
+const FAV_KINDS = ["channels", "vod", "series"];
+
+function normalizeFavKind(value) {
+  return FAV_KINDS.indexOf(value) !== -1 ? value : "channels";
+}
+
+function favKindLabel(kind) {
+  return kind === "vod" ? "Filmes" : kind === "series" ? "Séries" : "Canais";
+}
+
+function foldSearchText(text) {
+  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function filterMyListEntries(entries, query) {
+  const q = foldSearchText(query);
+  if (!q) return entries;
+  return entries.filter(e => foldSearchText(e.title).indexOf(q) !== -1);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ESTADO CENTRAL
 // ═══════════════════════════════════════════════════════════════
@@ -2057,6 +2095,7 @@ let _state = {
   recents:   normalizeChannelRecents(JSON.parse(localStorage.getItem("sint_recents") || "[]"), Date.now()),
   loadingPlaylist: false,
   vodType:   "movies",    // "movies" | "series" - sub-aba ativa em Filmes/Séries
+  favKind:   normalizeFavKind(localStorage.getItem(FAV_KIND_KEY)), // "channels" | "vod" | "series" - o que a aba Favoritos mostra
 };
 
 const _subs = [];
@@ -4294,6 +4333,25 @@ function renderCategoryNav() {
 // ═══════════════════════════════════════════════════════════════
 // RENDER — CATALOG
 // ═══════════════════════════════════════════════════════════════
+// Aba Favoritos com "Filmes" ou "Séries" escolhido: mostra os títulos da Minha Lista desse tipo.
+function renderFavoritesVod(container) {
+  const kind = _state.favKind === "series" ? "series" : "vod";
+  const items = filterMyListEntries(getMyListItems(loadMyList(), kind), _state.query);
+  if (!items.length) {
+    const buscando = !!_state.query;
+    const plural = kind === "series" ? "séries" : "filmes";
+    container.innerHTML = `
+      <div class="empty-state">
+        <i data-lucide="heart" style="width:2rem;height:2rem"></i>
+        <h3>${buscando ? "Nada encontrado" : `Nenhum${kind === "series" ? "a série" : " filme"} favorit${kind === "series" ? "a" : "o"} ainda`}</h3>
+        <p>${buscando ? "Tente outro termo." : `Adicione ${plural} à Minha Lista (no detalhe do título) para vê-los aqui.`}</p>
+      </div>`;
+    lucide.createIcons();
+    return;
+  }
+  container.innerHTML = `<div class="vod-carousel-grid">${items.map(myListCardHtml).join("")}</div>`;
+}
+
 function renderCatalog() {
   const { active, query, viewMode, loadingPlaylist } = _state;
   const container = document.getElementById("channel-container");
@@ -4303,6 +4361,12 @@ function renderCatalog() {
   // Aba sem grade de canais (Início): não monta milhares de cartões escondidos.
   if (!getCatalogTabLayout(active).showCatalog) {
     container.innerHTML = "";
+    return;
+  }
+
+  // Favoritos de filmes ou séries: os títulos da Minha Lista daquele tipo
+  if (active === "Favoritos" && _state.favKind !== "channels") {
+    renderFavoritesVod(container);
     return;
   }
 
@@ -5032,6 +5096,7 @@ function refreshVodPersonalRows() {
 function refreshPersonalLists() {
   renderHomeLists();
   refreshVodPersonalRows();
+  if (_state.section === "catalog" && _state.active === "Favoritos") renderCatalog();
 }
 
 function toggleMyListFor(rawItem, contType) {
@@ -5532,6 +5597,17 @@ function renderTabLayout() {
   document.getElementById("feature-layout").style.display = layout.showOnNow ? "" : "none";
   document.getElementById("catalog-eyebrow").textContent = layout.eyebrow;
   document.getElementById("home-lists").style.display = layout.showHomeLists ? "" : "none";
+
+  // Seletor Canais/Filmes/Séries só nos Favoritos; grade/lista só vale para canais
+  const onFavorites = _state.active === "Favoritos";
+  document.getElementById("fav-kind-tabs").style.display = onFavorites ? "" : "none";
+  document.querySelectorAll("#fav-kind-tabs [data-fav-kind]").forEach(btn => {
+    const on = btn.dataset.favKind === _state.favKind;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", String(on));
+  });
+  document.querySelector(".view-toggle").style.display = onFavorites && _state.favKind !== "channels" ? "none" : "";
+  if (onFavorites) document.getElementById("search-input").placeholder = `Buscar em favoritos (${favKindLabel(_state.favKind).toLowerCase()})...`;
 }
 
 // Nomes de categoria vêm da API com um prefixo redundante antes do "|" -
@@ -6421,6 +6497,17 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("vod-search-results").addEventListener("click", onVodCardAreaClick);
   // Minha Lista do Início: mesma delegação dos cartões de Filmes/Séries.
   document.getElementById("home-mylist").addEventListener("click", onVodCardAreaClick);
+  // Favoritos de filmes/séries aparecem dentro de #channel-container: mesmo tratador de clique dos cartões
+  document.getElementById("channel-container").addEventListener("click", onVodCardAreaClick);
+
+  // Seletor Canais/Filmes/Séries da aba Favoritos
+  document.getElementById("fav-kind-tabs").addEventListener("click", e => {
+    const btn = e.target.closest("[data-fav-kind]");
+    if (!btn) return;
+    const kind = normalizeFavKind(btn.dataset.favKind);
+    try { localStorage.setItem(FAV_KIND_KEY, kind); } catch (err) {}
+    setState({ favKind: kind });
+  });
 
   // ── SEGURAR EM CIMA DE UM CARTÃO (menu de ações, ponto 8 da v6) ──
   // Toque longo (~500ms sem arrastar) abre o menu. O clique que o navegador
