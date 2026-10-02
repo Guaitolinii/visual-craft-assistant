@@ -2,7 +2,7 @@
 import { withPage } from "./cdp.mjs";
 import { pathToFileURL } from "node:url";
 
-await withPage(pathToFileURL("sintoniza-link.html").href, { native: true }, async (page) => {
+await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native: true }, async (page) => {
   const idle = await page.eval(`(() => { const el = document.getElementById("player-screen"); const r = el.getBoundingClientRect(); return { oculto: el.classList.contains("player-hidden"), altura: r.height }; })()`);
   console.log("sem nada selecionado:", idle);
   if (!idle.oculto || idle.altura > 0) { console.error("✖ o retângulo ainda aparece"); process.exit(1); }

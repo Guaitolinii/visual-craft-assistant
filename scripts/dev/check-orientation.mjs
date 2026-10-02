@@ -10,7 +10,7 @@ const preScript = `
   window.Capacitor.nativePromise = (plugin, method, options) => { window.__chamadas.push(plugin + "." + method + ":" + JSON.stringify(options)); return Promise.resolve({}); };
 `;
 
-await withPage(pathToFileURL("sintoniza-link.html").href, { native: true, preScript }, async (page) => {
+await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native: true, preScript }, async (page) => {
   await page.eval(`selectChannel(getChannels()[0], false); toggleFullscreen();`);   // entra
   await page.eval(`toggleFsRotation()`);                                              // gira
   await page.eval(`toggleFullscreen()`);                                              // sai

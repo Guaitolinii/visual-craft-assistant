@@ -2,7 +2,7 @@
 import { withPage } from "./cdp.mjs";
 import { pathToFileURL } from "node:url";
 
-await withPage(pathToFileURL("sintoniza-link.html").href, { native: true }, async (page) => {
+await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native: true }, async (page) => {
   await page.eval(`selectChannel(getChannels()[0], false); setState({ playing: true })`);
   await page.sleep(500);
   const antes = await page.eval(`document.getElementById("player-screen").classList.contains("mini-player")`);

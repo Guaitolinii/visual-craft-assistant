@@ -2,7 +2,7 @@
 import { withPage } from "./cdp.mjs";
 import { pathToFileURL } from "node:url";
 
-await withPage(pathToFileURL("sintoniza-link.html").href, { native: true }, async (page) => {
+await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native: true }, async (page) => {
   await page.eval(`selectChannel(getChannels()[0], false)`); // mostra o player
   await page.sleep(600);
   // canto superior esquerdo da área: o centro é ocupado pelo botão grande de reproduzir

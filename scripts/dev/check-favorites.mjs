@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 const captura = process.argv[2];
 
-await withPage(pathToFileURL("sintoniza-link.html").href, { native: true }, async (page) => {
+await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native: true }, async (page) => {
   // uma série e um filme na Minha Lista
   await page.eval(`localStorage.setItem("sint_mylist", JSON.stringify([
     { type: "vod", id: 1, title: "Filme Um", cover: "", item: { stream_id: 1, name: "Filme Um" }, ts: 2 },
