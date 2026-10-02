@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
+  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1)document.documentElement.classList.add("ott-open");}catch(e){}})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -1141,9 +1142,89 @@
     @media (prefers-reduced-motion: reduce) {
       *, .spinner { animation: none !important; transition-duration: .01ms !important; }
     }
+    /* ════════════ CONTA SINTONIZA (ativação) ════════════ */
+    #ott-gate {
+      display: none; position: fixed; inset: 0; z-index: 2147483000;
+      align-items: center; justify-content: center; padding: 1.25rem;
+      background: #08080D; color: #F3F4F6; font-family: "Outfit", system-ui, sans-serif;
+      overflow-y: auto;
+    }
+    html.ott-open #ott-gate { display: flex; }
+    html.ott-open body > *:not(#ott-gate):not(script) { visibility: hidden; }
+    .ott-card { width: 100%; max-width: 26rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: .9rem; }
+    .ott-card [hidden] { display: none !important; }
+    .ott-card section { width: 100%; display: flex; flex-direction: column; align-items: center; gap: .9rem; }
+    .ott-logo { width: 4.5rem; height: 4.5rem; }
+    .ott-logo svg { display: block; width: 100%; height: 100%; }
+    .ott-card h1 { font-size: 1.6rem; font-weight: 700; }
+    .ott-sub { color: #9CA3AF; font-size: .95rem; line-height: 1.45; }
+    .ott-code {
+      font-size: 2.4rem; font-weight: 700; letter-spacing: .12em; color: #F97316;
+      background: #12121C; border: 1px solid #252538; border-radius: .75rem; padding: .6rem 1.1rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .ott-timer { color: #9CA3AF; font-size: .85rem; min-height: 1.2em; }
+    .ott-btn {
+      display: inline-flex; align-items: center; justify-content: center; width: 100%;
+      min-height: 3rem; border-radius: .75rem; border: 1px solid #252538; background: #1C1C2B;
+      color: #F3F4F6; font-weight: 600; font-size: 1rem; text-decoration: none; padding: .5rem 1rem;
+    }
+    .ott-btn-primary { background: #F97316; border-color: #F97316; color: #fff; }
+    .ott-link { background: none; border: none; color: #9CA3AF; text-decoration: underline; font-size: .9rem; padding: .5rem; }
+    .ott-qr { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
+    .ott-qr svg { width: 11rem; height: 11rem; background: #fff; padding: .6rem; border-radius: .6rem; }
+    .ott-qr p { color: #9CA3AF; font-size: .8rem; max-width: 16rem; }
+    .ott-err { color: #FCA5A5; font-size: .9rem; }
   </style>
 </head>
 <body>
+
+<!-- ══ CONTA SINTONIZA: cobre o app até o aparelho estar ativado (ver ottBoot) ══ -->
+<div id="ott-gate" role="dialog" aria-modal="true" aria-label="Ativar o Sintoniza">
+  <div class="ott-card">
+    <span class="ott-logo" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="299.18 186.6 425.86 425.86" aria-hidden="true" focusable="false"><g fill="#F16F16"><path fill-rule="evenodd" d="M410.9 586.61C410.19 578.2 416.78 570.57 424.71 568.42C431.76 566.51 458.44 568.38 468.57 567.17L468.8 554.33C460.05 552.76 443.44 555.43 436.22 553.43C439.56 550.3 447.25 546.61 451.57 543.54C454.56 541.41 462.5 534.64 465.31 533.72C468.71 532.6 478.22 533.26 482.24 533.28C493.74 533.33 505.24 533.29 516.74 533.28C549.08 533.25 581.41 533.29 613.74 533.26C629.07 533.25 644.41 533.24 659.74 533.23C665.57 533.22 673.33 534.74 677.85 530.2C681.65 526.38 680.98 521.03 680.98 516.1C680.97 506.1 680.99 496.1 680.99 486.1C680.98 444.26 681.02 402.43 680.98 360.6C680.96 349.43 681 338.26 680.98 327.09C680.98 320.87 680.24 315.32 673.54 312.98C669.39 311.53 664.95 312.25 660.71 312.76C651.89 313.82 645.03 315.98 637.4 320.65C620.4 331.06 604.25 358.9 591.84 375.04C588.06 379.95 584.64 385.64 579.98 389.75L566.06 376.36C568.5 371.41 572.82 367.31 576.17 362.93C583.63 353.18 590.61 342.98 597.75 332.99C614.08 310.11 634.33 292.93 663.68 292.06C667.6 291.94 671.77 291.65 675.66 292.25C686.57 293.91 695.84 302.33 699.39 312.65C701.59 319.04 701.03 325.74 701.02 332.4C701 342.4 701.02 352.4 701.03 362.4C701.04 397.9 701.01 433.4 701.01 468.9C701.01 483.23 701 497.57 701.03 511.9C701.04 524.88 702.22 534.76 692.29 544.88C681.15 556.23 664.78 553.91 650.31 553.93C629.47 553.95 608.64 553.94 587.81 553.95C578.48 553.96 564.09 553.27 555.36 554.17L555.32 567.01C558.41 567.67 561.51 567.45 564.66 567.48C571.16 567.53 577.66 567.64 584.16 567.67C588.89 567.69 593.97 567.14 598.62 568.17C607.44 570.1 612.73 577.77 613.63 586.36C608.55 587.82 597.14 587 591.34 587C576.34 587 561.34 587 546.34 587C516.33 587 486.33 587 456.33 587C447 587 437.67 587 428.33 587C422.61 587 416.55 587.56 410.9 586.61Z"/><path fill-rule="evenodd" d="M489.57 291.37C486.26 286.11 481.23 281.83 476.91 277.4C470.63 270.95 464.6 264.28 458.33 257.82C453.92 253.28 447.74 247.77 451.66 240.93C452.75 239.03 454.41 237.63 456.46 236.87C462.42 234.67 466.6 239.25 470.25 243.25C478.64 252.44 487.67 261.05 496.33 269.99C501.33 275.17 506.31 281.68 512.07 285.91C517.19 281.83 527.68 270.27 532.74 264.97C544.25 252.94 555.78 240.94 567.2 228.82C569.6 226.27 572.01 223.73 574.45 221.22C578.8 216.75 583.68 211.23 590.49 215.24C592.26 216.28 593.45 217.81 594.2 219.7C597.09 227.05 589.51 232.73 585.05 237.45C575.25 247.86 565.6 258.41 555.72 268.74C548.64 276.14 540.96 283.15 534.75 291.31C539.25 292.84 550.15 292.02 555.4 292.02C567.73 292.01 580.06 292 592.39 292.02C598.56 292.03 605.73 291.25 611.74 292.41C609.53 295.42 602.43 300.96 598.99 304.72C597.15 306.73 594.57 310.74 592.13 311.81C589.84 312.81 580.77 312.14 577.75 312.13C566.58 312.12 555.42 312.25 544.25 312.21C497.76 312.03 451.26 312.24 404.77 312.18C391.44 312.16 378.11 312.26 364.78 312.25C359.4 312.25 352.43 311.04 347.75 314.26C342.91 317.58 343 322.84 343 328.11C343.01 337.77 343 347.44 343 357.11C343 399.6 342.98 442.1 343 484.6C343.01 495.6 343.05 506.6 343.01 517.6C343 522.96 342.87 528.58 348.04 531.77C351.05 533.63 354.81 533.3 358.21 533.32C365.22 533.35 372.2 533.1 379.15 532.2C407.9 528.47 430.19 515.26 451.08 495.72C456.79 490.38 461.89 484.36 467.06 478.52C469.62 475.64 471.93 471.93 475.34 469.99C483.21 465.53 492.61 473.63 489.39 482.13C487.43 487.32 473.42 501.19 468.95 505.84C450.42 525.14 427.08 542.03 400.8 548.74C394.5 550.35 388.12 551.29 381.71 552.24C371.6 553.75 354.77 555.38 344.98 552.71C339.77 551.29 335.39 548.3 331.68 544.45C327.38 540.01 324.35 534.56 323.29 528.42C322.24 522.34 323 498.33 322.99 490.45C322.98 445.45 323.11 400.45 323 355.46C322.98 348.29 323 341.13 322.99 333.96C322.97 320.25 321.99 310.19 333.05 299.99C341.91 291.83 350.1 291.97 361.38 291.98C367.21 291.99 373.04 291.99 378.88 291.99C404.21 291.99 429.54 291.99 454.87 291.99C462.21 291.99 469.54 291.96 476.87 291.98C481.01 292 485.6 292.6 489.57 291.37Z"/><path fill-rule="evenodd" d="M591.17 486.86C586 488.01 581.07 484.64 580.16 479.56C579.7 476.96 580.12 474.2 579.89 471.57C579.5 467 578.65 462.3 577.71 457.8C573.63 438.38 563.08 420.19 548.66 406.7C535.24 394.16 518.96 385.26 500.98 381.25C496.29 380.21 491.5 379.38 486.7 379.09C483.48 378.89 479.88 379.54 476.83 378.29C471.28 376.01 469.44 368.28 473.74 363.94C476.66 361 481.09 360.98 484.93 361.17C493.87 361.59 502.82 363.3 511.44 365.64C548.92 375.79 577.61 403.73 590.75 439.93C594.64 450.66 596.95 462.05 597.69 473.44C598.05 478.92 597.38 485.07 591.12 486.69Z"/><path fill-rule="evenodd" d="M555.17 486.88C550.26 487.96 545.92 484.86 544.61 480.24C543.87 477.66 544.22 474.95 543.9 472.31C543.62 470.04 543.14 467.71 542.69 465.46C540.16 452.87 533.49 441.36 524.24 432.56C515.65 424.38 505.09 418.69 493.47 416.15C491.39 415.69 489.21 415.27 487.09 415.08C483.34 414.76 479.32 415.56 475.87 413.63C469.86 410.27 470.16 400.95 476.33 397.95C482.03 395.17 495.79 398.05 501.78 399.86C526.12 407.24 546.39 424.15 555.88 448.09C559.23 456.54 561.77 465.98 561.97 475.11C562.08 480.3 560.77 485.23 555.11 486.7Z"/><path fill-rule="evenodd" d="M519.17 486.92C517.16 487.19 515.19 486.93 513.39 486.04C507.96 483.37 508.79 477.61 507.66 472.63C506.71 468.48 504.72 464.41 502.14 461.03C498.47 456.22 492.32 452.43 486.36 451.28C482.46 450.52 477.71 451.24 474.47 448.42C469.57 444.15 471.1 435.59 477.21 433.44C481.25 432.01 486.5 433.01 490.52 433.97C504.85 437.4 517.15 447.45 522.69 461.24C525.55 468.35 530.04 484.29 519.12 486.75Z"/></g></svg></span>
+
+    <section data-ott-screen="loading">
+      <h1>Sintoniza</h1>
+      <p class="ott-sub">Conectando...</p>
+    </section>
+
+    <section data-ott-screen="activation" hidden>
+      <h1>Ative o Sintoniza</h1>
+      <p class="ott-sub">Teste grátis por 7 dias. Abra a página, crie sua conta e confirme o código abaixo.</p>
+      <div class="ott-code" id="ott-code">----</div>
+      <p class="ott-timer" id="ott-timer"></p>
+      <a class="ott-btn ott-btn-primary" id="ott-open-panel" target="_blank" rel="noopener" href="#">Abrir página de ativação</a>
+      <button class="ott-btn" id="ott-copy-code" type="button">Copiar código</button>
+      <div class="ott-qr">
+        <svg id="ott-qr" viewBox="0 0 1 1" role="img" aria-label="QR code da ativação"></svg>
+        <p>Ou leia o QR code com outro aparelho (computador ou outro celular).</p>
+      </div>
+      <button class="ott-link" id="ott-new-code" type="button" hidden>Gerar novo código</button>
+    </section>
+
+    <section data-ott-screen="blocked" hidden>
+      <h1 id="ott-blocked-title">Seu período de acesso terminou</h1>
+      <p class="ott-sub" id="ott-blocked-detail"></p>
+      <a class="ott-btn ott-btn-primary" id="ott-blocked-panel" target="_blank" rel="noopener" href="#">Abrir meu painel</a>
+      <button class="ott-btn" id="ott-blocked-recheck" type="button">Já renovei: verificar de novo</button>
+      <button class="ott-link" id="ott-blocked-unlink" type="button">Usar outra conta neste aparelho</button>
+    </section>
+
+    <section data-ott-screen="offline" hidden>
+      <h1>Sem conexão</h1>
+      <p class="ott-sub ott-err" id="ott-offline-msg"></p>
+      <button class="ott-btn ott-btn-primary" id="ott-retry" type="button">Tentar de novo</button>
+    </section>
+
+    <section data-ott-screen="device_blocked" hidden>
+      <h1>Aparelho desativado</h1>
+      <p class="ott-sub">Este aparelho foi desativado no painel. Gere um novo código para ativá-lo de novo.</p>
+      <button class="ott-btn ott-btn-primary" id="ott-restart" type="button">Gerar novo código</button>
+    </section>
+  </div>
+</div>
+
 
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
@@ -6926,6 +7007,191 @@ function closeSidebar() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// CONTA SINTONIZA (ativação do aparelho)
+// Usa as funções do bloco ott-core (script embutido acima).
+// ═══════════════════════════════════════════════════════════════
+const _ott = { cfg: null, poll: null, tick: null, revalidate: null, wired: false };
+
+// Só no app nativo (ou ?ott=1); ?noott=1 desliga. O site no navegador segue com listas manuais.
+function ottEnabled() {
+  const q = new URLSearchParams(location.search);
+  if (q.has("noott")) return false;
+  return isNativeApp() || q.has("ott");
+}
+
+function ottStopTimers() {
+  clearInterval(_ott.poll);
+  clearInterval(_ott.tick);
+  _ott.poll = _ott.tick = null;
+}
+
+function ottShowGate(screen) {
+  document.documentElement.classList.add("ott-open");
+  document.querySelectorAll("#ott-gate [data-ott-screen]").forEach(el => { el.hidden = el.dataset.ottScreen !== screen; });
+}
+
+function ottHideGate() {
+  ottStopTimers();
+  document.documentElement.classList.remove("ott-open");
+}
+
+function ottShowOffline(message) {
+  ottStopTimers();
+  document.getElementById("ott-offline-msg").textContent = message || OTT_MSG_NETWORK;
+  ottShowGate("offline");
+}
+
+function ottStoredLastOk() { return Number(localStorage.getItem(OTT_KEYS.LAST_OK)) || 0; }
+
+// Aparelho novo: pede o código ao servidor
+async function ottBeginActivation() {
+  ottStopTimers();
+  ottShowGate("loading");
+  try {
+    const platform = window.Capacitor && window.Capacitor.getPlatform ? window.Capacitor.getPlatform() : "";
+    const s = await ottDeviceStart(_ott.cfg, ottDetectDevice(navigator.userAgent, platform));
+    localStorage.setItem(OTT_KEYS.TOKEN, s.token);
+    ottShowActivation({ code: s.code, expiresAt: s.expiresAt, pollSeconds: s.pollSeconds });
+  } catch (e) {
+    ottShowOffline(e.message);
+  }
+}
+
+// Mostra o código, o QR e a contagem; consulta o servidor a cada pollSeconds
+function ottShowActivation({ code, expiresAt, pollSeconds }) {
+  ottStopTimers();
+  const link = ottActivationLink(_ott.cfg.panelUrl, code);
+  document.getElementById("ott-code").textContent = code;
+  document.getElementById("ott-open-panel").href = link || "#";
+  const qr = ottQrSvgPath(link);
+  const svg = document.getElementById("ott-qr");
+  // Margem de 3 módulos em volta (o leitor de QR precisa de uma borda branca)
+  svg.setAttribute("viewBox", `-3 -3 ${qr.size + 6} ${qr.size + 6}`);
+  svg.innerHTML = `<path d="${qr.path}" fill="#000" shape-rendering="crispEdges"/>`;
+  document.getElementById("ott-new-code").hidden = true;
+  ottShowGate("activation");
+
+  const endMs = ottParseIsoMs(expiresAt);
+  const timerEl = document.getElementById("ott-timer");
+  const renderTick = () => {
+    const left = endMs ? endMs - Date.now() : 0;
+    if (endMs && left <= 0) {
+      ottStopTimers();
+      timerEl.textContent = "O código expirou.";
+      document.getElementById("ott-new-code").hidden = false;
+      return;
+    }
+    timerEl.textContent = endMs ? `Código válido por ${ottFormatCountdown(left)}` : "";
+  };
+  renderTick();
+  _ott.tick = setInterval(renderTick, 1000);
+  _ott.poll = setInterval(ottPollOnce, Math.max(3, pollSeconds || 5) * 1000);
+}
+
+async function ottPollOnce() {
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!token) return;
+  try {
+    const config = await ottDeviceConfig(_ott.cfg, token);
+    if (config.status === "pending") return; // ainda esperando o cliente confirmar
+    ottApplyDecision(ottDecide({ config, lastOkMs: ottStoredLastOk(), nowMs: Date.now() }));
+  } catch (e) { /* rede oscilou: tenta de novo no próximo ciclo */ }
+}
+
+function ottShowBlocked(d) {
+  ottStopTimers();
+  const expired = d.kind === "expired";
+  document.getElementById("ott-blocked-title").textContent = expired ? "Seu período de acesso terminou" : "Conta bloqueada";
+  const fim = ottFormatDateBr(d.trialFim);
+  document.getElementById("ott-blocked-detail").textContent = expired
+    ? (fim ? `Encerrado em ${fim}. ` : "") + "Renove no painel para continuar assistindo."
+    : "Fale com o suporte para liberar o acesso.";
+  document.getElementById("ott-blocked-panel").href = _ott.cfg.panelUrl;
+  ottShowGate("blocked");
+}
+
+// Cartão "Conta Sintoniza" nas Configurações (preenchido na Task M3)
+function ottRenderAccountCard() {}
+
+// Acesso liberado: guarda a conta, aplica as listas (recarrega o app se mudaram) e abre o app
+function ottOnOk(d) {
+  localStorage.setItem(OTT_KEYS.LAST_OK, String(Date.now()));
+  if (d.account) localStorage.setItem(OTT_KEYS.ACCOUNT, JSON.stringify(d.account));
+  if (!d.offline) {
+    const changed = ottApplyPlaylist(localStorage, (d.playlists && d.playlists[0]) || null);
+    if (changed) { location.reload(); return; }
+  }
+  ottHideGate();
+  document.body.classList.add("ott-mode");
+  ottRenderAccountCard();
+  ottScheduleRevalidate();
+}
+
+function ottApplyDecision(d) {
+  if (d.screen === "ok") ottOnOk(d);
+  else if (d.screen === "activation") ottShowActivation(d);
+  else if (d.screen === "blocked") ottShowBlocked(d);
+  else if (d.screen === "device_blocked") { ottStopTimers(); ottShowGate("device_blocked"); }
+  else if (d.screen === "restart") { localStorage.removeItem(OTT_KEYS.TOKEN); ottBeginActivation(); }
+  else ottShowOffline(d.message);
+}
+
+// Pergunta ao servidor a situação do aparelho (ao abrir, ao voltar ao app e a cada 6 h)
+async function ottCheck() {
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!token) { ottBeginActivation(); return; }
+  let decision;
+  try {
+    decision = ottDecide({ config: await ottDeviceConfig(_ott.cfg, token), lastOkMs: ottStoredLastOk(), nowMs: Date.now() });
+  } catch (e) {
+    decision = ottDecide({ error: e.message, lastOkMs: ottStoredLastOk(), nowMs: Date.now() });
+  }
+  ottApplyDecision(decision);
+}
+
+function ottScheduleRevalidate() {
+  clearInterval(_ott.revalidate);
+  _ott.revalidate = setInterval(() => { if (document.visibilityState === "visible") ottCheck(); }, OTT_REVALIDATE_MS);
+}
+
+// "Desvincular este aparelho": libera a vaga no servidor e volta para a tela do código
+async function ottUnlink() {
+  if (!window.confirm("Desvincular este aparelho da sua conta? Ele volta para a tela do código.")) return;
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
+  [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT].forEach(k => localStorage.removeItem(k));
+  ottApplyPlaylist(localStorage, null);
+  location.reload();
+}
+
+function ottWire() {
+  if (_ott.wired) return;
+  _ott.wired = true;
+  document.getElementById("ott-new-code").addEventListener("click", ottBeginActivation);
+  document.getElementById("ott-restart").addEventListener("click", () => { localStorage.removeItem(OTT_KEYS.TOKEN); ottBeginActivation(); });
+  document.getElementById("ott-retry").addEventListener("click", () => { ottShowGate("loading"); ottBoot(); });
+  document.getElementById("ott-blocked-recheck").addEventListener("click", () => { ottShowGate("loading"); ottCheck(); });
+  document.getElementById("ott-blocked-unlink").addEventListener("click", ottUnlink);
+  document.getElementById("ott-copy-code").addEventListener("click", async () => {
+    const ok = await copyTextToClipboard(document.getElementById("ott-code").textContent);
+    showToast(ok ? "Código copiado." : "Não foi possível copiar o código.");
+  });
+  // Voltou ao app depois de um tempo: revalida
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && _ott.cfg && Date.now() - ottStoredLastOk() > OTT_REVALIDATE_MS) ottCheck();
+  });
+}
+
+async function ottBoot() {
+  if (!ottEnabled()) { document.documentElement.classList.remove("ott-open"); return; }
+  ottShowGate("loading");
+  _ott.cfg = await ottLoadConfig(localStorage);
+  if (!_ott.cfg) { ottShowOffline("Não foi possível conectar ao servidor Sintoniza. Verifique a internet do aparelho."); ottWire(); return; }
+  ottWire();
+  await ottCheck();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
@@ -7754,6 +8020,9 @@ document.addEventListener("DOMContentLoaded", () => {
   _downloads = resetInterruptedDownloads(loadDownloads());
   localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(_downloads));
   processDownloadQueue();
+
+  // ── CONTA SINTONIZA: por último, para não interferir no boot do app ──
+  ottBoot();
 });
 </script>
 </body>
