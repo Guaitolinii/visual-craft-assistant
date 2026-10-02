@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadVodHelpers } from "../vod/loadVodHelpers.js";
 
 test("player fica grande em todas as abas enquanto há algo selecionado", () => {
@@ -76,4 +77,15 @@ test("fora dessa volta, a medida da rolagem é mantida", () => {
   assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: "settings", section: "settings", scrolledAway: true }), true);
   // primeira renderização (sem seção anterior)
   assert.equal(ctx.resolvePlayerScrolledAway({ prevSection: null, section: "catalog", scrolledAway: false }), false);
+});
+
+const html = readFileSync(new URL("../../sintoniza-link.html", import.meta.url), "utf8");
+
+test("ao sair da janela flutuante o app recompõe o player grande", () => {
+  assert.match(html, /function restorePlayerAfterPip\(\)/);
+  assert.match(html, /if \(!active\) restorePlayerAfterPip\(\);/);
+});
+
+test("ao voltar para o app (visível de novo) o player é recomposto se não estiver na janela flutuante", () => {
+  assert.match(html, /visibilityState === "visible" && !document\.body\.classList\.contains\("pip-active"\)\) restorePlayerAfterPip\(\)/);
 });

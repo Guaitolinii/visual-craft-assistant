@@ -2958,6 +2958,8 @@ document.addEventListener("visibilitychange", () => {
     const v = document.getElementById("player-video");
     try { if (v && v.webkitSetPresentationMode && v.webkitPresentationMode !== "picture-in-picture") v.webkitSetPresentationMode("picture-in-picture"); } catch (err) {}
   }
+  // Voltou ao app (ex.: depois de usar outros apps com a janela flutuante): recompõe o player grande.
+  if (document.visibilityState === "visible" && !document.body.classList.contains("pip-active")) restorePlayerAfterPip();
 });
 
 // Recarrega canal mantendo estado
@@ -4503,6 +4505,16 @@ function setPlayerMode() {
   if (!keepSlot) unlockPlayerAnchor();
   el.classList.toggle("mini-player", mode === "mini");
   el.classList.toggle("player-hidden", mode === "hidden");
+}
+
+// Saiu da janela flutuante (ou o app voltou ao primeiro plano): a medida "o player grande saiu da
+// tela" foi feita com o player fixo dentro da janelinha e não vale mais. Zera, solta a âncora e mede
+// de novo depois que o layout assentar (nenhum evento de rolagem/redimensionamento chega depois).
+function restorePlayerAfterPip() {
+  _playerScrolledAway = false;
+  unlockPlayerAnchor();
+  setPlayerMode();
+  [60, 300, 800].forEach(ms => setTimeout(scheduleDockingUpdate, ms));
 }
 
 // Rolagem: decide o mini-player (e o encaixe da busca na topbar). Roda no
@@ -6166,6 +6178,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Menu aberto esconderia o mini-player dentro da janela: fecha antes
     if (active) closeSidebar();
     document.body.classList.toggle("pip-active", active);
+    if (!active) restorePlayerAfterPip();
     // O Android informa quando a janela foi fechada no "x" (e não expandida): pausa
     if (!active && e.closed) pauseAfterPipClosed();
   });
