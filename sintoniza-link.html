@@ -1170,6 +1170,11 @@
       color: #F3F4F6; font-weight: 600; font-size: 1rem; text-decoration: none; padding: .5rem 1rem;
     }
     .ott-btn-primary { background: #F97316; border-color: #F97316; color: #fff; }
+    /* Feedback ao tocar (o destaque nativo do toque está desligado no app todo) */
+    .ott-btn, .ott-link { transition: transform .08s ease, filter .08s ease, background-color .08s ease; }
+    .ott-btn:active, .ott-btn.is-pressed { transform: scale(.97); filter: brightness(1.25); }
+    .ott-btn-primary:active, .ott-btn-primary.is-pressed { filter: brightness(.85); }
+    .ott-link:active, .ott-link.is-pressed { color: #F3F4F6; }
     .ott-link { background: none; border: none; color: #9CA3AF; text-decoration: underline; font-size: .9rem; padding: .5rem; }
     .ott-qr { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
     .ott-qr svg { width: 11rem; height: 11rem; background: #fff; padding: .6rem; border-radius: .6rem; }
@@ -7406,8 +7411,17 @@ function ottWire() {
   document.getElementById("ott-blocked-unlink").addEventListener("click", ottUnlink);
   document.getElementById("ott-unlink-btn").addEventListener("click", ottUnlink);
   document.getElementById("ott-copy-code").addEventListener("click", async () => {
+    const btn = document.getElementById("ott-copy-code");
     const ok = await copyTextToClipboard(document.getElementById("ott-code").textContent);
-    showToast(ok ? "Código copiado." : "Não foi possível copiar o código.");
+    btn.textContent = ok ? "Código copiado!" : "Não foi possível copiar";
+    setTimeout(() => { btn.textContent = "Copiar código"; }, 2000);
+  });
+  // Toque: marca o botão como pressionado (no iOS o :active só vale com ouvinte de toque)
+  document.querySelectorAll("#ott-gate .ott-btn, #ott-gate .ott-link").forEach(el => {
+    const on = () => el.classList.add("is-pressed");
+    const off = () => el.classList.remove("is-pressed");
+    el.addEventListener("pointerdown", on);
+    ["pointerup", "pointercancel", "pointerleave"].forEach(ev => el.addEventListener(ev, off));
   });
   // Voltou ao app depois de um tempo: revalida
   document.addEventListener("visibilitychange", () => {

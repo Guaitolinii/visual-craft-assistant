@@ -35,3 +35,9 @@ test("os scripts da conta vêm antes do script principal (o carregador de testes
   assert.ok(idx("ott-core") > idx("qrcodegen"), "ott-core depois do qrcodegen");
   assert.equal(scripts[scripts.length - 1], "", "o último script embutido é o principal");
 });
+
+test("os botões da tela de ativação mostram que foram tocados", () => {
+  assert.match(html, /\.ott-btn:active, \.ott-btn\.is-pressed \{ transform: scale\(\.97\)/);
+  assert.match(html, /classList\.add\("is-pressed"\)/);
+  assert.match(html, /Código copiado!/);
+});
