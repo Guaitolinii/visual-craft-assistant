@@ -27,6 +27,7 @@ const PURE_HELPER_NAMES = [
   "removeDownload", "resetInterruptedDownloads", "groupDownloads", "formatDownloadProgress", "seasonsOf",
   "providerKeyForItem", "attachProviders", "groupItemsByProvider",
   "resolveInjectedDefault", "seedInjectedDefaults",
+  "profKey", "profKeyFor", "activeProfileId", "activeProfileIsMain", "profileAdoptLegacy",
 ];
 
 function toHostRealm(value) {

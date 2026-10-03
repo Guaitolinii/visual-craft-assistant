@@ -3258,6 +3258,58 @@ function filterMyListEntries(entries, query) {
   return entries.filter(e => foldSearchText(e.title).indexOf(q) !== -1);
 }
 
+// ─── Dados por perfil (favoritos, recentes, tipo de favorito, continuar assistindo e minha lista) ───
+// Ficam ANTES do _state: o estado inicial já lê as chaves por perfil em tempo de parse (não pode lançar).
+// sint_view, sint_fit, listas (sint_url...) e downloads continuam por aparelho.
+const PROFILE_ACTIVE_KEY = "sint_profile_active";
+const PROFILES_CACHE_KEY = "sint_profiles";
+const PROFILES_MIGRATED_KEY = "sint_profiles_migrated";
+const PER_PROFILE_BASES = ["sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist"];
+
+// Chave de dados no perfil dado (nulo = chave antiga). Só as 5 bases acima são por perfil.
+// Ex.: ("sint_fav", "3f2b8c1e-...") -> "sint_p3f2b8c1e_fav"
+function profKeyFor(base, perfilId) {
+  if (!perfilId || PER_PROFILE_BASES.indexOf(base) < 0) return base;
+  return "sint_p" + String(perfilId).slice(0, 8) + "_" + base.replace(/^sint_/, "");
+}
+
+// Perfil ativo deste aparelho (id completo) ou null
+function activeProfileId() {
+  try { return localStorage.getItem(PROFILE_ACTIVE_KEY) || null; } catch (e) { return null; }
+}
+
+// Chave de dados no perfil ativo (sem perfil ativo: chave antiga)
+function profKey(base) { return profKeyFor(base, activeProfileId()); }
+
+// O perfil ativo é o principal? (lê o cache da lista; sem perfil ou sem cache: trata como principal, como hoje)
+function activeProfileIsMain() {
+  const id = activeProfileId();
+  if (!id) return true;
+  try {
+    const list = JSON.parse(localStorage.getItem(PROFILES_CACHE_KEY) || "[]");
+    for (let i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return list[i].padrao === true;
+  } catch (e) { /* cache ilegível: segue como principal */ }
+  return true;
+}
+
+// Ao escolher o perfil principal pela 1ª vez, COPIA os dados antigos (chaves sem perfil) para as chaves dele.
+// As chaves antigas ficam intactas; não sobrescreve o que o perfil já tem. Devolve true se migrou agora.
+// Chamada por profileChoose (tela de perfis) ANTES de gravar o perfil ativo e recarregar.
+function profileAdoptLegacy(perfilId, isMain) {
+  if (!perfilId || !isMain) return false;
+  try {
+    if (localStorage.getItem(PROFILES_MIGRATED_KEY)) return false;
+    for (let i = 0; i < PER_PROFILE_BASES.length; i++) {
+      const base = PER_PROFILE_BASES[i];
+      const destino = profKeyFor(base, perfilId);
+      const antigo = localStorage.getItem(base);
+      if (antigo !== null && localStorage.getItem(destino) === null) localStorage.setItem(destino, antigo);
+    }
+    localStorage.setItem(PROFILES_MIGRATED_KEY, "1");
+    return true;
+  } catch (e) { return false; }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ESTADO CENTRAL
 // ═══════════════════════════════════════════════════════════════
@@ -3271,14 +3323,14 @@ let _state = {
   // tira do nome do canal (sanitizeLabel) - sem isso o favorito salvo fica
   // "preso" a um nome que o canal atual nunca mais vai ter (v8, correção
   // da v7.1 pt.2). IDs numéricos (favorito antigo por índice) passam direto.
-  favorites: JSON.parse(localStorage.getItem("sint_fav") || "[]").map(f => typeof f === "string" ? sanitizeLabel(f) : f),
+  favorites: JSON.parse(localStorage.getItem(profKey("sint_fav")) || "[]").map(f => typeof f === "string" ? sanitizeLabel(f) : f),
   selected:  null,
   playing:   false,
   viewMode:  localStorage.getItem("sint_view") || "grid",
-  recents:   normalizeChannelRecents(JSON.parse(localStorage.getItem("sint_recents") || "[]"), Date.now()),
+  recents:   normalizeChannelRecents(JSON.parse(localStorage.getItem(profKey("sint_recents")) || "[]"), Date.now()),
   loadingPlaylist: false,
   vodType:   "movies",    // "movies" | "series" - sub-aba ativa em Filmes/Séries
-  favKind:   normalizeFavKind(localStorage.getItem(FAV_KIND_KEY)), // "channels" | "vod" | "series" - o que a aba Favoritos mostra
+  favKind:   normalizeFavKind(localStorage.getItem(profKey(FAV_KIND_KEY))), // "channels" | "vod" | "series" - o que a aba Favoritos mostra
 };
 
 const _subs = [];
@@ -3323,7 +3375,7 @@ function selectChannel(ch, autoPlay = true) {
   const now = Date.now();
   const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
-  localStorage.setItem("sint_recents", JSON.stringify(recents));
+  localStorage.setItem(profKey("sint_recents"), JSON.stringify(recents));
   pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
   _resumeLookup = null;
   stopStream();
@@ -3334,7 +3386,9 @@ function selectChannel(ch, autoPlay = true) {
 }
 
 // Garante o retorno e persistência de canais essenciais favoritos
+// Só roda no perfil principal (ou sem perfil): os outros perfis começam sem favoritos.
 function ensureEssentialFavorites() {
+  if (!activeProfileIsMain()) return;
   const all = getChannels();
   if (!all || all.length === 0) return;
   const essentials = ["Combate", "Combate SD²", "ESPN", "ESPN 2", "ESPN 3", "ESPN 4", "ESPN 5", "ESPN 6"];
@@ -3351,7 +3405,7 @@ function ensureEssentialFavorites() {
   });
 
   if (changed) {
-    localStorage.setItem("sint_fav", JSON.stringify(_state.favorites));
+    localStorage.setItem(profKey("sint_fav"), JSON.stringify(_state.favorites));
   }
 }
 
@@ -3369,7 +3423,7 @@ function toggleFav(id) {
   }
 
   setState({ favorites });
-  localStorage.setItem("sint_fav", JSON.stringify(favorites));
+  localStorage.setItem(profKey("sint_fav"), JSON.stringify(favorites));
   showToast(isAlreadyFav ? "Removido dos favoritos" : "Adicionado aos favoritos!");
 }
 
@@ -6197,17 +6251,17 @@ function vodCardArtHtml(cover, title) {
 }
 
 function saveContinueWatching(entry) {
-  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const map = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   map[entry.id] = { ...entry, ts: Date.now() };
-  localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
+  localStorage.setItem(profKey(CONTINUE_KEY), JSON.stringify(map));
 }
 
 function removeContinueWatching(id) {
-  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const map = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   if (map[id]) {
     const entry = map[id];
     delete map[id];
-    localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
+    localStorage.setItem(profKey(CONTINUE_KEY), JSON.stringify(map));
     // Terminou ou foi removido: o minuto também sai da conta (o id é "resume-<tipo>-<id do provedor>")
     clearProgressOnAccount(entry.type === "series" ? "episode" : "vod", String(id).replace(/^resume-(vod|series)-/, ""));
   }
@@ -6220,10 +6274,10 @@ function removeContinueWatching(id) {
 const MYLIST_KEY = "sint_mylist";
 
 function loadMyList() {
-  try { return JSON.parse(localStorage.getItem(MYLIST_KEY) || "[]"); } catch (e) { return []; }
+  try { return JSON.parse(localStorage.getItem(profKey(MYLIST_KEY)) || "[]"); } catch (e) { return []; }
 }
 function saveMyList(list) {
-  localStorage.setItem(MYLIST_KEY, JSON.stringify(list));
+  localStorage.setItem(profKey(MYLIST_KEY), JSON.stringify(list));
 }
 
 function isInMyList(list, type, id) {
@@ -6382,7 +6436,7 @@ function runCardAction(actionId) {
   if (actionId === "recent-remove") {
     if (ctx.channelId != null) {
       const recents = _state.recents.filter(r => r.id !== ctx.channelId);
-      localStorage.setItem("sint_recents", JSON.stringify(recents));
+      localStorage.setItem(profKey("sint_recents"), JSON.stringify(recents));
       setState({ recents });
     } else if (ctx.recentId) {
       removeContinueWatching(ctx.recentId);
@@ -6704,7 +6758,7 @@ function continueCardHtml(item) {
 }
 
 function continueWatchingRowHtml(contType) {
-  const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const map = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   const items = getContinueWatchingItems(map, contType);
   if (!items.length) return "";
   return `
@@ -6754,7 +6808,7 @@ function renderHomeRecents() {
   const section = document.getElementById("home-recents-section");
   const list = document.getElementById("home-recents-list");
   if (!section || !list) return false;
-  const continueMap = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
+  const continueMap = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   const items = getUnifiedRecentItems(_state.recents, continueMap, 10)
     .map(homeRecentCardHtml)
     .filter(Boolean);
@@ -7190,7 +7244,7 @@ function playVodSelection(url, meta) {
   _lastProgressPushTs = 0;
   if (progressTokenAndCfg() && currentProgressKey()) {
     let savedTs = 0;
-    try { const saved = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}")[continueId]; savedTs = saved ? saved.ts || 0 : 0; } catch (e) {}
+    try { const saved = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}")[continueId]; savedTs = saved ? saved.ts || 0 : 0; } catch (e) {}
     _resumeLookup = resolveResumeWithAccount(pendingResumeAt, savedTs, 0);
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -7627,7 +7681,7 @@ async function ottUnlink() {
   if (!window.confirm("Desvincular este aparelho da sua conta? Ele volta para a tela do código.")) return;
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
-  [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT].forEach(k => localStorage.removeItem(k));
+  [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY].forEach(k => localStorage.removeItem(k));
   ottApplyPlaylist(localStorage, null);
   location.reload();
 }
@@ -8106,7 +8160,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("[data-fav-kind]");
     if (!btn) return;
     const kind = normalizeFavKind(btn.dataset.favKind);
-    try { localStorage.setItem(FAV_KIND_KEY, kind); } catch (err) {}
+    try { localStorage.setItem(profKey(FAV_KIND_KEY), kind); } catch (err) {}
     setState({ favKind: kind });
   });
 
