@@ -1055,7 +1055,7 @@
 
     /* ════════════ TOAST ════════════ */
     .toast {
-      position: fixed; bottom: 5.5rem; left: 50%; z-index: 99;
+      position: fixed; bottom: 5.5rem; left: 50%; z-index: 10002; /* acima da tela cheia (9999) */
       transform: translateX(-50%) translateY(4rem); opacity: 0;
       transition: transform 300ms, opacity 300ms;
       background: var(--foreground); color: var(--background);
@@ -3246,6 +3246,7 @@ function selectChannel(ch, autoPlay = true) {
   setState({ selected: ch, playing: false, recents });
   localStorage.setItem("sint_recents", JSON.stringify(recents));
   pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
+  _resumeLookup = null;
   stopStream();
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (autoPlay && ch.url) {
@@ -3544,6 +3545,7 @@ let playbackGeneration = 0;
 let userPausedVod = false;
 // Ponto (s) para retomar quando o próximo filme/episódio começar a tocar.
 let pendingResumeAt = 0;
+let _resumeLookup = null; // Promise do minuto inicial (celular x conta); ver resolveResumeWithAccount
 
 // ─── EPG (guia de programação) ───
 // Busca o xmltv.php do provedor (formato padrão em painéis Xtream Codes),
@@ -4089,6 +4091,7 @@ function stopWatchdog() {
 // reconnects while nobody is watching. Suspend the watchdog while hidden and
 // resume with a clean slate when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") pushProgressToAccount(true); // sai do app: grava o minuto na conta
   const action = getVisibilityAction(document.visibilityState);
   if (action === "SUSPEND_WATCHDOG") {
     stopWatchdog();
@@ -4617,16 +4620,26 @@ function releaseVideoElement(video) {
 }
 
 function applyPendingResume(video) {
-  const target = pendingResumeAt;
+  const lookup = _resumeLookup; // decisão local x conta, quando há conta ativa
+  _resumeLookup = null;
+  const local = pendingResumeAt;
   pendingResumeAt = 0;
-  if (!target) return;
-  const seek = () => {
+  if (!lookup && !local) return;
+  const itemId = _state.selected && _state.selected.continueId;
+  const seek = (target, late) => {
+    if (!target) return;
+    // resposta da conta que chegou tarde: não puxa de volta se o item mudou ou a pessoa já andou no vídeo
+    if (late && (!_state.selected || _state.selected.continueId !== itemId || video.currentTime > 20)) return;
     if (shouldApplyResume(target, video.duration)) {
       try { video.currentTime = target; } catch (e) {}
     }
   };
-  if (video.readyState >= 1) seek();
-  else video.addEventListener("loadedmetadata", seek, { once: true });
+  const run = (target, late) => {
+    if (video.readyState >= 1) seek(target, late);
+    else video.addEventListener("loadedmetadata", () => seek(target, late), { once: true });
+  };
+  if (lookup) lookup.then(sec => run(sec, true), () => run(local, true));
+  else run(local, false);
 }
 
 function tryDirectPlay(url, video, attempt, generation) {
@@ -6133,8 +6146,11 @@ function saveContinueWatching(entry) {
 function removeContinueWatching(id) {
   const map = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}");
   if (map[id]) {
+    const entry = map[id];
     delete map[id];
     localStorage.setItem(CONTINUE_KEY, JSON.stringify(map));
+    // Terminou ou foi removido: o minuto também sai da conta (o id é "resume-<tipo>-<id do provedor>")
+    clearProgressOnAccount(entry.type === "series" ? "episode" : "vod", String(id).replace(/^resume-(vod|series)-/, ""));
   }
 }
 
@@ -7080,7 +7096,7 @@ function playEpisode({ episodeId, containerExtension, season, episodeNum, series
     title: formatEpisodeTitle(seriesName, season, episodeNum),
     cover: (series && (series.cover || series.stream_icon)) || null,
     vodItem: series || null,
-    castInfo: series ? { kind: "episode", item: series, extra: { season, episode: episodeNum } } : null,
+    castInfo: series ? { kind: "episode", item: series, extra: { season, episode: episodeNum, episodeId } } : null,
   });
 }
 
@@ -7110,6 +7126,14 @@ function playVodSelection(url, meta) {
     castInfo: meta.castInfo || null, // {kind, item, extra}: o que o botão "Assistir na TV" envia
   };
   setState({ selected: pseudo, playing: false });
+  // Conta ativa: vale o minuto mais recente entre o do celular e o da conta (a abertura espera no máximo 2,5 s)
+  _resumeLookup = null;
+  _lastProgressPushTs = 0;
+  if (progressTokenAndCfg() && currentProgressKey()) {
+    let savedTs = 0;
+    try { const saved = JSON.parse(localStorage.getItem(CONTINUE_KEY) || "{}")[continueId]; savedTs = saved ? saved.ts || 0 : 0; } catch (e) {}
+    _resumeLookup = resolveResumeWithAccount(pendingResumeAt, savedTs, 0);
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
   stopStream();
   playStream(url);
@@ -7247,7 +7271,11 @@ async function castToTv(kind, item, extra) {
     for (let i = 0; i < 12; i++) {
       await new Promise(r => setTimeout(r, 2000));
       const st = await ottCastStatus(_ott.cfg, token, sent.id);
-      if (ottCastIsFinal(st.estado)) { showToast(ottCastStatusText(st.estado, st.motivo), 4000); return; }
+      if (ottCastIsFinal(st.estado)) {
+        if (st.estado === "played" && isCastingCurrentItem(kind, item, extra)) pausePlayerForCast();
+        showToast(ottCastStatusText(st.estado, st.motivo), 4000);
+        return;
+      }
       if (i === 1 && st.estado === "pending") showToast("Aguardando a TV...", 2500);
     }
     showToast(ottCastStatusText("expired", ""), 4500);
@@ -7265,9 +7293,99 @@ function castInfoFromResume(item) {
   if (!v) return null;
   if (item.type === "series") {
     const code = /^S(\d+)E(\d+)$/i.exec(splitEpisodeTitle(item.title).code);
-    return v.series_id && code ? { kind: "episode", item: v, extra: { season: code[1], episode: code[2] } } : null;
+    // o id do continuar é "resume-series-<episodeId>" (ver playVodSelection)
+    const episodeId = String(item.id || "").replace(/^resume-series-/, "");
+    return v.series_id && code ? { kind: "episode", item: v, extra: { season: code[1], episode: code[2], episodeId } } : null;
   }
   return v.stream_id ? { kind: "vod", item: v } : null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROGRESSO POR CONTA (celular e TV retomam de onde o outro parou)
+// Usa as funções ottProgress* do bloco ott-core; tudo é ignorado sem conta ativa
+// e qualquer falha de rede é engolida (nunca atrapalha a reprodução).
+// ═══════════════════════════════════════════════════════════════
+let _lastProgressPushTs = 0;
+
+// Configuração e token da conta, ou null sem conta ativa
+function progressTokenAndCfg() {
+  let token = null;
+  try { token = localStorage.getItem(OTT_KEYS.TOKEN); } catch (e) {}
+  return (_ott.cfg && token) ? { cfg: _ott.cfg, token } : null;
+}
+
+// Item atual -> { key, kind } para a conta (filme/episódio); canal e itens sem id não sincronizam
+function currentProgressKey() {
+  const sel = _state.selected;
+  if (!sel || !sel.isVod || !sel.castInfo) return null;
+  const ci = sel.castInfo;
+  if (ci.kind === "vod") return { kind: "vod", key: ottProgressKey("vod", ci.item && ci.item.stream_id) };
+  if (ci.kind === "episode") return { kind: "episode", key: ottProgressKey("episode", ci.extra && ci.extra.episodeId) };
+  return null;
+}
+
+// Grava o minuto na conta (no máximo a cada 20 s, ou na hora com force)
+function pushProgressToAccount(force) {
+  const t = progressTokenAndCfg();
+  const cur = currentProgressKey();
+  const v = document.getElementById("player-video");
+  if (!t || !cur || !cur.key || !v || !isFinite(v.duration) || v.currentTime < 10) return;
+  if (!force && Date.now() - _lastProgressPushTs < 20000) return;
+  _lastProgressPushTs = Date.now();
+  ottProgressPut(t.cfg, t.token, cur.key, cur.kind, v.currentTime, v.duration).catch(() => {});
+}
+
+// Apaga o minuto da conta (item terminou ou saiu do "continuar assistindo")
+function clearProgressOnAccount(kind, id) {
+  const t = progressTokenAndCfg();
+  const key = ottProgressKey(kind, id);
+  if (!t || !key) return;
+  ottProgressClear(t.cfg, t.token, key).catch(() => {});
+}
+
+// Decide o minuto inicial: o mais recente entre o do celular (sint_continue) e o da conta; espera a conta no máximo 2,5 s
+async function resolveResumeWithAccount(localSec, localTs, durationHint) {
+  const t = progressTokenAndCfg();
+  const cur = currentProgressKey();
+  if (!t || !cur || !cur.key) return localSec;
+  let server = null;
+  try {
+    server = await Promise.race([
+      ottProgressGet(t.cfg, t.token, cur.key),
+      new Promise(r => setTimeout(() => r(null), 2500)),
+    ]);
+  } catch (e) { server = null; }
+  return ottPickResume({
+    localSec: localSec || 0, localTs: localTs || 0,
+    serverSec: server ? server.sec : 0, serverTs: server ? server.ts : 0,
+    durationSec: durationHint || (server ? server.durationSec : 0), minSec: 10,
+  });
+}
+
+// Posição atual (segundos inteiros) para o envio à TV; 0 em canal ao vivo
+function currentCastPosition() {
+  const v = document.getElementById("player-video");
+  return (_state.selected && _state.selected.isVod && v && isFinite(v.currentTime)) ? Math.floor(v.currentTime) : 0;
+}
+
+// O item que está sendo enviado é o que está tocando agora?
+function isCastingCurrentItem(kind, item, extra) {
+  const sel = _state.selected;
+  if (!sel || !item) return false;
+  if (kind === "channel") return !sel.isVod && item.id != null && item.id === sel.id;
+  if (!sel.isVod) return false;
+  const cur = currentProgressKey();
+  const key = kind === "vod" ? ottProgressKey("vod", item.stream_id)
+    : kind === "episode" ? ottProgressKey("episode", extra && extra.episodeId) : null;
+  return !!(cur && key && cur.key === key);
+}
+
+// A TV começou a tocar: pausa o celular para não tocar nos dois ao mesmo tempo
+function pausePlayerForCast() {
+  const video = document.getElementById("player-video");
+  if (!video || !_state.selected) return;
+  if (_state.selected.isVod) video.pause(); // o listener "pause" atualiza ícones e userPausedVod
+  else { video.pause(); setState({ playing: false }); showPlayerArt(); } // igual ao pauseAfterPipClosed
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -8079,7 +8197,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Assistir na TV: envia o episódio (temporada e número) sem tocar aqui
     const tvEp = e.target.closest("[data-ep-tv]");
     if (tvEp) {
-      if (_vodModalItem) castToTv("episode", _vodModalItem.item, { season: tvEp.dataset.epSeason, episode: tvEp.dataset.epNum });
+      if (_vodModalItem) castToTv("episode", _vodModalItem.item, { season: tvEp.dataset.epSeason, episode: tvEp.dataset.epNum, episodeId: tvEp.dataset.epTv });
       return;
     }
     const dlEp = e.target.closest("[data-ep-dl]");
@@ -8139,6 +8257,7 @@ document.addEventListener("DOMContentLoaded", () => {
       duration: video.duration,
       vodItem: ch.vodItem || null,
     });
+    pushProgressToAccount(false); // conta: no máximo a cada 20 s
   });
 
   // Um filme/episódio que chega ao fim naturalmente dispara "ended" - sem
@@ -8153,6 +8272,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!_state.selected || !_state.selected.isVod || video.ended) return;
     userPausedVod = true;
     setPlayPauseIcons(false);
+    pushProgressToAccount(true); // pausou: grava o minuto na conta
   });
   document.getElementById("player-video").addEventListener("play", () => {
     if (!_state.selected || !_state.selected.isVod) return;
@@ -8323,7 +8443,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const sel = _state.selected;
     if (!sel) return;
     if (!sel.isVod) castToTv("channel", sel);
-    else if (sel.castInfo) castToTv(sel.castInfo.kind, sel.castInfo.item, sel.castInfo.extra);
+    else if (sel.castInfo) {
+      pushProgressToAccount(true); // a TV também pode consultar o minuto na conta
+      castToTv(sel.castInfo.kind, sel.castInfo.item, { ...(sel.castInfo.extra || {}), positionSec: currentCastPosition() });
+    }
     else showToast("Não foi possível enviar este item para a TV.");
   });
 
