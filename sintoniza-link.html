@@ -3002,9 +3002,12 @@ function ottBuildCastPayload(kind, item, extra) {
   const e = extra || {};
   // Minuto atual do celular (segundos inteiros): a TV começa daí; ausente/zero = do início
   const pos = Math.max(0, Math.floor(Number(e.positionSec) || 0));
+  // Perfil de quem enviou (só para o minuto ficar no perfil certo); ignorado se não for um uuid
+  const perfilId = ottPerfilIdOk(e.perfilId) ? e.perfilId : "";
   if (kind === "vod") {
     const v = { streamId: ottClip(item.stream_id, 40), title, year: ottYearOf(item) };
     if (pos > 0) v.positionSec = pos;
+    if (perfilId) v.perfilId = perfilId;
     return v;
   }
   const season = parseInt(e.season, 10);
@@ -3012,6 +3015,7 @@ function ottBuildCastPayload(kind, item, extra) {
   if (!(season >= 0) || !(episode >= 0)) return null;
   const ep = { seriesId: ottClip(item.series_id, 40), title, season, episode };
   if (pos > 0) ep.positionSec = pos;
+  if (perfilId) ep.perfilId = perfilId;
   return ep;
 }
 
@@ -3036,20 +3040,95 @@ function ottPickResume(i) {
 }
 
 // Lê o minuto gravado na conta; null se não houver registro
-async function ottProgressGet(cfg, token, key, fetchImpl) {
-  const data = await ottCallRpc(cfg, "progress_get", { p_token: token, p_key: key }, fetchImpl);
+async function ottProgressGet(cfg, token, key, fetchImpl, perfilId) {
+  const data = await ottCallRpc(cfg, "progress_get", ottWithPerfil({ p_token: token, p_key: key }, perfilId), fetchImpl);
   if (!data || data.status !== "ok" || data.found !== true) return null;
   return { sec: Number(data.position_sec) || 0, durationSec: Number(data.duration_sec) || 0, ts: ottParseIsoMs(ottStr(data.updated_at)) };
 }
 
 // Grava o minuto na conta (inteiros)
-async function ottProgressPut(cfg, token, key, kind, positionSec, durationSec, fetchImpl) {
-  await ottCallRpc(cfg, "progress_put", { p_token: token, p_key: key, p_kind: kind, p_position: Math.floor(positionSec), p_duration: Math.floor(durationSec) }, fetchImpl);
+async function ottProgressPut(cfg, token, key, kind, positionSec, durationSec, fetchImpl, perfilId) {
+  await ottCallRpc(cfg, "progress_put", ottWithPerfil({ p_token: token, p_key: key, p_kind: kind, p_position: Math.floor(positionSec), p_duration: Math.floor(durationSec) }, perfilId), fetchImpl);
 }
 
 // Apaga o registro da conta (item concluído ou removido do "continuar")
-async function ottProgressClear(cfg, token, key, fetchImpl) {
-  await ottCallRpc(cfg, "progress_clear", { p_token: token, p_key: key }, fetchImpl);
+async function ottProgressClear(cfg, token, key, fetchImpl, perfilId) {
+  await ottCallRpc(cfg, "progress_clear", ottWithPerfil({ p_token: token, p_key: key }, perfilId), fetchImpl);
+}
+
+// ── Perfis dentro da conta (nome + avatar; ficam no servidor, os dados de cada perfil ficam no aparelho) ──
+const OTT_PERFIL_MAX = 5;
+const OTT_PERFIL_NOME_MAX = 20;
+const OTT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// true se for um uuid de perfil válido
+function ottPerfilIdOk(id) {
+  return typeof id === "string" && OTT_UUID_RE.test(id);
+}
+
+// Acrescenta p_perfil ao corpo da RPC somente quando o perfil for informado e válido
+function ottWithPerfil(body, perfilId) {
+  if (ottPerfilIdOk(perfilId)) body.p_perfil = perfilId;
+  return body;
+}
+
+// Lista do servidor -> [{ id, nome, avatar, padrao }]; ignora itens sem id ou sem nome
+function ottPerfilNormalize(data) {
+  const raw = data && data.status === "ok" && Array.isArray(data.perfis) ? data.perfis : [];
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const p = raw[i];
+    if (!p || typeof p.id !== "string" || !p.id) continue;
+    const nome = typeof p.nome === "string" ? p.nome.trim() : "";
+    if (!nome) continue;
+    out.push({ id: p.id, nome: nome.slice(0, OTT_PERFIL_NOME_MAX), avatar: typeof p.avatar === "string" && p.avatar ? p.avatar : "padrao", padrao: p.padrao === true });
+  }
+  return out;
+}
+
+// Perfil ativo: o último usado; senão o principal; senão o primeiro; null se a lista estiver vazia
+function ottPerfilPickActive(perfis, lastId) {
+  if (!perfis || !perfis.length) return null;
+  for (let i = 0; i < perfis.length; i++) if (lastId && perfis[i].id === lastId) return perfis[i];
+  for (let i = 0; i < perfis.length; i++) if (perfis[i].padrao) return perfis[i];
+  return perfis[0];
+}
+
+// Fluxo de entrada: entra direto (1 perfil, ou já escolhido na sessão), pergunta (2+ na abertura) ou nada (sem perfis)
+function ottPerfilDecide(perfis, lastId, jaEscolheuNestaSessao) {
+  const ativo = ottPerfilPickActive(perfis, lastId);
+  if (!ativo) return { kind: "none" };
+  if (jaEscolheuNestaSessao || perfis.length < 2) return { kind: "enter", perfil: ativo };
+  return { kind: "pick", perfis, sugerido: ativo };
+}
+
+// 5-11 h "Bom dia", 12-17 h "Boa tarde", demais "Boa noite"
+function ottGreeting(hour) {
+  if (hour >= 5 && hour < 12) return "Bom dia";
+  if (hour >= 12 && hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+// Nome do perfil: sem espaços nas pontas, de 1 a 20 caracteres (null se inválido)
+function ottPerfilValidName(nome) {
+  const n = String(nome == null ? "" : nome).trim();
+  return n.length >= 1 && n.length <= OTT_PERFIL_NOME_MAX ? n : null;
+}
+
+async function ottPerfilList(cfg, token, fetchImpl) {
+  return ottPerfilNormalize(await ottCallRpc(cfg, "perfil_list", { p_token: token }, fetchImpl));
+}
+
+// id nulo = criar; erros de negócio chegam como Error em português (ottCallRpc)
+async function ottPerfilSave(cfg, token, id, nome, avatar, fetchImpl) {
+  const data = await ottCallRpc(cfg, "perfil_save", { p_token: token, p_id: id, p_nome: nome, p_avatar: avatar }, fetchImpl);
+  const l = ottPerfilNormalize({ status: "ok", perfis: data && data.perfil ? [data.perfil] : [] });
+  if (!l.length) throw new Error("Resposta inesperada do servidor.");
+  return l[0];
+}
+
+async function ottPerfilDelete(cfg, token, id, fetchImpl) {
+  await ottCallRpc(cfg, "perfil_delete", { p_token: token, p_id: id }, fetchImpl);
 }
 
 // TVs ativas da mesma conta
@@ -4531,7 +4610,7 @@ function shouldApplyResume(target, duration) {
 // do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
 // que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
 // carregam usuário e senha.
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
 
 function sanitizeDiagnosticText(text) {
   return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();

@@ -19,7 +19,9 @@ export function loadOtt() {
         ottParseDeviceConfig, ottApplyPlaylist, ottWithinGrace, ottParseIsoMs, ottFormatDateBr, ottDaysLeft, ottFormatCountdown,
         ottCallRpc, ottDeviceStart, ottDeviceConfig, ottDeviceUnlink, ottActivationLink, ottQrSvgPath, ottDecide, ottAccountSummary,
         ottBuildCastPayload, ottCastTargets, ottCastSend, ottCastStatus, ottCastIsFinal, ottCastStatusText,
-        ottProgressKey, ottPickResume, ottProgressGet, ottProgressPut, ottProgressClear };`,
+        ottProgressKey, ottPickResume, ottProgressGet, ottProgressPut, ottProgressClear,
+        ottPerfilIdOk, ottPerfilNormalize, ottPerfilPickActive, ottPerfilDecide, ottGreeting, ottPerfilValidName,
+        ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX };`,
     ctx
   );
   return ctx.__ott;
