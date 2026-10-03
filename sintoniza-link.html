@@ -6,7 +6,7 @@
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
   <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1)document.documentElement.classList.add("ott-open");}catch(e){}})();</script>
-  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if(!((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1))return;if(!localStorage.getItem("sint_profile_active"))return;try{if(sessionStorage.getItem("sint_profile_chosen")==="1")return;}catch(e){}var l=JSON.parse(localStorage.getItem("sint_profiles")||"[]");if(l&&l.length>=2)document.documentElement.classList.add("profile-open");}catch(e){}})();</script>
+  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if(!((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1))return;if(!localStorage.getItem("sint_profile_active"))return;try{if(sessionStorage.getItem("sint_profile_chosen")==="1")return;}catch(e){}var l=JSON.parse(localStorage.getItem("sint_profiles")||"[]");if(l&&l.length>=2)document.documentElement.classList.add("profile-open","profile-early");}catch(e){}})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -1061,6 +1061,28 @@
     }
     .toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
 
+    /* ════════════ PRÉ-CARREGAMENTO (indicador discreto) ════════════ */
+    .warm-chip {
+      position: fixed; top: calc(4.3rem + env(safe-area-inset-top) + .35rem); left: 50%; z-index: 31;
+      transform: translateX(-50%) translateY(-.4rem); opacity: 0; pointer-events: none;
+      transition: transform 300ms, opacity 300ms;
+      display: flex; align-items: center; gap: .4rem;
+      padding: .25rem .7rem; border-radius: 999px; font-size: .7rem; font-weight: 500; letter-spacing: .01em;
+      color: var(--muted-fg); background: color-mix(in oklab, var(--background) 88%, transparent); border: 1px solid var(--border);
+    }
+    .warm-chip.visible { transform: translateX(-50%) translateY(0); opacity: .9; }
+    .warm-dots { display: inline-flex; gap: .15rem; }
+    .warm-dot { width: .28rem; height: .28rem; border-radius: 50%; background: var(--primary); opacity: .25; animation: warm-pulse 1.2s infinite; }
+    .warm-dot:nth-child(2) { animation-delay: .2s; }
+    .warm-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes warm-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+    @media (min-width: 769px) { .warm-chip { top: calc(5rem + .35rem); } }
+    @media (prefers-reduced-motion: reduce) {
+      .warm-chip { transition: opacity 1ms linear; }
+      .warm-dot { animation: none; opacity: .6; }
+    }
+    body.pip-active .warm-chip { display: none; }
+
     /* ════════════ MOBILE TABS ════════════ */
     .mobile-tabs { display: none; }
     .sidebar-scrim {
@@ -1213,6 +1235,10 @@
       overflow-y: auto; overflow-x: hidden; isolation: isolate;
     }
     html.profile-open #profile-gate { display: flex; }
+    /* Abertura com 2+ perfis no cache: o seletor é a primeira coisa na tela, por cima do "Conectando..." do ott-gate.
+       Se a conta pedir ativação/bloqueio/erro, ottShowGate tira .profile-early e essas telas voltam para cima. */
+    html.profile-early #profile-gate { z-index: 2147483500; }
+    html.ott-open.profile-early body > #profile-gate { visibility: visible; }
     html.profile-open body > *:not(#profile-gate):not(#ott-gate):not(script) { visibility: hidden; }
     #profile-gate [hidden] { display: none !important; }
 
@@ -1977,6 +2003,9 @@
 
 <!-- TOAST -->
 <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+<!-- Pré-carregamento de Filmes e Séries (indicador discreto; só opacity/transform) -->
+<div class="warm-chip" id="warm-chip" aria-hidden="true">Preparando filmes e séries<span class="warm-dots"><span class="warm-dot"></span><span class="warm-dot"></span><span class="warm-dot"></span></span></div>
 
 <!-- EPG: popover flutuante compartilhado (posicionado via JS ao clicar em .epg-btn) -->
 <div class="epg-popover" id="epg-popover" role="dialog" aria-hidden="true">
@@ -3518,6 +3547,37 @@ async function ottFavMerge(cfg, token, perfil, itens, fetchImpl) {
     const data = await ottCallRpc(cfg, "fav_merge", { p_token: token, p_perfil: perfil, p_itens: itens.slice(i, i + 300) }, fetchImpl);
     if (!data || data.status !== "ok") throw new Error("Não foi possível enviar os favoritos para a conta.");
   }
+}
+
+// ── Pré-carregamento em fatias (mesmo comportamento do createWarmer da TV) ──
+// Roda as etapas uma por fatia agendada (idle/setTimeout), nunca tudo de uma vez: não pesa na navegação.
+// Falha numa etapa não derruba as outras; cancelar para antes da próxima etapa; iniciar duas vezes não repete o trabalho.
+function createWarmer(o) {
+  const agendar = o.agendar || function (fn) { setTimeout(fn, 50); };
+  let estado = "parado"; // parado | rodando | pronto | cancelado
+  let promessa = null;
+  return {
+    estado: () => estado,
+    cancelar() { if (estado === "rodando") estado = "cancelado"; },
+    iniciar() {
+      if (promessa) return promessa;
+      estado = "rodando";
+      promessa = new Promise((resolve) => {
+        let i = 0;
+        const proxima = () => {
+          if (estado === "cancelado") { resolve(); return; }
+          if (i >= o.etapas.length) { estado = "pronto"; resolve(); return; }
+          Promise.resolve().then(() => o.etapas[i].run()).then(() => {}, () => { /* falha: segue para a próxima, o app funciona sem o aquecimento */ }).then(() => {
+            i++;
+            if (o.onProgresso) o.onProgresso(i, o.etapas.length);
+            agendar(proxima);
+          });
+        };
+        agendar(proxima);
+      });
+      return promessa;
+    },
+  };
 }
 
 // TVs ativas da mesma conta
@@ -6579,6 +6639,91 @@ function xtreamApiUrl(creds, action, extraParams) {
 // buildVodStreamUrl / buildSeriesEpisodeUrl) através do fetch() nativo do
 // Capacitor (Task 2) — nenhum proxy/servidor local envolvido.
 
+// ─── Pré-carregamento de Filmes e Séries ───
+// As respostas do catálogo (categorias e itens de cada categoria, já limpos e sem duplicatas) ficam numa memória de sessão:
+// o pré-carregamento (em segundo plano, durante o seletor de perfil) e o loadVodCatalog usam as MESMAS funções, então
+// nenhuma requisição se repete e a aba Filmes/Séries abre com o que já chegou. Valem por 10 minutos; falha não fica guardada.
+const VOD_MEMO_TTL_MS = 10 * 60 * 1000;
+const _vodMemo = new Map(); // url -> { ts, promise }
+
+function vodMemo(url, make) {
+  const hit = _vodMemo.get(url);
+  if (hit && Date.now() - hit.ts < VOD_MEMO_TTL_MS) return hit.promise;
+  const entry = { ts: Date.now(), promise: make() };
+  _vodMemo.set(url, entry);
+  entry.promise.catch(() => { if (_vodMemo.get(url) === entry) _vodMemo.delete(url); });
+  return entry.promise;
+}
+
+// Categorias de filmes ou séries (lança erro se o provedor responder com falha)
+function vodFetchCategories(creds, isSeries) {
+  const url = xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories");
+  return vodMemo(url, async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.json();
+    return Array.isArray(raw) ? raw.map(sanitizeVodItem) : raw;
+  });
+}
+
+// Itens de uma categoria, limpos e sem duplicatas ([] = categoria vazia; lança erro se a requisição falhar)
+function vodFetchCategoryItems(creds, isSeries, categoryId) {
+  const url = xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: categoryId });
+  return vodMemo(url, async () => {
+    const res = await fetch(url);
+    const streams = await res.json();
+    if (!Array.isArray(streams) || streams.length === 0) return [];
+    return dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
+  });
+}
+
+const _warm = { w: null };
+
+// Indicador discreto: só liga/desliga uma classe (a animação é só de opacity/transform no CSS)
+function vodWarmChip(on) {
+  const chip = document.getElementById("warm-chip");
+  if (chip) chip.classList.toggle("visible", !!on);
+}
+
+// Uma etapa: traz as categorias e os itens de cada uma, duas por vez e com uma pausa entre elas (cada categoria é uma tarefa pequena)
+async function vodWarmType(creds, isSeries) {
+  const cats = await vodFetchCategories(creds, isSeries);
+  if (!Array.isArray(cats)) return;
+  const cancelado = () => !_warm.w || _warm.w.estado() === "cancelado";
+  let i = 0;
+  const trabalhador = async () => {
+    while (i < cats.length && !cancelado()) {
+      const cat = cats[i++];
+      try { await vodFetchCategoryItems(creds, isSeries, cat.category_id); } catch (e) { /* essa categoria carrega quando a aba abrir */ }
+      await new Promise(r => setTimeout(r, 40));
+    }
+  };
+  await Promise.all([trabalhador(), trabalhador()]);
+}
+
+// Começa com a conta liberada (já durante o seletor de perfil). Sem lista de filmes ou com economia de dados: não faz nada.
+function vodWarmStart() {
+  if (_warm.w) return;
+  const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+  if (!creds) return;
+  try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) { /* segue */ }
+  _warm.w = createWarmer({
+    etapas: [
+      { nome: "filmes", run: () => vodWarmType(creds, false) },
+      { nome: "series", run: () => vodWarmType(creds, true) },
+    ],
+    agendar: (fn) => { if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout: 400 }); else setTimeout(fn, 50); },
+  });
+  vodWarmChip(true);
+  _warm.w.iniciar().then(() => vodWarmChip(false), () => vodWarmChip(false));
+}
+
+// Desvincular/trocar de conta: para o que ainda não começou
+function vodWarmCancel() {
+  if (_warm.w) _warm.w.cancelar();
+  vodWarmChip(false);
+}
+
 const CONTINUE_KEY = "sint_continue";
 let _vodCardsIndex = {}; // key -> item bruto da API, para os cliques dos carrosséis
 // Filme/série aberto no modal agora: { item, contType: "vod"|"series" }.
@@ -7576,10 +7721,8 @@ async function loadVodCatalog(vodType, creds) {
   carouselsEl.innerHTML = contRowHtml || `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
 
   try {
-    const catRes = await fetch(xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories"));
-    if (!catRes.ok) throw new Error(`HTTP ${catRes.status}`);
-    const catsRaw = await catRes.json();
-    const cats = Array.isArray(catsRaw) ? catsRaw.map(sanitizeVodItem) : catsRaw;
+    // Reaproveita o que o pré-carregamento já trouxe (ou o que ainda está a caminho): sem requisição duplicada
+    const cats = await vodFetchCategories(creds, isSeries);
 
     if (!Array.isArray(cats) || cats.length === 0) {
       carouselsEl.innerHTML = contRowHtml || `<p class="vod-empty">Nenhuma categoria encontrada.</p>`;
@@ -7606,9 +7749,8 @@ async function loadVodCatalog(vodType, creds) {
     // montar a fileira "Novidades" - sem disparar uma segunda rodada de
     // requisições para os mesmos dados.
     const categoryFetches = topCats.map(cat =>
-      fetch(xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: cat.category_id }))
-        .then(res => res.json())
-        .then(streams => {
+      vodFetchCategoryItems(creds, isSeries, cat.category_id)
+        .then(deduped => {
           // _vodCatalogCache is reassigned wholesale (not snapshotted) at
           // the top of every loadVodCatalog call, and this closure reads
           // that same shared variable - so if the usuário already trocou
@@ -7621,17 +7763,15 @@ async function loadVodCatalog(vodType, creds) {
           // Novidades block.
           if (_vodCatalogCache.vodType !== vodType) return;
           const rowEl = document.getElementById(`vod-carousel-${cat.category_id}`);
-          if (!Array.isArray(streams) || streams.length === 0) {
+          if (!deduped.length) {
             _vodCatalogCache.itemsByCategory[cat.category_id] = [];
             _vodCatalogCache.categoryStatus[cat.category_id] = "empty";
             if (rowEl) rowEl.innerHTML = VOD_CATEGORY_EMPTY_HTML;
             return;
           }
-          // Deduplica por (nome, ano) antes de guardar no cache e de
-          // renderizar - nenhuma duplicata de catálogo chega à tela, seja
-          // na fileira da categoria, na busca ou em "Ver todos" (todos leem
-          // deste mesmo array já limpo).
-          const deduped = dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
+          // vodFetchCategoryItems já entrega o array limpo e deduplicado por (nome, ano):
+          // nenhuma duplicata de catálogo chega à tela, seja na fileira da categoria,
+          // na busca ou em "Ver todos" (todos leem deste mesmo array).
           _vodCatalogCache.itemsByCategory[cat.category_id] = deduped;
           _vodCatalogCache.categoryStatus[cat.category_id] = "ok";
           // Preenchimento progressivo (fileira aparece assim que a própria
@@ -7671,6 +7811,7 @@ async function loadVodCatalog(vodType, creds) {
         renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), contType);
       }
       const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      _vodCatalogCache.flat = allItems; // a busca reaproveita esta lista (achatar + deduplicar a cada pesquisa pesa)
       const newest = selectNewestVodItems(allItems, VOD_NOVIDADES_COUNT);
       if (!newest.length) return;
       const newestHtml = `
@@ -8128,12 +8269,13 @@ function ottStopTimers() {
 
 function ottShowGate(screen) {
   document.documentElement.classList.add("ott-open");
+  if (screen !== "loading") document.documentElement.classList.remove("profile-early"); // ativação, bloqueio e erro ficam por cima do seletor
   document.querySelectorAll("#ott-gate [data-ott-screen]").forEach(el => { el.hidden = el.dataset.ottScreen !== screen; });
 }
 
 function ottHideGate() {
   ottStopTimers();
-  document.documentElement.classList.remove("ott-open");
+  document.documentElement.classList.remove("ott-open", "profile-early"); // sem a tela da conta, o seletor volta ao z-index normal
 }
 
 function ottShowOffline(message) {
@@ -8242,6 +8384,7 @@ function ottOnOk(d) {
   }
   ottRenderAccountCard();
   ottScheduleRevalidate();
+  vodWarmStart(); // pré-carrega filmes e séries em segundo plano (já durante o seletor de perfil)
   // Perfis: valida o perfil ativo, entra direto (1 perfil) ou abre o "Quem está assistindo?" (2+, na abertura)
   profileBoot().catch(() => {});
 }
@@ -8276,6 +8419,7 @@ function ottScheduleRevalidate() {
 // "Desvincular este aparelho": libera a vaga no servidor e volta para a tela do código
 async function ottUnlink() {
   if (!window.confirm("Desvincular este aparelho da sua conta? Ele volta para a tela do código.")) return;
+  vodWarmCancel();
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
   [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY].forEach(k => localStorage.removeItem(k));
@@ -8501,6 +8645,7 @@ function profileOpenGate(opts) {
 }
 
 function profileCloseGate() {
+  document.documentElement.classList.remove("profile-early");
   _profile.open = false;
   _profile.voluntary = false;
   _profile.manage = false;
@@ -8519,6 +8664,16 @@ function profileChoose(p) {
   profileCloseGate();
   renderProfileUi();
   favSyncStart(); // favoritos do perfil: puxa da conta agora, ao voltar ao app e a cada 2 min
+}
+
+// Abertura com 2+ perfis já conhecidos: desenha o seletor a partir do cache logo no início (o <head> já o põe na tela),
+// sem esperar a conta nem a rede. A decisão final continua em profileBoot.
+function profileEarlyOpen() {
+  if (!ottEnabled() || _profile.chosen || _profile.open) return;
+  const list = profileReadCache();
+  if (list.length < 2) return;
+  _profile.list = list;
+  profileOpenGate({ voluntary: false });
 }
 
 // Depois da conta liberada (ottOnOk): busca os perfis, valida o ativo local e decide entre entrar direto e perguntar.
@@ -8765,6 +8920,7 @@ document.addEventListener("DOMContentLoaded", () => {
     new Date().toLocaleDateString("pt-BR", { weekday:"long", day:"numeric", month:"long" }).toUpperCase().replace(",","");
   // Perfis (só com conta): menu lateral, botão do topo, Configurações e a saudação com o nome do perfil
   profileWire();
+  profileEarlyOpen();
   renderProfileUi();
 
   // Enquadramento salvo no player
@@ -9308,7 +9464,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // Cada array por categoria já vem deduplicado, mas o mesmo filme pode
       // pertencer a mais de uma categoria (via category_ids) - dedupe de novo
       // na lista achatada para a busca cross-categoria nunca repetir um item.
-      const allItems = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      const allItems = _vodCatalogCache.settled && _vodCatalogCache.flat
+        ? _vodCatalogCache.flat
+        : dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
       const matches = filterVodItemsByQuery(allItems, query);
       const contType = _vodCatalogCache.vodType === "series" ? "series" : "vod";
       document.getElementById("vod-carousels").style.display = "none";
