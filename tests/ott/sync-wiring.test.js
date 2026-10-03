@@ -14,3 +14,10 @@ test("a retomada consulta a conta e o envio pausa o celular", () => {
 test("o aviso (toast) aparece também em tela cheia", () => {
   assert.match(html, /\.toast \{[^}]*z-index: 10002/);
 });
+
+test("o envio e o minuto levam o perfil ativo (sem perguntar nada)", () => {
+  assert.match(html, /perfilId: activeProfileId\(\)/);
+  assert.match(html, /ottProgressPut\([^)]*activeProfileId\(\)\)/);
+  assert.match(html, /ottProgressGet\([^)]*activeProfileId\(\)\)/);
+  assert.match(html, /ottProgressClear\([^)]*activeProfileId\(\)\)/);
+});

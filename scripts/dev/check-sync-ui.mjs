@@ -5,6 +5,7 @@
 //   (b) a gravação na conta: no máximo a cada 20 s, e na hora ao pausar / ir para segundo plano; ao terminar apaga
 //   (c) o envio à TV leva positionSec e pausa o celular quando a TV começa a tocar o item que está aqui
 //   (d) o aviso (toast) fica acima da tela cheia
+//   (e) com perfil ativo, progress_get/put/clear levam p_perfil e o cast_send leva perfilId (sem perfil, nada disso); o envio segue direto
 // Uso: node scripts/dev/check-sync-ui.mjs [pasta-das-capturas]  (as capturas são opcionais e não devem ser commitadas)
 import { withPage } from "./cdp.mjs";
 import { pathToFileURL } from "node:url";
@@ -109,6 +110,7 @@ await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native:
   let puts = await rpc("progress_put");
   confere(puts.length === 1, "o primeiro timeupdate depois de 10 s deveria gravar 1 vez, gravou " + puts.length);
   confere(puts[0] && puts[0].p_key === "vod:10" && puts[0].p_kind === "vod" && puts[0].p_position === 100 && puts[0].p_duration === 6000, "corpo do progress_put errado: " + JSON.stringify(puts[0]));
+  confere(puts[0] && !("p_perfil" in puts[0]), "sem perfil ativo o progress_put não leva p_perfil: " + JSON.stringify(puts[0]));
   await page.eval(`pushProgressToAccount(false); pushProgressToAccount(false)`);
   puts = await rpc("progress_put");
   confere(puts.length === 1, "dentro de 20 s não pode gravar de novo (sem force), gravou " + puts.length);
@@ -139,6 +141,7 @@ await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native:
   const envio = await rpc("cast_send");
   confere(envio.length === 1 && envio[0].p_kind === "vod" && envio[0].p_payload.positionSec === 754 && envio[0].p_payload.streamId === "10", "cast_send deveria levar positionSec 754: " + JSON.stringify(envio));
   confere(!/http/i.test(JSON.stringify(envio)), "o envio não pode conter links");
+  confere(envio[0] && !("perfilId" in envio[0].p_payload), "sem perfil ativo o cast_send não leva perfilId: " + JSON.stringify(envio));
   confere((await rpc("progress_put")).some(p => p.p_position === 754), "antes de enviar deveria gravar o minuto atual na conta");
   confere((await page.eval(`window.__pauses`)) >= 1, "quando a TV toca (played) o celular deveria pausar");
   await espera(`!_castBusy`);
@@ -158,6 +161,41 @@ await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native:
   confere(envioCanal.length === 1 && envioCanal[0].p_kind === "channel" && !("positionSec" in envioCanal[0].p_payload), "canal ao vivo não leva positionSec: " + JSON.stringify(envioCanal));
   await espera(`!_castBusy`);
   await page.eval(`clearInterval(window.__obs)`);
+
+  // ── (e) perfil ativo: o minuto e o envio levam o perfil ──
+  const PERFIL = "3f2b8c1e-9a77-4d0f-8a55-2b1c7e9d4a10";
+  await page.eval(`localStorage.setItem("sint_profile_active", "${PERFIL}"); window.__semAvisoPendente(); window.__server = null; window.__abre(10, 0)`);
+  await page.sleep(700);
+  const getsP = await rpc("progress_get");
+  confere(getsP.length === 1 && getsP[0].p_perfil === PERFIL && getsP[0].p_key === "vod:10", "com perfil o progress_get deveria levar p_perfil: " + JSON.stringify(getsP));
+  await page.eval(`window.__semAvisoPendente(); window.__ct = 200; pushProgressToAccount(true)`);
+  const putsP = await rpc("progress_put");
+  confere(putsP.length === 1 && putsP[0].p_perfil === PERFIL && putsP[0].p_position === 200, "com perfil o progress_put deveria levar p_perfil: " + JSON.stringify(putsP));
+  // o "continuar" deste perfil (chave por perfil) tem o filme; ao terminar sai de lá e da conta
+  await page.eval(`localStorage.setItem(profKey(CONTINUE_KEY), JSON.stringify({ "resume-vod-10": { id: "resume-vod-10", type: "vod", title: "Filme X", url: "x", progress: 200, duration: 6000, ts: Date.now() } }))`);
+  await page.eval(`window.__ct = 6000; document.getElementById("player-video").dispatchEvent(new Event("ended"))`);
+  const apagouP = await rpc("progress_clear");
+  confere(apagouP.length === 1 && apagouP[0].p_perfil === PERFIL && apagouP[0].p_key === "vod:10", "com perfil o progress_clear deveria levar p_perfil: " + JSON.stringify(apagouP));
+  // envio direto: sem pergunta de perfil, com perfilId no filme e sem ele no canal
+  await page.eval(`window.__abre(10, 0)`);
+  await page.sleep(600);
+  await page.eval(`window.__semAvisoPendente(); window.__status = 0; window.__ct = 300; window.__vistos = [];
+    window.__obs = setInterval(() => { const t = document.getElementById("toast").textContent; if (t && !window.__vistos.includes(t)) window.__vistos.push(t); }, 100);
+    document.getElementById("tv-cast-btn").click()`);
+  const tocouP = await espera(`window.__vistos.includes("Tocando na TV")`);
+  confere(tocouP, "com perfil o envio deveria seguir direto até 'Tocando na TV': " + JSON.stringify(await page.eval(`window.__vistos`)));
+  const envioP = await rpc("cast_send");
+  confere(envioP.length === 1 && envioP[0].p_payload.perfilId === PERFIL && envioP[0].p_payload.positionSec === 300, "o cast_send do filme deveria levar perfilId e positionSec: " + JSON.stringify(envioP));
+  confere(!(await page.eval(`document.getElementById("profile-gate") && !document.getElementById("profile-gate").classList.contains("hidden")`)), "o envio não pode abrir nenhuma tela de perfil");
+  await espera(`!_castBusy`);
+  await page.eval(`window.__semAvisoPendente(); window.__status = 0; window.__vistos = []; selectChannel(getChannels()[0], false)`);
+  await page.sleep(500);
+  await page.eval(`document.getElementById("tv-cast-btn").click()`);
+  await espera(`window.__vistos.includes("Tocando na TV")`);
+  const envioCanalP = await rpc("cast_send");
+  confere(envioCanalP.length === 1 && envioCanalP[0].p_kind === "channel" && !("perfilId" in envioCanalP[0].p_payload), "canal não leva perfilId: " + JSON.stringify(envioCanalP));
+  await espera(`!_castBusy`);
+  await page.eval(`clearInterval(window.__obs); localStorage.removeItem("sint_profile_active")`);
 
   // ── (d) o aviso aparece em tela cheia ──
   await page.eval(`window.__abre(10, 0)`);
