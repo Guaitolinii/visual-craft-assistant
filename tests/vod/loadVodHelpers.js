@@ -30,6 +30,7 @@ const PURE_HELPER_NAMES = [
   "profKey", "profKeyFor", "activeProfileId", "activeProfileIsMain", "profileAdoptLegacy",
   "favSyncParse", "favSyncMark", "favTipoDaChave",
   "edgeSwipeDecision", "homeIsEmptyForProfile",
+  "webKeyAction", "webUsesPseudoFullscreen", "lsSet",
 ];
 
 function toHostRealm(value) {

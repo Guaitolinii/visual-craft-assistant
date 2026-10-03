@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
-  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1)document.documentElement.classList.add("ott-open");}catch(e){}})();</script>
-  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if(!((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1))return;if(!localStorage.getItem("sint_profile_active"))return;try{if(sessionStorage.getItem("sint_profile_chosen")==="1")return;}catch(e){}var l=JSON.parse(localStorage.getItem("sint_profiles")||"[]");if(l&&l.length>=2)document.documentElement.classList.add("profile-open","profile-early");}catch(e){}})();</script>
+  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;var N=(C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||(location.protocol==="http:"&&location.hostname==="localhost");var W=!N&&/^\/app(\/|$)/.test(location.pathname);if(W&&(navigator.standalone===true||(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)))document.documentElement.classList.add("web-standalone");if((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||W||q.indexOf("ott")!==-1)document.documentElement.classList.add("ott-open");}catch(e){}})();</script>
+  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;var N=(C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||(location.protocol==="http:"&&location.hostname==="localhost");var W=!N&&/^\/app(\/|$)/.test(location.pathname);if(!((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||W||q.indexOf("ott")!==-1))return;if(!localStorage.getItem("sint_profile_active"))return;try{if(W){var t=Number(localStorage.getItem("sint_web_chosen"));if(t>0&&Date.now()+60000>=t&&!(Date.now()-t>43200000))return;}else if(sessionStorage.getItem("sint_profile_chosen")==="1")return;}catch(e){}var l=JSON.parse(localStorage.getItem("sint_profiles")||"[]");if(l&&l.length>=2)document.documentElement.classList.add("profile-open","profile-early");}catch(e){}})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -1425,6 +1425,82 @@
     .pf-chip.is-active .pf-chip-av { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--primary); }
     .pf-chip-n { margin-left: .6rem; font-size: .9rem; font-weight: 500; }
     .pf-chip-n small { display: block; font-size: .68rem; font-weight: 400; color: var(--muted-fg); }
+
+    /* ══════════════════════════════════════════════════════════════
+       APP WEB (sintonizatv.com.br/app). Tudo aqui vem atrás de html[data-web-app], atributo que SÓ o build web
+       coloca: o app nativo (www/index.html do Capacitor) não tem o atributo e fica exatamente como era.
+       Identidade: a mesma do celular (creme + dourado, Outfit). No computador o app respira: grade que ocupa a
+       largura, fileiras com setas redondas, player 16:9 e controle de volume discreto na barra escura do player.
+       ══════════════════════════════════════════════════════════════ */
+
+    /* iPhone/iPad com o atalho na tela inicial: a barra de status é translúcida (black-translucent) e o texto dela é
+       branco. Uma faixa escura (#08080D, igual ao theme-color) do tamanho do recorte segura a leitura sobre o topo creme. */
+    html[data-web-app].web-standalone::before {
+      content: ""; position: fixed; inset: 0 0 auto 0; height: env(safe-area-inset-top);
+      background: #08080D; z-index: 2147483200; pointer-events: none;
+    }
+    html[data-web-app] #ott-gate {
+      padding-top: max(1.25rem, env(safe-area-inset-top)); padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    }
+    html[data-web-app] .sidebar-header { height: calc(5rem + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+    html[data-web-app] .sidebar-nav { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+    html[data-web-app] :is(button, a, input, select):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    /* Volume (só com mouse; no celular o volume é o do aparelho) */
+    .web-volume { display: none; align-items: center; gap: .1rem; }
+    .web-volume-bar { width: 5.5rem; accent-color: var(--primary); cursor: pointer; }
+    @media (hover: hover) and (pointer: fine) {
+      html[data-web-app] .web-volume { display: flex; }
+    }
+    #player-screen.mini-player .web-volume { display: none !important; }
+
+    /* Setas redondas nas fileiras (criadas por webCarouselHover) */
+    html[data-web-app] .vod-row { position: relative; }
+    .web-arrow {
+      display: none; position: absolute; z-index: 4; width: 2.7rem; height: 2.7rem; margin-top: -1.35rem;
+      place-items: center; border-radius: 999px; padding: 0;
+      border: 1px solid var(--border); color: var(--foreground);
+      background: color-mix(in oklab, var(--card) 94%, transparent); backdrop-filter: blur(8px);
+      box-shadow: 0 10px 26px oklch(0.2 0.03 65 / 20%);
+      opacity: 0; pointer-events: none; transform: scale(.88);
+      transition: opacity 160ms, transform 220ms cubic-bezier(.22,1,.36,1), background 140ms, color 140ms;
+    }
+    .web-arrow-prev { left: -1.15rem; }
+    .web-arrow-next { right: -1.15rem; }
+    @media (hover: hover) and (pointer: fine) {
+      .web-arrow { display: grid; }
+      .vod-row:hover .web-arrow:not(.is-off), .web-arrow:not(.is-off):focus-visible { opacity: 1; pointer-events: auto; transform: none; }
+      .web-arrow:not(.is-off):hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+    }
+
+    /* Tela larga: a grade usa a largura toda (colunas de pelo menos 15 rem) e os pôsteres crescem um pouco */
+    @media (min-width: 1101px) {
+      html[data-web-app] .channel-grid, html[data-web-app] .skel-grid { grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+      html[data-web-app] .vod-carousel-grid, html[data-web-app] .home-recents-grid { grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); }
+      html[data-web-app] .vod-card { min-width: 10.5rem; width: 10.5rem; }
+      html[data-web-app] .vod-carousel-grid .vod-card, html[data-web-app] .home-recents-grid .vod-card { min-width: 0; width: 100%; }
+      html[data-web-app] .vod-carousel { gap: 1.15rem; }
+      /* Player 16:9 (até 70% da altura da janela); em tela cheia, mini-player e PiP valem as regras de sempre */
+      html[data-web-app] #player-screen:not(.mini-player):not(.pseudo-fullscreen):not(:fullscreen) .player-media {
+        flex: none; aspect-ratio: 16 / 9; min-height: 26rem; max-height: 70vh;
+      }
+    }
+    @media (min-width: 1600px) {
+      html[data-web-app] .content-shell { width: min(100%, 110rem); }
+      html[data-web-app] #player-screen:not(.mini-player):not(.pseudo-fullscreen) { width: min(calc(100% - 4rem), 106rem); margin-inline: auto; }
+    }
+
+    /* Entre 769 e 1100 px a barra lateral fica recolhida e abre como gaveta (botão de menu), liberando a largura para o conteúdo */
+    @media (min-width: 769px) and (max-width: 1100px) {
+      html[data-web-app] .sidebar { transform: translateX(-100%); width: min(86vw, 20rem); }
+      html[data-web-app] .sidebar.open { transform: translateX(0); box-shadow: 0 0 60px oklch(0.1 0.02 65 / 30%); }
+      html[data-web-app] .sidebar-close-btn { display: flex; }
+      html[data-web-app] .sidebar-scrim.open { display: block; }
+      html[data-web-app] .page-shell { padding-left: 0; }
+      html[data-web-app] .menu-btn { display: flex; }
+      html[data-web-app] .topbar { padding-left: 1rem; }
+      html[data-web-app] .search-box.docked { left: 3.75rem; }
+    }
   </style>
 </head>
 <body>
@@ -1704,6 +1780,11 @@
         <i data-lucide="rotate-cw" style="width:20px;height:20px" id="reload-stream-icon"></i>
       </button>
       <div class="player-controls-spacer"></div>
+      <!-- Volume: só no app web no computador (CSS mostra com mouse; no celular o volume é o do aparelho) -->
+      <div class="web-volume" id="web-volume">
+        <button class="ctrl-btn" id="web-mute-btn" type="button" aria-label="Silenciar" title="Silenciar (M)"><i data-lucide="volume-2" style="width:20px;height:20px"></i></button>
+        <input type="range" class="web-volume-bar" id="web-volume-bar" min="0" max="100" value="100" step="1" aria-label="Volume" />
+      </div>
       <button class="ctrl-btn" id="tv-cast-btn" type="button" aria-label="Assistir na TV" title="Assistir na TV" style="display:none"><i data-lucide="tv" style="width:20px;height:20px"></i></button>
       <button class="ctrl-btn" id="pip-btn" aria-label="Janela flutuante" title="Janela flutuante" style="display:none"><i data-lucide="picture-in-picture-2" style="width:20px;height:20px"></i></button>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
@@ -3104,10 +3185,11 @@ function ottFetchJson(url, doFetch, timeoutMs) {
 }
 
 // Busca a configuração no painel e guarda; sem internet usa a última guardada (null se nunca teve)
-async function ottLoadConfig(storage, fetchImpl) {
+// configUrl (opcional): o app web busca no próprio site (/app-config.json, mesma origem)
+async function ottLoadConfig(storage, fetchImpl, configUrl) {
   const doFetch = fetchImpl || ((u, i) => fetch(u, i));
   try {
-    const cfg = ottParseConfig(await ottFetchJson(OTT_CONFIG_URL, doFetch, 8000));
+    const cfg = ottParseConfig(await ottFetchJson(configUrl || OTT_CONFIG_URL, doFetch, 8000));
     if (cfg) {
       storage.setItem(OTT_KEYS.CONFIG, JSON.stringify(cfg));
       return cfg;
@@ -3220,8 +3302,10 @@ function ottFormatCountdown(ms) {
   return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
 }
 
-// POST numa função RPC do Supabase, com tempo-limite e mensagens em português
-function ottCallRpc(cfg, name, body, fetchImpl) {
+// POST numa função RPC do Supabase, com tempo-limite e mensagens em português.
+// bearer (opcional): token do usuário logado (app web); sem ele vai a chave anon, como sempre.
+// O Error de resposta do servidor leva .status (HTTP) para quem precisar distinguir login de regra de negócio.
+function ottCallRpc(cfg, name, body, fetchImpl, bearer) {
   const doFetch = fetchImpl || ((u, i) => fetch(u, i));
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -3237,7 +3321,7 @@ function ottCallRpc(cfg, name, body, fetchImpl) {
     try {
       request = doFetch(cfg.url + "/rest/v1/rpc/" + name, {
         method: "POST",
-        headers: { apikey: cfg.anonKey, Authorization: "Bearer " + cfg.anonKey, "Content-Type": "application/json" },
+        headers: { apikey: cfg.anonKey, Authorization: "Bearer " + (bearer || cfg.anonKey), "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
     } catch (e) {
@@ -3250,7 +3334,11 @@ function ottCallRpc(cfg, name, body, fetchImpl) {
           let data = null;
           try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
           if (res.ok) finish(() => resolve(data));
-          else finish(() => reject(new Error(data && typeof data.message === "string" ? data.message : "Erro do servidor (" + res.status + ").")));
+          else {
+            const err = new Error(data && typeof data.message === "string" ? data.message : "Erro do servidor (" + res.status + ").");
+            err.status = res.status;
+            finish(() => reject(err));
+          }
         },
         () => finish(() => reject(new Error(OTT_MSG_NETWORK)))
       ),
@@ -3731,6 +3819,196 @@ function ottAccountSummary(account, nowMs) {
   }
   return { tone: "bad", text: "Acesso encerrado" };
 }
+
+// ── App no navegador (sintonizatv.com.br/app): aparelho do tipo "web", sem código nem QR ──
+// A conta vem do login do site (mesma origem: sessão em sintoniza_painel_sessao). O navegador se registra
+// sozinho (web_device_register, com o token do usuário) e passa a agir como o app de celular.
+const OTT_WEB_KEYS = { INSTALL: "sint_web_install", SESSION: "sintoniza_painel_sessao", SIGNED_OUT: "sint_web_signed_out", CHOSEN: "sint_web_chosen" };
+const OTT_WEB_INSTALL_RE = /^[A-Za-z0-9-]{16,64}$/;
+const OTT_WEB_REFRESH_MARGIN_MS = 60 * 1000;
+const OTT_WEB_CHOSEN_TTL_MS = 12 * 3600 * 1000;
+
+// É o app web? Caminho /app (ou /app/...) fora do app nativo
+function ottIsWebPath(pathname, native) {
+  if (native) return false;
+  return /^\/app(\/|$)/.test(String(pathname == null ? "" : pathname));
+}
+
+// uuid v4 (crypto do navegador; sem ele, Math.random: só em ambientes de teste)
+function ottWebNewUuid(cryptoImpl) {
+  const c = cryptoImpl || (typeof crypto !== "undefined" ? crypto : null);
+  const b = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === "function") c.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 15) | 64;
+  b[8] = (b[8] & 63) | 128;
+  const h = Array.prototype.map.call(b, (x) => (x < 16 ? "0" : "") + x.toString(16)).join("");
+  return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+}
+
+// Id estável desta instalação (um por navegador/atalho): gera uma vez e guarda. Armazenamento bloqueado: id só desta abertura.
+function ottWebInstallId(storage, cryptoImpl) {
+  try {
+    const atual = storage.getItem(OTT_WEB_KEYS.INSTALL);
+    if (typeof atual === "string" && OTT_WEB_INSTALL_RE.test(atual)) return atual;
+  } catch (e) { /* sem armazenamento: gera um id só desta abertura */ }
+  const id = ottWebNewUuid(cryptoImpl);
+  try { storage.setItem(OTT_WEB_KEYS.INSTALL, id); } catch (e) { /* idem */ }
+  return id;
+}
+
+// Sessão do login do site (mesmo formato do painel): { access_token, refresh_token, expires_at (s), user } ou null
+function ottWebParseSession(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let s = null;
+  try { s = JSON.parse(raw); } catch (e) { return null; }
+  if (!s || typeof s !== "object" || !ottStr(s.access_token) || !ottStr(s.refresh_token)) return null;
+  const exp = Number(s.expires_at);
+  if (!(exp > 0)) return null;
+  const u = s.user && typeof s.user === "object" ? s.user : {};
+  return { access_token: s.access_token, refresh_token: s.refresh_token, expires_at: exp, user: { id: ottStr(u.id), email: ottStr(u.email) } };
+}
+
+// Faltam menos de 60 s para o token de acesso vencer (ou não há sessão)
+function ottWebNeedsRefresh(session, nowMs) {
+  if (!session) return true;
+  return session.expires_at * 1000 - nowMs < OTT_WEB_REFRESH_MARGIN_MS;
+}
+
+// Espera uma promessa por no máximo ms (rejeita com a mensagem de rede)
+function ottWebRace(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(OTT_MSG_NETWORK)), ms);
+    Promise.resolve(promise).then((v) => { clearTimeout(timer); resolve(v); }, (e) => { clearTimeout(timer); reject(e); });
+  });
+}
+
+// Renova o token de acesso pelo refresh_token (como o getSession do painel) e grava a sessão nova no mesmo formato.
+// Falhou: null. Se o servidor recusou o refresh_token, a sessão guardada é apagada; sem rede, ela fica.
+async function ottWebRefresh(cfg, session, fetchImpl, storage, nowMs) {
+  if (!session || !ottStr(session.refresh_token)) return null;
+  const doFetch = fetchImpl || ((u, i) => fetch(u, i));
+  const agora = Number(nowMs) > 0 ? Number(nowMs) : Date.now();
+  let res;
+  let data = null;
+  try {
+    res = await ottWebRace(
+      doFetch(cfg.url + "/auth/v1/token?grant_type=refresh_token", {
+        method: "POST",
+        headers: { apikey: cfg.anonKey, Authorization: "Bearer " + cfg.anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      }),
+      OTT_RPC_TIMEOUT_MS
+    );
+    const text = await res.text();
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+  } catch (e) {
+    return null; // sem rede: a sessão guardada continua valendo para quando voltar
+  }
+  if (!res.ok) {
+    if (res.status >= 400 && res.status < 500) { try { storage && storage.removeItem(OTT_WEB_KEYS.SESSION); } catch (e) { /* ignora */ } }
+    return null;
+  }
+  if (!data || !ottStr(data.access_token) || !ottStr(data.refresh_token)) return null;
+  const u = data.user && typeof data.user === "object" ? data.user : (session.user || {});
+  const nova = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: Number(data.expires_at) || Math.floor(agora / 1000) + (Number(data.expires_in) || 3600),
+    user: { id: ottStr(u.id), email: ottStr(u.email) },
+  };
+  try { storage && storage.setItem(OTT_WEB_KEYS.SESSION, JSON.stringify(nova)); } catch (e) { /* ignora */ }
+  return nova;
+}
+
+// Registra este navegador como aparelho "web" (com o token do USUÁRIO, não a chave anon) e devolve o token do aparelho.
+// Erros chegam como Error em português com .kind: "network" | "login" | "business" (limite, desativado, bloqueada).
+async function ottWebRegister(cfg, accessToken, instalacao, info, fetchImpl) {
+  if (typeof instalacao !== "string" || !OTT_WEB_INSTALL_RE.test(instalacao)) throw new Error("Instalação inválida.");
+  const i = info || {};
+  let data;
+  try {
+    data = await ottCallRpc(cfg, "web_device_register", { p_instalacao: instalacao, p_modelo: ottStr(i.modelo) || "Navegador", p_sistema: ottStr(i.sistema) || "Web" }, fetchImpl, accessToken);
+  } catch (e) {
+    const err = new Error(e.message);
+    if (e.message === OTT_MSG_NETWORK) err.kind = "network";
+    else if (e.status === 401 || /fa[cç]a login|jwt/i.test(e.message)) err.kind = "login";
+    else {
+      err.kind = "business";
+      // Só o 400 traz a mensagem em português escrita pelo banco (limite, desativado, bloqueada); o resto é erro técnico
+      if (e.status !== 400) err.message = "O servidor não conseguiu registrar este navegador agora. Tente de novo em instantes.";
+    }
+    throw err;
+  }
+  if (!data || data.status !== "ok" || !ottStr(data.device_token)) {
+    const err = new Error("Resposta inesperada do servidor ao entrar neste navegador.");
+    err.kind = "business";
+    throw err;
+  }
+  return data.device_token;
+}
+
+// "Sair": encerra a sessão do site no servidor (como o painel). Nunca lança.
+async function ottWebLogout(cfg, session, fetchImpl) {
+  if (!session || !ottStr(session.access_token)) return;
+  const doFetch = fetchImpl || ((u, i) => fetch(u, i));
+  try {
+    await ottWebRace(doFetch(cfg.url + "/auth/v1/logout", {
+      method: "POST",
+      headers: { apikey: cfg.anonKey, Authorization: "Bearer " + session.access_token, "Content-Type": "application/json" },
+    }), 8000);
+  } catch (e) { /* o app apaga a sessão local de qualquer jeito */ }
+}
+
+// Nome do navegador e do sistema (aparecem na lista de aparelhos do painel) e se é o atalho instalado
+function ottWebDevice(ua, platform, standalone) {
+  const u = String(ua || "");
+  const p = String(platform || "");
+  let sistema = "";
+  let onde = "";
+  if (/iPhone|iPod/i.test(u)) { sistema = "iOS"; onde = "iPhone"; }
+  else if (/iPad/i.test(u)) { sistema = "iOS"; onde = "iPad"; }
+  else if (/Android/i.test(u)) { sistema = "Android"; onde = "Android"; }
+  else if (/CrOS/i.test(u)) { sistema = "ChromeOS"; onde = "ChromeOS"; }
+  else if (/Windows/i.test(u) || /^Win/i.test(p)) { sistema = "Windows"; onde = "Windows"; }
+  else if (/Macintosh|Mac OS X/i.test(u) || /^Mac/i.test(p)) { sistema = "macOS"; onde = "macOS"; }
+  else if (/Linux|X11/i.test(u) || /Linux/i.test(p)) { sistema = "Linux"; onde = "Linux"; }
+  let nav = "";
+  if (/Edg(e|A|iOS)?\//.test(u)) nav = "Edge";
+  else if (/OPR\/|Opera/.test(u)) nav = "Opera";
+  else if (/Firefox\/|FxiOS\//.test(u)) nav = "Firefox";
+  else if (/Chrome\/|CriOS\//.test(u)) nav = "Chrome";
+  else if (/Safari\//.test(u)) nav = "Safari";
+  const app = !!standalone;
+  const base = nav && onde ? nav + " no " + onde : nav || onde || "Navegador";
+  return { modelo: (app ? base + " (atalho)" : base).slice(0, 80), sistema: sistema || "Web", app };
+}
+
+// URL do proxy do site (mesma montagem de functions/_lib/proxy.js): /api/proxy?u=<url>&t=<token do aparelho>[&k=hls|raw]
+function ottWebProxy(url, token, kind) {
+  return "/api/proxy?u=" + encodeURIComponent(url) + "&t=" + token + (kind ? "&k=" + kind : "");
+}
+
+// O que precisa passar pelo proxy: http(s) de provedor. Não passa: a própria origem, o Supabase, o GitHub, data:/blob: e URLs relativas
+function ottWebShouldProxy(url, ownOrigins) {
+  let u;
+  try { u = new URL(String(url == null ? "" : url)); } catch (e) { return false; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  if (host === "raw.githubusercontent.com" || host.slice(-12) === ".supabase.co") return false;
+  const list = Array.isArray(ownOrigins) ? ownOrigins : [];
+  for (let i = 0; i < list.length; i++) {
+    try { if (new URL(String(list[i])).origin === u.origin) return false; } catch (e) { /* origem inválida: ignora */ }
+  }
+  return true;
+}
+
+// Escolha de perfil vale por 12 h no app web (o iOS encerra o atalho com frequência; sessionStorage perguntaria toda vez)
+function ottWebChosenValid(raw, nowMs) {
+  const ts = Number(raw);
+  if (!(ts > 0)) return false;
+  return ts <= nowMs + 60000 && nowMs - ts <= OTT_WEB_CHOSEN_TTL_MS;
+}
 </script>
 
 <script id="avatars">
@@ -3946,7 +4224,7 @@ function selectChannel(ch, autoPlay = true) {
   const now = Date.now();
   const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
-  localStorage.setItem(profKey("sint_recents"), JSON.stringify(recents));
+  lsSet(profKey("sint_recents"), JSON.stringify(recents));
   pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
   _resumeLookup = null;
   stopStream();
@@ -4074,7 +4352,7 @@ async function syncFavorites() {
     favSyncSave(pid, { feito: true, pendentes: [], remover: aindaRemover });
     if (r.mudouLista) saveMyList(r.minhaLista);
     if (r.mudouCanais) {
-      localStorage.setItem(profKey("sint_fav"), JSON.stringify(r.canais));
+      lsSet(profKey("sint_fav"), JSON.stringify(r.canais));
       setState({ favorites: r.canais });
     }
     if (r.mudouLista) refreshPersonalLists();
@@ -4117,7 +4395,7 @@ function ensureEssentialFavorites() {
   });
 
   if (changed) {
-    localStorage.setItem(profKey("sint_fav"), JSON.stringify(_state.favorites));
+    lsSet(profKey("sint_fav"), JSON.stringify(_state.favorites));
   }
 }
 
@@ -4135,7 +4413,7 @@ function toggleFav(id) {
   }
 
   setState({ favorites });
-  localStorage.setItem(profKey("sint_fav"), JSON.stringify(favorites));
+  lsSet(profKey("sint_fav"), JSON.stringify(favorites));
   if (chName) favPush(ottFavItemsFromChannels([chName])[0], !isAlreadyFav);
   showToast(isAlreadyFav ? "Removido dos favoritos" : "Adicionado aos favoritos!");
 }
@@ -4307,7 +4585,7 @@ async function loadPlaylistFromUrl(url) {
   renderCatalog(); // mostra skeleton
 
   try {
-    const res = await fetch(proxyIfInsecure(url), { cache: "no-cache" });
+    const res = await fetch(isWebApp() ? webUrl(url) : proxyIfInsecure(url), { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const channels = parseM3U(text);
@@ -4440,7 +4718,7 @@ async function fetchGzipXmlText(url) {
 }
 
 async function fetchSupplementaryEpgIndex(nowMs) {
-  const proxied = proxyForCors(EPGSHARE01_URL);
+  const proxied = isWebApp() ? webUrl(EPGSHARE01_URL) : proxyForCors(EPGSHARE01_URL); // no app web a fonte extra passa pelo proxy do site
   if (!proxied) return {};
   try {
     const xmlText = await fetchGzipXmlText(proxied);
@@ -4469,7 +4747,7 @@ async function refreshEpgIfStale() {
   epgFetchInFlight = true;
 
   try {
-    const res = await fetch(proxyIfInsecure(epgUrl), { cache: "no-store" });
+    const res = await fetch(isWebApp() ? webUrl(epgUrl) : proxyIfInsecure(epgUrl), { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const xmlText = await res.text();
     const channels = extractXmltvChannels(xmlText);
@@ -4484,7 +4762,7 @@ async function refreshEpgIfStale() {
     const index = mergeEpgIndexes(primaryIndex, supplementaryIndex);
 
     epgIndexByName = index;
-    localStorage.setItem(LS.EPG_CACHE, JSON.stringify({ fetchedAt: Date.now(), index }));
+    lsSet(LS.EPG_CACHE, JSON.stringify({ fetchedAt: Date.now(), index }));
     render();
   } catch (e) {
     console.warn("[EPG] Falha ao atualizar guia de programação:", e);
@@ -4658,8 +4936,8 @@ async function detectStreamType(url) {
     const hlsAlternative = url.replace(/\.ts($|\?)/i, '.m3u8$1');
     try {
       const controller = new AbortController();
-      const probeTimer = setTimeout(() => controller.abort(), 800);
-      const probeRes = await fetch(hlsAlternative, {
+      const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 3000 : 800); // pelo proxy a ida e volta é maior
+      const probeRes = await fetch(isWebApp() ? webUrl(hlsAlternative, "hls") : hlsAlternative, {
         method: "HEAD",
         signal: controller.signal,
         cache: "no-store"
@@ -4678,8 +4956,8 @@ async function detectStreamType(url) {
   // Checagem rápida de cabeçalho para URLs sem extensão
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 600);
-    const res = await fetch(url, {
+    const timer = setTimeout(() => controller.abort(), isWebApp() ? 3000 : 600);
+    const res = await fetch(isWebApp() ? webUrl(url) : url, {
       method: "HEAD",
       signal: controller.signal,
       cache: "no-store"
@@ -5056,7 +5334,10 @@ async function playStream(url) {
   const streamInfo = await detectStreamType(url);
   if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
   currentStreamType = streamInfo.type;
-  const playUrl = proxyIfInsecure(streamInfo.url);
+  // App web: HLS pelo proxy com reescrita do manifesto; MPEG-TS cru; arquivo direto fica original (o tryDirectPlay aplica o proxy no src)
+  const playUrl = isWebApp()
+    ? (streamInfo.type === "hls" ? webUrl(streamInfo.url, "hls") : streamInfo.type === "mpegts" ? webUrl(streamInfo.url) : streamInfo.url)
+    : proxyIfInsecure(streamInfo.url);
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
@@ -5502,7 +5783,7 @@ function tryDirectPlay(url, video, attempt, generation) {
   }
 
   if (attempt > 1) releaseVideoElement(video);
-  video.src = url;
+  video.src = isWebApp() ? webUrl(url) : url; // app web: pelo proxy (a URL original segue nas regras de extensão e diagnóstico)
 
   let settled = false;
   const attemptTimer = setTimeout(() => fail({ name: "timeout" }), DIRECT_PLAY_ATTEMPT_TIMEOUT_MS);
@@ -5589,7 +5870,7 @@ async function probeVodUrl(url) {
       resolve({ httpStatus: 0, probeError: "tempo esgotado" });
     }, 8000);
   });
-  const request = fetch(url, { method: "HEAD", cache: "no-store", signal: controller.signal })
+  const request = fetch(isWebApp() ? webUrl(url) : url, { method: "HEAD", cache: "no-store", signal: controller.signal })
     .then(res => {
       clearTimeout(timer);
       if (_pendingProbeController === controller) _pendingProbeController = null;
@@ -5789,8 +6070,10 @@ function releaseScreenWakeLock() {
 
 // ─── Volume ───
 // Sempre no máximo: quem regula o volume é o botão físico do aparelho.
+// Exceção: app web no computador, que tem controle de volume próprio (webApplyVolume).
 function forceMaxVolume() {
   const video = document.getElementById("player-video");
+  if (webVolumeControlOn()) { webApplyVolume(video); return; }
   video.volume = 1;
   video.muted = false;
 }
@@ -5806,6 +6089,67 @@ function isNativeApp() {
   return window.Capacitor?.isNativePlatform?.() === true
     || location.protocol === "capacitor:"
     || (location.protocol === "http:" && location.hostname === "localhost");
+}
+
+// ─── App no navegador (sintonizatv.com.br/app) ───
+// Tudo do modo web fica atrás de isWebApp(): no app nativo (Capacitor) nada disto roda.
+// Para testar localmente use http://127.0.0.1:<porta>/app/ (em http://localhost o isNativeApp() é true).
+function isWebApp() {
+  return ottIsWebPath(location.pathname, isNativeApp());
+}
+
+// Aberto como atalho/app instalado (iOS: navigator.standalone; demais: display-mode)
+function isStandaloneDisplay() {
+  try {
+    if (window.navigator && window.navigator.standalone === true) return true;
+    return !!(window.matchMedia && (window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches));
+  } catch (e) {
+    return false;
+  }
+}
+
+// iPhone/iPad ou atalho instalado: sem Fullscreen API confiável, então usa a "tela cheia de mentira" (CSS)
+function webUsesPseudoFullscreen(ios, standalone) {
+  return !!(ios || standalone);
+}
+
+// Endereços que nunca passam pelo proxy: este site e o backend (Supabase)
+function webOwnOrigins() {
+  const o = [location.origin];
+  if (_ott.cfg && _ott.cfg.url) o.push(_ott.cfg.url);
+  return o;
+}
+
+// Único ponto que manda uma URL de provedor pelo proxy do site (só no modo web). kind: "hls" reescreve o manifesto,
+// vazio = repasse cru (listas M3U, player_api.php, EPG, vídeos, MPEG-TS). Sem token do aparelho (ainda), devolve a URL como está.
+function webUrl(url, kind) {
+  if (!url || !isWebApp()) return url;
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!token || !ottWebShouldProxy(url, webOwnOrigins())) return url;
+  return location.origin + ottWebProxy(url, token, kind); // absoluta: mpegts.js/hls.js/fetch resolvem igual em qualquer contexto
+}
+
+// Atalho de teclado do app web: devolve o nome da ação ou null (função pura; evento = KeyboardEvent ou objeto parecido).
+// Fora de campos de texto e sem Ctrl/Alt/Cmd. Espaço/Enter com foco num botão ou link ficam para o próprio botão.
+function webKeyAction(ev) {
+  if (!ev || ev.ctrlKey || ev.metaKey || ev.altKey) return null;
+  const t = ev.target || {};
+  const tag = String(t.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable === true) return null;
+  const key = String(ev.key || "");
+  const lower = key.length === 1 ? key.toLowerCase() : key;
+  if (lower === " " || lower === "k") return lower === " " && (tag === "BUTTON" || tag === "A") ? null : "playpause";
+  switch (lower) {
+    case "ArrowLeft": return "seek-back";
+    case "ArrowRight": return "seek-fwd";
+    case "ArrowUp": return "vol-up";
+    case "ArrowDown": return "vol-down";
+    case "m": return "mute";
+    case "f": return "fullscreen";
+    case "/": return "search";
+    case "Escape": return "exit-fullscreen";
+    default: return null;
+  }
 }
 
 // ─── Tela cheia do app nativo (pontos 1 e 10 da v6) ───
@@ -6062,7 +6406,8 @@ function isDoubleTap(prev, now, windowMs = 350, maxDistPx = 40) {
 
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
-  if (isNativeApp()) {
+  // App web no iPhone/iPad ou instalado como atalho: sem Fullscreen API confiável, usa a tela cheia por CSS (a mesma do app nativo)
+  if (isNativeApp() || (isWebApp() && webUsesPseudoFullscreen(isIOSDevice(), isStandaloneDisplay()))) {
     if (el.classList.contains("pseudo-fullscreen")) exitPseudoFullscreen();
     else enterPseudoFullscreen();
     updateFullscreenBtnIcon();
@@ -6615,6 +6960,25 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", DEFAULTS_SEEDED:"sint_defaults_seeded" };
 
+// Escrita segura no localStorage: cota estourada ou armazenamento bloqueado (Safari privado, navegador cheio) nunca derruba o app.
+// Se estourar, apaga o guia de programação em cache (o maior item; o EPG segue em memória) e tenta uma vez de novo.
+// Devolve true se gravou.
+const lsStorage = { getItem: (k) => localStorage.getItem(k), setItem: (k, v) => { lsSet(k, v); }, removeItem: (k) => localStorage.removeItem(k) }; // para funções que recebem um "storage"
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    try {
+      localStorage.removeItem(LS.EPG_CACHE);
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
 // URLs padrão do build: scripts/prepare-mobile.js troca cada token pela URL
 // vinda do secret (ou por "" num build sem secrets). Aberto sem passar pelo
 // build (npm run dev), o token fica como está e resolveInjectedDefault o
@@ -6721,7 +7085,7 @@ function vodMemo(url, make) {
 function vodFetchCategories(creds, isSeries) {
   const url = xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories");
   return vodMemo(url, async () => {
-    const res = await fetch(url);
+    const res = await fetch(webUrl(url));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
     return Array.isArray(raw) ? raw.map(sanitizeVodItem) : raw;
@@ -6732,7 +7096,7 @@ function vodFetchCategories(creds, isSeries) {
 function vodFetchCategoryItems(creds, isSeries, categoryId) {
   const url = xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: categoryId });
   return vodMemo(url, async () => {
-    const res = await fetch(url);
+    const res = await fetch(webUrl(url));
     const streams = await res.json();
     if (!Array.isArray(streams) || streams.length === 0) return [];
     return dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
@@ -7060,7 +7424,7 @@ function vodCardArtHtml(cover, title) {
 function saveContinueWatching(entry) {
   const map = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   map[entry.id] = { ...entry, ts: Date.now() };
-  localStorage.setItem(profKey(CONTINUE_KEY), JSON.stringify(map));
+  lsSet(profKey(CONTINUE_KEY), JSON.stringify(map));
 }
 
 function removeContinueWatching(id) {
@@ -7068,7 +7432,7 @@ function removeContinueWatching(id) {
   if (map[id]) {
     const entry = map[id];
     delete map[id];
-    localStorage.setItem(profKey(CONTINUE_KEY), JSON.stringify(map));
+    lsSet(profKey(CONTINUE_KEY), JSON.stringify(map));
     // Terminou ou foi removido: o minuto também sai da conta (o id é "resume-<tipo>-<id do provedor>")
     clearProgressOnAccount(entry.type === "series" ? "episode" : "vod", String(id).replace(/^resume-(vod|series)-/, ""));
   }
@@ -7084,7 +7448,7 @@ function loadMyList() {
   try { return JSON.parse(localStorage.getItem(profKey(MYLIST_KEY)) || "[]"); } catch (e) { return []; }
 }
 function saveMyList(list) {
-  localStorage.setItem(profKey(MYLIST_KEY), JSON.stringify(list));
+  lsSet(profKey(MYLIST_KEY), JSON.stringify(list));
 }
 
 function isInMyList(list, type, id) {
@@ -7244,7 +7608,7 @@ function runCardAction(actionId) {
   if (actionId === "recent-remove") {
     if (ctx.channelId != null) {
       const recents = _state.recents.filter(r => r.id !== ctx.channelId);
-      localStorage.setItem(profKey("sint_recents"), JSON.stringify(recents));
+      lsSet(profKey("sint_recents"), JSON.stringify(recents));
       setState({ recents });
     } else if (ctx.recentId) {
       removeContinueWatching(ctx.recentId);
@@ -7353,7 +7717,7 @@ function loadDownloads() {
 }
 function setDownloads(list) {
   _downloads = list;
-  localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(list));
+  lsSet(DOWNLOADS_KEY, JSON.stringify(list));
   renderDownloads();
 }
 
@@ -7985,7 +8349,7 @@ async function openVodModal(item, vodType, creds) {
   epsContainer.innerHTML = `<div class="spinner" style="margin:1rem"></div>`;
 
   try {
-    const res = await fetch(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id }));
+    const res = await fetch(webUrl(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id })));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const episodes = Object.values(data.episodes || {}).flat().map(sanitizeVodItem);
@@ -8415,11 +8779,11 @@ function pausePlayerForCast() {
 // ═══════════════════════════════════════════════════════════════
 const _ott = { cfg: null, poll: null, tick: null, revalidate: null, wired: false };
 
-// Só no app nativo (ou ?ott=1); ?noott=1 desliga. O site no navegador segue com listas manuais.
+// No app nativo, no app web (/app) ou com ?ott=1; ?noott=1 desliga. Outro site no navegador segue com listas manuais.
 function ottEnabled() {
   const q = new URLSearchParams(location.search);
   if (q.has("noott")) return false;
-  return isNativeApp() || q.has("ott");
+  return isNativeApp() || isWebApp() || q.has("ott");
 }
 
 function ottStopTimers() {
@@ -8447,14 +8811,15 @@ function ottShowOffline(message) {
 
 function ottStoredLastOk() { return Number(localStorage.getItem(OTT_KEYS.LAST_OK)) || 0; }
 
-// Aparelho novo: pede o código ao servidor
+// Aparelho novo: pede o código ao servidor (no app web não há código: entra com a conta do site, ver webBoot)
 async function ottBeginActivation() {
+  if (isWebApp()) { webBoot(); return; }
   ottStopTimers();
   ottShowGate("loading");
   try {
     const platform = window.Capacitor && window.Capacitor.getPlatform ? window.Capacitor.getPlatform() : "";
     const s = await ottDeviceStart(_ott.cfg, ottDetectDevice(navigator.userAgent, platform));
-    localStorage.setItem(OTT_KEYS.TOKEN, s.token);
+    lsSet(OTT_KEYS.TOKEN, s.token);
     ottShowActivation({ code: s.code, expiresAt: s.expiresAt, pollSeconds: s.pollSeconds });
   } catch (e) {
     ottShowOffline(e.message);
@@ -8510,7 +8875,12 @@ function ottShowBlocked(d) {
   document.getElementById("ott-blocked-detail").textContent = expired
     ? (fim ? `Encerrado em ${fim}. ` : "") + "Renove no painel para continuar assistindo."
     : "Fale com o suporte para liberar o acesso.";
-  document.getElementById("ott-blocked-panel").href = _ott.cfg.panelUrl;
+  const panelLink = document.getElementById("ott-blocked-panel");
+  panelLink.href = isWebApp() ? "/conta" : _ott.cfg.panelUrl;
+  if (isWebApp()) { // /conta é do mesmo site: abre dentro do app instalado
+    panelLink.removeAttribute("target");
+    panelLink.textContent = "Abrir minha conta";
+  }
   ottShowGate("blocked");
 }
 
@@ -8524,15 +8894,20 @@ function ottRenderAccountCard() {
   const sumEl = document.getElementById("ott-account-summary");
   sumEl.textContent = resumo.text;
   sumEl.style.color = resumo.tone === "ok" ? "var(--muted-fg)" : "#b91c1c";
-  document.getElementById("ott-account-panel").href = (_ott.cfg && _ott.cfg.panelUrl) || OTT_PANEL_URL;
+  const accountLink = document.getElementById("ott-account-panel");
+  accountLink.href = (_ott.cfg && _ott.cfg.panelUrl) || OTT_PANEL_URL;
+  if (isWebApp()) { // mesma origem: /conta abre dentro do app instalado, sem sair dele
+    accountLink.href = "/conta";
+    accountLink.removeAttribute("target");
+  }
 }
 
 // Acesso liberado: guarda a conta, aplica as listas (recarrega o app se mudaram) e abre o app
 function ottOnOk(d) {
-  localStorage.setItem(OTT_KEYS.LAST_OK, String(Date.now()));
-  if (d.account) localStorage.setItem(OTT_KEYS.ACCOUNT, JSON.stringify(d.account));
+  lsSet(OTT_KEYS.LAST_OK, String(Date.now()));
+  if (d.account) lsSet(OTT_KEYS.ACCOUNT, JSON.stringify(d.account));
   if (!d.offline) {
-    const changed = ottApplyPlaylist(localStorage, (d.playlists && d.playlists[0]) || null);
+    const changed = ottApplyPlaylist(lsStorage, (d.playlists && d.playlists[0]) || null);
     if (changed) { location.reload(); return; }
   }
   ottHideGate();
@@ -8554,6 +8929,7 @@ function ottApplyDecision(d) {
   if (d.screen === "ok") ottOnOk(d);
   else if (d.screen === "activation") ottShowActivation(d);
   else if (d.screen === "blocked") ottShowBlocked(d);
+  else if (d.screen === "device_blocked" && isWebApp()) webShowBlocked("Navegador desativado", "Este navegador foi desativado no painel. Reative ou remova o aparelho em Minha conta, ou fale com o suporte.");
   else if (d.screen === "device_blocked") { ottStopTimers(); ottShowGate("device_blocked"); }
   else if (d.screen === "restart") { localStorage.removeItem(OTT_KEYS.TOKEN); ottBeginActivation(); }
   else ottShowOffline(d.message);
@@ -8579,6 +8955,7 @@ function ottScheduleRevalidate() {
 
 // "Desvincular este aparelho": libera a vaga no servidor e volta para a tela do código
 async function ottUnlink() {
+  if (isWebApp()) { webSignOut(); return; } // no navegador o botão é "Sair"
   if (!window.confirm("Desvincular este aparelho da sua conta? Ele volta para a tela do código.")) return;
   vodWarmCancel();
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
@@ -8589,9 +8966,227 @@ async function ottUnlink() {
   location.reload();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// APP WEB: entrada com a conta do site e registro do navegador como aparelho "web"
+// Só roda com isWebApp() (sintonizatv.com.br/app). Sem tela de código/QR: a conta vem do login do site.
+// ═══════════════════════════════════════════════════════════════
+const _web = { attempts: 0, signedOut: false, wired: false };
+
+// Sem sessão do site: vai ao login e volta para o app
+function webGoLogin() {
+  location.replace("/?next=" + encodeURIComponent("/app/"));
+}
+
+// Tela de bloqueio com a mensagem do servidor (limite de navegadores, aparelho desativado, conta bloqueada)
+function webShowBlocked(title, detail) {
+  ottStopTimers();
+  document.getElementById("ott-blocked-title").textContent = title;
+  document.getElementById("ott-blocked-detail").textContent = detail;
+  const link = document.getElementById("ott-blocked-panel");
+  link.href = "/conta";
+  link.removeAttribute("target");
+  link.textContent = "Abrir minha conta";
+  ottShowGate("blocked");
+}
+
+// Entrada do app web (no lugar da ativação por código): sessão do site -> aparelho web -> fluxo normal (ottCheck)
+async function webBoot() {
+  if (_web.signedOut) return;
+  ottStopTimers();
+  ottShowGate("loading");
+  _web.attempts++;
+  if (_web.attempts > 3) { ottShowOffline("Não foi possível entrar neste navegador. Atualize a página e tente de novo."); return; }
+  let session = ottWebParseSession(localStorage.getItem(OTT_WEB_KEYS.SESSION));
+  if (!session) { webGoLogin(); return; }
+  try { localStorage.removeItem(OTT_WEB_KEYS.SIGNED_OUT); } catch (e) { /* ignora */ } // há login novo: vale registrar de novo
+  if (ottWebNeedsRefresh(session, Date.now())) {
+    session = await ottWebRefresh(_ott.cfg, session, null, localStorage);
+    if (!session) {
+      if (navigator.onLine === false) { ottShowOffline(OTT_MSG_NETWORK); return; }
+      webGoLogin();
+      return;
+    }
+  }
+  let token;
+  try {
+    token = await ottWebRegister(_ott.cfg, session.access_token, ottWebInstallId(localStorage), ottWebDevice(navigator.userAgent, navigator.platform, isStandaloneDisplay()));
+  } catch (e) {
+    if (e.kind === "login") { try { localStorage.removeItem(OTT_WEB_KEYS.SESSION); } catch (x) { /* ignora */ } webGoLogin(); return; }
+    if (e.kind === "network") { ottShowOffline(e.message); return; }
+    webShowBlocked("Não foi possível entrar neste navegador", e.message);
+    return;
+  }
+  lsSet(OTT_KEYS.TOKEN, token);
+  await ottCheck();
+}
+
+// "Sair": apaga o aparelho no servidor, a sessão do site e os dados da conta deste navegador; volta para a página inicial do site
+async function webSignOut() {
+  if (!window.confirm("Sair da sua conta neste navegador?")) return;
+  _web.signedOut = true; // nada de registrar de novo (revalidação, tela de bloqueio) enquanto sai
+  vodWarmCancel();
+  ottStopTimers();
+  clearInterval(_ott.revalidate);
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  const session = ottWebParseSession(localStorage.getItem(OTT_WEB_KEYS.SESSION));
+  try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
+  [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY, OTT_WEB_KEYS.SESSION, OTT_WEB_KEYS.CHOSEN].forEach(k => localStorage.removeItem(k));
+  try { localStorage.setItem(OTT_WEB_KEYS.SIGNED_OUT, "1"); } catch (e) { /* ignora */ }
+  ottApplyPlaylist(localStorage, null);
+  await ottWebLogout(_ott.cfg, session);
+  location.replace("/");
+}
+
+// ─── App web no computador: volume, atalhos de teclado e carrosséis com setas/roda do mouse ───
+const WEB_VOLUME_KEY = "sint_web_volume";
+
+// Volume próprio só no computador (ponteiro fino com hover). No celular (mesmo no atalho) segue no máximo, como no app nativo.
+function webVolumeControlOn() {
+  try { return isWebApp() && !!window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) { return false; }
+}
+
+function webReadVolume() {
+  try {
+    const o = JSON.parse(localStorage.getItem(WEB_VOLUME_KEY) || "null");
+    if (o && Number(o.v) >= 0 && Number(o.v) <= 1) return { v: Number(o.v), m: o.m === true };
+  } catch (e) { /* usa o padrão */ }
+  return { v: 1, m: false };
+}
+
+// Aplica o volume guardado no <video> e atualiza o controle
+function webApplyVolume(video) {
+  const s = webReadVolume();
+  video.volume = s.v;
+  video.muted = s.m;
+  const bar = document.getElementById("web-volume-bar");
+  const btn = document.getElementById("web-mute-btn");
+  if (bar) bar.value = String(s.m ? 0 : Math.round(s.v * 100));
+  if (btn) {
+    btn.innerHTML = `<i data-lucide="${s.m || s.v === 0 ? "volume-x" : s.v < 0.5 ? "volume-1" : "volume-2"}" style="width:20px;height:20px"></i>`;
+    btn.setAttribute("aria-label", s.m ? "Ligar o som" : "Silenciar");
+    if (window.lucide) window.lucide.createIcons();
+  }
+}
+
+function webSetVolume(v, muted) {
+  lsSet(WEB_VOLUME_KEY, JSON.stringify({ v: Math.min(1, Math.max(0, v)), m: !!muted }));
+  webApplyVolume(document.getElementById("player-video"));
+}
+
+// Setas dos carrosséis: criadas na primeira vez que o mouse passa pela fileira (o conteúdo das fileiras é redesenhado o tempo todo)
+function webCarouselHover(ev) {
+  const row = ev.target && ev.target.closest ? ev.target.closest(".vod-row") : null;
+  const car = row && row.querySelector(".vod-carousel");
+  if (!car) return; // modo grade ("Ver todos") não rola
+  if (!row.querySelector(".web-arrow")) {
+    const svg = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+    row.insertAdjacentHTML("beforeend",
+      `<button type="button" class="web-arrow web-arrow-prev" data-dir="-1" aria-label="Voltar na fileira">${svg("m15 18-6-6 6-6")}</button>` +
+      `<button type="button" class="web-arrow web-arrow-next" data-dir="1" aria-label="Avançar na fileira">${svg("m9 18 6-6-6-6")}</button>`);
+  }
+  if (!car.dataset.webScroll) {
+    car.dataset.webScroll = "1";
+    car.addEventListener("scroll", () => webUpdateArrows(row), { passive: true });
+  }
+  webUpdateArrows(row);
+}
+
+// Mostra cada seta só se houver para onde rolar e a alinha ao meio dos cartões
+function webUpdateArrows(row) {
+  const car = row.querySelector(".vod-carousel");
+  if (!car) return;
+  const prev = row.querySelector(".web-arrow-prev");
+  const next = row.querySelector(".web-arrow-next");
+  if (!prev || !next) return;
+  const top = car.offsetTop + car.offsetHeight / 2 + "px";
+  prev.style.top = top;
+  next.style.top = top;
+  prev.classList.toggle("is-off", car.scrollLeft <= 2);
+  next.classList.toggle("is-off", car.scrollLeft + car.clientWidth >= car.scrollWidth - 2);
+}
+
+function webCarouselClick(ev) {
+  const btn = ev.target && ev.target.closest ? ev.target.closest(".web-arrow") : null;
+  if (!btn) return;
+  ev.stopPropagation();
+  const row = btn.closest(".vod-row");
+  const car = row && row.querySelector(".vod-carousel");
+  if (!car) return;
+  car.scrollBy({ left: Number(btn.dataset.dir) * Math.max(200, car.clientWidth * 0.85), behavior: "smooth" });
+}
+
+// Roda do mouse sobre uma fileira rola na horizontal (só roda "de clique": gestos de touchpad ficam nativos;
+// nas pontas da fileira a página volta a rolar normalmente)
+function webCarouselWheel(ev) {
+  if (ev.ctrlKey || ev.deltaX !== 0 || ev.deltaY === 0) return;
+  if (ev.deltaMode === 0 && Math.abs(ev.deltaY) < 100) return; // touchpad: rolagem fina, deixa o navegador
+  const car = ev.target && ev.target.closest ? ev.target.closest(".vod-carousel") : null;
+  if (!car || car.scrollWidth <= car.clientWidth + 2) return;
+  const dir = ev.deltaY > 0 ? 1 : -1;
+  if (dir > 0 && car.scrollLeft + car.clientWidth >= car.scrollWidth - 2) return;
+  if (dir < 0 && car.scrollLeft <= 2) return;
+  ev.preventDefault();
+  car.scrollLeft += ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY;
+}
+
+// Atalhos de teclado do app web (nunca com a tela de conta/perfil por cima; só agem se houver o que controlar)
+function webOnKey(ev, h) {
+  const action = webKeyAction(ev);
+  if (!action) return;
+  const root = document.documentElement.classList;
+  if (root.contains("ott-open") || root.contains("profile-open")) return;
+  const sel = _state.selected;
+  const screenEl = document.getElementById("player-screen");
+  const done = () => ev.preventDefault();
+  if (action === "search") {
+    const campo = ["vod-search-input", "search-input"].map(id => document.getElementById(id)).find(el => el && el.offsetParent !== null);
+    if (campo) { done(); campo.focus(); campo.select(); }
+    return;
+  }
+  if (action === "exit-fullscreen") {
+    if (screenEl.classList.contains("pseudo-fullscreen")) { done(); exitPseudoFullscreen(); updateFullscreenBtnIcon(); }
+    return; // a Fullscreen API real já sai sozinha com Esc
+  }
+  if (!sel) return;
+  if (action === "playpause") { done(); h.togglePlayPause(); }
+  else if (action === "fullscreen") { done(); toggleFullscreen(); }
+  else if (action === "seek-back" || action === "seek-fwd") {
+    if (!sel.isVod) return; // canal ao vivo não tem como andar no tempo
+    done();
+    skipBy(action === "seek-back" ? -10 : 10);
+  } else if (webVolumeControlOn()) {
+    const s = webReadVolume();
+    done();
+    if (action === "mute") { webSetVolume(s.v || 1, !s.m); showToast(s.m ? "Som ligado" : "Mudo"); return; }
+    const novo = Math.min(1, Math.max(0, Math.round((s.v + (action === "vol-up" ? 0.1 : -0.1)) * 10) / 10));
+    webSetVolume(novo, novo === 0);
+    showToast("Volume " + Math.round(novo * 100) + "%");
+  }
+}
+
+function webWire(h) {
+  if (_web.wired) return;
+  _web.wired = true;
+  if (webVolumeControlOn()) {
+    const bar = document.getElementById("web-volume-bar");
+    const mute = document.getElementById("web-mute-btn");
+    bar.addEventListener("input", () => webSetVolume(Number(bar.value) / 100, Number(bar.value) === 0));
+    mute.addEventListener("click", e => { e.stopPropagation(); const s = webReadVolume(); webSetVolume(s.v || 1, !s.m); });
+    webApplyVolume(document.getElementById("player-video"));
+  }
+  document.addEventListener("keydown", ev => webOnKey(ev, h));
+  document.addEventListener("mouseover", webCarouselHover);
+  document.addEventListener("click", webCarouselClick, true);
+  document.addEventListener("wheel", webCarouselWheel, { passive: false });
+}
+
 function ottWire() {
   if (_ott.wired) return;
   _ott.wired = true;
+  if (isWebApp()) { // textos do modo web: sem código, "Sair" no lugar de "Desvincular"
+    document.getElementById("ott-unlink-btn").textContent = "Sair";
+    document.getElementById("ott-blocked-unlink").textContent = "Sair e usar outra conta";
+  }
   document.getElementById("ott-new-code").addEventListener("click", ottBeginActivation);
   document.getElementById("ott-restart").addEventListener("click", () => { localStorage.removeItem(OTT_KEYS.TOKEN); ottBeginActivation(); });
   document.getElementById("ott-retry").addEventListener("click", () => { ottShowGate("loading"); ottBoot(); });
@@ -8620,7 +9215,7 @@ function ottWire() {
 async function ottBoot() {
   if (!ottEnabled()) { document.documentElement.classList.remove("ott-open"); return; }
   ottShowGate("loading");
-  _ott.cfg = await ottLoadConfig(localStorage);
+  _ott.cfg = await ottLoadConfig(localStorage, null, isWebApp() ? "/app-config.json" : undefined);
   if (!_ott.cfg) { ottShowOffline("Não foi possível conectar ao servidor Sintoniza. Verifique a internet do aparelho."); ottWire(); return; }
   ottWire();
   await ottCheck();
@@ -8650,7 +9245,14 @@ const _profile = {
   booting: false,
   wired: false,
 };
-try { _profile.chosen = sessionStorage.getItem(PROFILE_CHOSEN_KEY) === "1"; } catch (e) { /* sem sessionStorage: pergunta a cada abertura */ }
+try { _profile.chosen = profileChosenRead(); } catch (e) { /* sem sessionStorage: pergunta a cada abertura */ }
+
+// Já escolheu o perfil? Nativo: nesta abertura do app (sessionStorage). App web: nas últimas 12 h (localStorage;
+// o iOS encerra o atalho com frequência e o sessionStorage perguntaria a cada vez).
+function profileChosenRead() {
+  if (isWebApp()) return ottWebChosenValid(localStorage.getItem(OTT_WEB_KEYS.CHOSEN), Date.now());
+  return sessionStorage.getItem(PROFILE_CHOSEN_KEY) === "1";
+}
 
 function profileReadCache() {
   try {
@@ -8665,7 +9267,10 @@ function profileWriteCache(list) {
 
 function profileMarkChosen() {
   _profile.chosen = true;
-  try { sessionStorage.setItem(PROFILE_CHOSEN_KEY, "1"); } catch (e) { /* ignora */ }
+  try {
+    if (isWebApp()) localStorage.setItem(OTT_WEB_KEYS.CHOSEN, String(Date.now()));
+    else sessionStorage.setItem(PROFILE_CHOSEN_KEY, "1");
+  } catch (e) { /* ignora */ }
 }
 
 // Configuração do backend e token do aparelho (null = sem conta ainda)
@@ -9284,6 +9889,8 @@ document.addEventListener("DOMContentLoaded", () => {
     e.stopPropagation();
     togglePlayPause();
   });
+  // App web: volume, atalhos de teclado e carrosséis do computador (nada disto roda no app nativo)
+  if (isWebApp()) webWire({ togglePlayPause });
 
   const reloadBtn = document.getElementById("reload-stream-btn");
   if (reloadBtn) {
@@ -9311,7 +9918,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("fit-select").addEventListener("change", e => {
     const v = e.target.value;
     document.getElementById("player-video").style.objectFit = v;
-    localStorage.setItem(LS.FIT, v);
+    lsSet(LS.FIT, v);
   });
 
   document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
@@ -9842,7 +10449,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("save-proxy-btn").addEventListener("click", () => {
     const proxy = document.getElementById("proxy-url").value.trim();
     if (!proxy) { showToast("Cole o endereço do proxy antes de salvar."); return; }
-    localStorage.setItem(LS.PROXY, proxy);
+    lsSet(LS.PROXY, proxy);
     document.getElementById("proxy-save-indicator").style.display = "flex";
     showToast("Proxy salvo. Os canais HTTP agora passam por ele.");
   });
@@ -9897,7 +10504,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("pref-fit").addEventListener("change", e => {
-    localStorage.setItem(LS.FIT, e.target.value);
+    lsSet(LS.FIT, e.target.value);
     document.getElementById("fit-select").value = e.target.value;
     document.getElementById("player-video").style.objectFit = e.target.value;
   });
@@ -9906,7 +10513,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // O que estava "baixando" foi interrompido (app fechado): volta para a
   // fila e o motor recomeça (no navegador, processDownloadQueue não faz nada).
   _downloads = resetInterruptedDownloads(loadDownloads());
-  localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(_downloads));
+  lsSet(DOWNLOADS_KEY, JSON.stringify(_downloads));
   processDownloadQueue();
 
   // ── ASSISTIR NA TV: botão da barra do player ──

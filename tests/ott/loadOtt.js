@@ -23,7 +23,9 @@ export function loadOtt() {
         ottPerfilIdOk, ottPerfilNormalize, ottPerfilPickActive, ottPerfilDecide, ottGreeting, ottPerfilValidName,
         ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
         ottNormName, ottFavKeyChannel, ottFavKeyVod, ottFavKeySeries, ottFavItemsFromChannels, ottFavItemsFromMyList,
-        ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge, createWarmer };`,
+        ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge, createWarmer,
+        OTT_WEB_KEYS, ottIsWebPath, ottWebInstallId, ottWebParseSession, ottWebNeedsRefresh, ottWebRefresh, ottWebRegister, ottWebLogout,
+        ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid };`,
     ctx
   );
   return ctx.__ott;
