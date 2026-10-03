@@ -33,3 +33,7 @@ dist-ssr
 
 # graphify knowledge-graph output (local investigation artifact)
 graphify-out/
+
+# build web (app em /app/): cache das bibliotecas e saída padrão
+.web-cache/
+dist-web/

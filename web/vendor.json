@@ -1,0 +1,47 @@
+{
+  "_comentario": "Bibliotecas do app web em versões fixas. O build baixa estes arquivos, confere o SHA-256 e serve tudo de /app/vendor/ (nada de CDN em tempo de execução).",
+  "scripts": [
+    {
+      "nome": "lucide",
+      "versao": "1.51.0",
+      "url": "https://unpkg.com/lucide@1.51.0/dist/umd/lucide.min.js",
+      "arquivo": "lucide.min.js",
+      "sha256": "b26eac159a876454404f10be2f7e471bccb9d6f2398b5cfdf1045425ac94abf0"
+    },
+    {
+      "nome": "hls.js",
+      "versao": "1.7.3",
+      "url": "https://cdn.jsdelivr.net/npm/hls.js@1.7.3",
+      "arquivo": "hls.min.js",
+      "sha256": "a12e7ee1cd64a69dcdb314157e45dafcba705bfb0b1440b7935cb265d374423e"
+    },
+    {
+      "nome": "mpegts.js",
+      "versao": "1.8.2",
+      "url": "https://cdn.jsdelivr.net/npm/mpegts.js@1.8.2",
+      "arquivo": "mpegts.js",
+      "sha256": "ceb67d511fae54f442a5b9c03e6b8ea30a89efc9bde7fa3ce0687f05f31e6d6a"
+    }
+  ],
+  "fontes": {
+    "familia": "Outfit",
+    "origem": "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700 (Google Fonts, fonte variável v15)",
+    "peso": "400 700",
+    "arquivos": [
+      {
+        "subconjunto": "latin-ext",
+        "url": "https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJuktqQ4E.woff2",
+        "arquivo": "outfit-latin-ext.woff2",
+        "sha256": "0f53d1c03b3918d744a843b5039001ee31695ca1e255e3914188df81beb461e9",
+        "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+      },
+      {
+        "subconjunto": "latin",
+        "url": "https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJtEtq.woff2",
+        "arquivo": "outfit-latin.woff2",
+        "sha256": "6c18d579fd87c3776be068b762cbc83fde3acb543d49eabd3ade842eb987e887",
+        "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"
+      }
+    ]
+  }
+}

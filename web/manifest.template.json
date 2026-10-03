@@ -1,0 +1,19 @@
+{
+  "id": "/app/",
+  "name": "Sintoniza",
+  "short_name": "Sintoniza",
+  "description": "Seus canais, filmes e séries no navegador e como app na tela inicial.",
+  "start_url": "/app/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#08080D",
+  "theme_color": "#08080D",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/app/icons/icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
