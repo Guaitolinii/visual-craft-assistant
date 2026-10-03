@@ -1363,7 +1363,7 @@
             <span class="fs-time" id="fs-seek-duration">0:00</span>
           </div>
           <div class="fs-actions">
-            <button class="fs-btn" id="fs-fit-btn" aria-label="Preencher a tela"><i data-lucide="expand" style="width:20px;height:20px"></i></button>
+            <button class="fs-btn tv-only" id="fs-tv-btn" type="button" aria-label="Assistir na TV" title="Assistir na TV"><i data-lucide="tv" style="width:20px;height:20px"></i></button>
             <button class="fs-btn" id="fs-rotate-btn" aria-label="Girar para a horizontal"><i data-lucide="rectangle-horizontal" style="width:20px;height:20px"></i></button>
           </div>
         </div>
@@ -5063,25 +5063,6 @@ function flashFsLockHint() {
   _fs.hintTimer = setTimeout(() => hint.classList.remove("visible"), FS_LOCK_HINT_MS);
 }
 
-function syncFsFitButton() {
-  const fit = document.getElementById("player-video").style.objectFit || "contain";
-  const filling = fit !== "contain";
-  const btn = document.getElementById("fs-fit-btn");
-  btn.innerHTML = `<i data-lucide="${filling ? "shrink" : "expand"}" style="width:20px;height:20px"></i>`;
-  btn.setAttribute("aria-label", filling ? "Mostrar o vídeo inteiro" : "Preencher a tela");
-  lucide.createIcons();
-}
-
-// Alterna entre vídeo inteiro (com faixas pretas) e tela preenchida.
-function toggleFsFit() {
-  const video = document.getElementById("player-video");
-  const next = (video.style.objectFit || "contain") === "contain" ? "cover" : "contain";
-  video.style.objectFit = next;
-  localStorage.setItem(LS.FIT, next);
-  document.getElementById("fit-select").value = next;
-  syncFsFitButton();
-}
-
 // Orientação do aparelho (plugin nativo) na tela cheia. Entrar e sair LIBERAM o sensor (respeita o
 // "girar automaticamente" do aparelho); só o botão de girar trava uma orientação. Antes, sair da tela
 // cheia travava em retrato e a rotação nunca mais voltava no Android.
@@ -5114,7 +5095,6 @@ function enterPseudoFullscreen() {
   callNativePlugin("StatusBar", "hide");
   applyFsLayout();
   setPlayerMode();
-  syncFsFitButton();
   showFsControls();
 }
 
@@ -7362,6 +7342,17 @@ async function resolveResumeWithAccount(localSec, localTs, durationHint) {
   });
 }
 
+// Envia o que está tocando para a TV (usado pelo botão da barra e pelo da tela cheia)
+function castCurrentToTv() {
+  const sel = _state.selected;
+  if (!sel) return;
+  if (!sel.isVod) { castToTv("channel", sel); return; }
+  if (!sel.castInfo) { showToast("Não foi possível enviar este item para a TV."); return; }
+  pushProgressToAccount(true); // a TV também pode consultar o minuto na conta
+  const extra = Object.assign({}, sel.castInfo.extra || {}, { positionSec: currentCastPosition() });
+  castToTv(sel.castInfo.kind, sel.castInfo.item, extra);
+}
+
 // Posição atual (segundos inteiros) para o envio à TV; 0 em canal ao vivo
 function currentCastPosition() {
   const v = document.getElementById("player-video");
@@ -7916,7 +7907,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("fs-exit-btn").addEventListener("click", e => { e.stopPropagation(); toggleFullscreen(); });
   document.getElementById("fs-lock-btn").addEventListener("click", e => { e.stopPropagation(); setFsLocked(true); flashFsLockHint(); });
   document.getElementById("fs-rotate-btn").addEventListener("click", toggleFsRotation);
-  document.getElementById("fs-fit-btn").addEventListener("click", toggleFsFit);
+  document.getElementById("fs-tv-btn").addEventListener("click", castCurrentToTv); // o clique em botão já mantém os controles visíveis (listener do #fs-ui)
   document.getElementById("fs-play-btn").addEventListener("click", togglePlayPause);
   document.getElementById("fs-skip-back-btn").addEventListener("click", () => skipBy(-10));
   document.getElementById("fs-skip-fwd-btn").addEventListener("click", () => skipBy(10));
@@ -8440,14 +8431,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── ASSISTIR NA TV: botão da barra do player ──
   document.getElementById("tv-cast-btn").addEventListener("click", e => {
     e.stopPropagation();
-    const sel = _state.selected;
-    if (!sel) return;
-    if (!sel.isVod) castToTv("channel", sel);
-    else if (sel.castInfo) {
-      pushProgressToAccount(true); // a TV também pode consultar o minuto na conta
-      castToTv(sel.castInfo.kind, sel.castInfo.item, { ...(sel.castInfo.extra || {}), positionSec: currentCastPosition() });
-    }
-    else showToast("Não foi possível enviar este item para a TV.");
+    castCurrentToTv();
   });
 
   // ── CONTA SINTONIZA: por último, para não interferir no boot do app ──

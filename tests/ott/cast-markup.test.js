@@ -30,3 +30,10 @@ test("o botão da TV nunca fica dentro de outro botão (irmão do favorito e do 
   const card = html.slice(ini, html.indexOf("\nfunction ", ini + 10));
   assert.ok(ini > 0 && !/tv-only|data-tv/.test(card), "o cartão de filme/série não pode ter botão da TV");
 });
+
+test("na tela cheia o botão de TV substitui o de enquadramento", () => {
+  assert.match(html, /id="fs-tv-btn"/);
+  assert.doesNotMatch(html, /id="fs-fit-btn"/);
+  assert.match(html, /function castCurrentToTv\(/);
+  assert.doesNotMatch(html, /getElementById\("fs-fit-btn"\)/);
+});
