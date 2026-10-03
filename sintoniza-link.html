@@ -2999,14 +2999,57 @@ function ottBuildCastPayload(kind, item, extra) {
   }
   const title = ottClip(item.name || item.title, 120);
   if (!title) return null;
-  if (kind === "vod") {
-    return { streamId: ottClip(item.stream_id, 40), title, year: ottYearOf(item) };
-  }
   const e = extra || {};
+  // Minuto atual do celular (segundos inteiros): a TV começa daí; ausente/zero = do início
+  const pos = Math.max(0, Math.floor(Number(e.positionSec) || 0));
+  if (kind === "vod") {
+    const v = { streamId: ottClip(item.stream_id, 40), title, year: ottYearOf(item) };
+    if (pos > 0) v.positionSec = pos;
+    return v;
+  }
   const season = parseInt(e.season, 10);
   const episode = parseInt(e.episode, 10);
   if (!(season >= 0) || !(episode >= 0)) return null;
-  return { seriesId: ottClip(item.series_id, 40), title, season, episode };
+  const ep = { seriesId: ottClip(item.series_id, 40), title, season, episode };
+  if (pos > 0) ep.positionSec = pos;
+  return ep;
+}
+
+// ── Progresso por conta (celular e TV retomam de onde o outro parou) ──
+// Chave do item na conta: só ids do provedor (nunca links); canal não sincroniza
+function ottProgressKey(kind, id) {
+  const clean = String(id == null ? "" : id).trim();
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(clean)) return null;
+  if (kind === "vod") return "vod:" + clean;
+  if (kind === "episode") return "ep:" + clean;
+  return null;
+}
+
+// Qual minuto usar: o mais recente entre o local e o da conta; descarta começo curto e final do filme
+function ottPickResume(i) {
+  let sec = 0;
+  if (i.localSec > 0 && i.serverSec > 0) sec = i.serverTs > i.localTs ? i.serverSec : i.localSec;
+  else sec = i.localSec > 0 ? i.localSec : i.serverSec;
+  if (sec < i.minSec) return 0;
+  if (i.durationSec > 0 && sec > i.durationSec - 60) return 0;
+  return Math.floor(sec);
+}
+
+// Lê o minuto gravado na conta; null se não houver registro
+async function ottProgressGet(cfg, token, key, fetchImpl) {
+  const data = await ottCallRpc(cfg, "progress_get", { p_token: token, p_key: key }, fetchImpl);
+  if (!data || data.status !== "ok" || data.found !== true) return null;
+  return { sec: Number(data.position_sec) || 0, durationSec: Number(data.duration_sec) || 0, ts: ottParseIsoMs(ottStr(data.updated_at)) };
+}
+
+// Grava o minuto na conta (inteiros)
+async function ottProgressPut(cfg, token, key, kind, positionSec, durationSec, fetchImpl) {
+  await ottCallRpc(cfg, "progress_put", { p_token: token, p_key: key, p_kind: kind, p_position: Math.floor(positionSec), p_duration: Math.floor(durationSec) }, fetchImpl);
+}
+
+// Apaga o registro da conta (item concluído ou removido do "continuar")
+async function ottProgressClear(cfg, token, key, fetchImpl) {
+  await ottCallRpc(cfg, "progress_clear", { p_token: token, p_key: key }, fetchImpl);
 }
 
 // TVs ativas da mesma conta
