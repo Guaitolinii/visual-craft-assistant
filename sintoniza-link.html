@@ -777,6 +777,46 @@
       text-decoration: none; cursor: pointer;
     }
 
+    /* Com os atalhos logo abaixo, o retângulo pontilhado encolhe para os três botões caberem sem rolar */
+    .empty-state.is-compact { min-height: 8rem; padding: 1.25rem; }
+
+    /* ATALHOS DO INÍCIO VAZIO (perfil novo): chamada + três botões grandes Canais / Filmes / Séries */
+    .home-cta { margin-top: 1.75rem; }
+    .home-cta-title { font-size: 1.2rem; font-weight: 600; }
+    .home-cta-lead { margin-top: .25rem; font-size: .9rem; color: var(--muted-fg); }
+    .home-cta-list { display: grid; gap: .75rem; margin-top: 1rem; }
+    .home-cta-btn {
+      display: flex; align-items: center; gap: .9rem; width: 100%; min-width: 0; min-height: 4.5rem;
+      padding: .75rem .9rem; text-align: left; font: inherit; color: var(--foreground); cursor: pointer;
+      background: var(--card); border: 1px solid var(--border); border-radius: .85rem;
+      box-shadow: 0 1px 0 oklch(0.65 0.1 75 / 8%), 0 6px 16px -10px oklch(0.14 0.018 65 / 22%);
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      transition: transform 160ms cubic-bezier(.22,1,.36,1), background 160ms, border-color 160ms, box-shadow 160ms;
+      animation: home-cta-in 420ms cubic-bezier(.22,1,.36,1) both;
+    }
+    .home-cta-btn:nth-child(2) { animation-delay: 70ms; }
+    .home-cta-btn:nth-child(3) { animation-delay: 140ms; }
+    .home-cta-btn:active, .home-cta-btn.is-pressed {
+      transform: scale(.97); background: var(--secondary); border-color: var(--primary);
+      box-shadow: 0 1px 0 oklch(0.65 0.1 75 / 8%);
+    }
+    .home-cta-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    @media (hover: hover) and (pointer: fine) { .home-cta-btn:hover { border-color: var(--primary); } }
+    .home-cta-ico {
+      flex: none; display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: .75rem;
+      background: var(--foreground); color: var(--primary);
+    }
+    .home-cta-ico svg { width: 1.45rem; height: 1.45rem; }
+    .home-cta-txt { display: grid; gap: .1rem; min-width: 0; flex: 1; }
+    .home-cta-txt strong { font-size: 1.05rem; font-weight: 600; line-height: 1.2; }
+    .home-cta-txt small { font-size: .8rem; color: var(--muted-fg); line-height: 1.25; }
+    .home-cta-go { flex: none; width: 1.25rem; height: 1.25rem; color: var(--primary); }
+    @keyframes home-cta-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .home-cta-btn { animation: none; transition: background 1ms, border-color 1ms; }
+      .home-cta-btn:active, .home-cta-btn.is-pressed { transform: none; }
+    }
+
     /* LOADING SKELETON */
     .skel-grid {
       display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem;
@@ -1742,6 +1782,28 @@
           <h3>Nada assistido ainda</h3>
           <p>Os canais, filmes e séries que você assistir aparecem aqui.</p>
         </div>
+        <!-- Perfil novo (nada assistido e nada favoritado): atalhos para as três abas principais -->
+        <section class="home-cta" id="home-cta" style="display:none" aria-labelledby="home-cta-title">
+          <h2 class="home-cta-title" id="home-cta-title">Comece por aqui</h2>
+          <p class="home-cta-lead">Escolha algo para assistir agora</p>
+          <div class="home-cta-list">
+            <button type="button" class="home-cta-btn" id="home-cta-channels" data-home-cta="channels">
+              <span class="home-cta-ico"><i data-lucide="monitor-play"></i></span>
+              <span class="home-cta-txt"><strong>Canais</strong><small>TV ao vivo, a qualquer hora</small></span>
+              <i data-lucide="chevron-right" class="home-cta-go"></i>
+            </button>
+            <button type="button" class="home-cta-btn" id="home-cta-movies" data-home-cta="movies">
+              <span class="home-cta-ico"><i data-lucide="film"></i></span>
+              <span class="home-cta-txt"><strong>Filmes</strong><small>Do lançamento ao clássico</small></span>
+              <i data-lucide="chevron-right" class="home-cta-go"></i>
+            </button>
+            <button type="button" class="home-cta-btn" id="home-cta-series" data-home-cta="series">
+              <span class="home-cta-ico"><i data-lucide="tv"></i></span>
+              <span class="home-cta-txt"><strong>Séries</strong><small>Temporadas para maratonar</small></span>
+              <i data-lucide="chevron-right" class="home-cta-go"></i>
+            </button>
+          </div>
+        </section>
       </div>
 
       <!-- CATALOG -->
@@ -6818,6 +6880,14 @@ function getUnifiedRecentItems(channelRecents, continueMap, limit) {
     .slice(0, limit);
 }
 
+// Início do perfil novo: sem nada assistido (continuar assistindo / canais recentes) e sem favoritos
+// (canais favoritos / Minha Lista). Pura: recebe contagens; valor ausente, negativo ou inválido conta como 0.
+function homeIsEmptyForProfile(c) {
+  const n = (v) => (isFinite(Number(v)) && Number(v) > 0) ? Number(v) : 0;
+  const x = c || {};
+  return n(x.continueCount) + n(x.recentChannels) + n(x.favChannels) + n(x.myListCount) === 0;
+}
+
 // Escapa texto do usuário antes de embuti-lo em innerHTML (usado na mensagem
 // "Nada encontrado para ..." da busca) - o app não tinha um helper genérico
 // de escape até agora, então este fica local ao uso.
@@ -7567,6 +7637,33 @@ function renderHomeLists() {
   document.getElementById("home-mylist").innerHTML = myListHtml;
   const hasRecents = renderHomeRecents();
   document.getElementById("home-empty").style.display = (myListHtml || hasRecents) ? "none" : "";
+  // Atalhos Canais/Filmes/Séries: só no perfil novo (nada assistido e nada favoritado); somem no re-render seguinte
+  const continueMap = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
+  const vazio = homeIsEmptyForProfile({
+    continueCount: Object.keys(continueMap).length,
+    recentChannels: (_state.recents || []).length,
+    favChannels: getChannels().filter(isFav).length,
+    myListCount: getMyListItems(loadMyList()).length
+  });
+  document.getElementById("home-cta").style.display = vazio ? "" : "none";
+  document.getElementById("home-empty").classList.toggle("is-compact", vazio);
+}
+
+// Liga os três atalhos do Início vazio: mesma ação da barra inferior (aba Canais / Filmes / Séries).
+function wireHomeCta() {
+  const acoes = {
+    channels: () => { setSection("Todos os canais"); window.scrollTo({ top: 0 }); },
+    movies: () => openVodSection("movies"),
+    series: () => openVodSection("series")
+  };
+  document.querySelectorAll("#home-cta [data-home-cta]").forEach(el => {
+    el.addEventListener("click", () => acoes[el.dataset.homeCta]());
+    // Toque: marca como pressionado (no iOS o :active só vale com ouvinte de toque)
+    const on = () => el.classList.add("is-pressed");
+    const off = () => el.classList.remove("is-pressed");
+    el.addEventListener("pointerdown", on);
+    ["pointerup", "pointercancel", "pointerleave"].forEach(ev => el.addEventListener(ev, off));
+  });
 }
 
 // Aplica o layout da aba ativa (ponto 9 da v6) na view de catálogo.
@@ -9090,6 +9187,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
   document.getElementById("sidebar-scrim").addEventListener("click", closeSidebar);
   setupEdgeSwipe(); // arrastar da borda esquerda abre o menu; para a esquerda fecha
+  wireHomeCta();    // atalhos Canais/Filmes/Séries do Início vazio
 
   // ── EPG: fecha o popover "a seguir" ao clicar fora, rolar ou apertar Esc ──
   document.addEventListener("click", e => {
