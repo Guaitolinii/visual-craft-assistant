@@ -28,7 +28,7 @@ const PURE_HELPER_NAMES = [
   "providerKeyForItem", "attachProviders", "groupItemsByProvider",
   "resolveInjectedDefault", "seedInjectedDefaults",
   "profKey", "profKeyFor", "activeProfileId", "activeProfileIsMain", "profileAdoptLegacy",
-  "favSyncParse", "favSyncMark", "favTipoDaChave",
+  "favSyncParse", "favSyncMark", "favTipoDaChave", "histSyncParse", "histSyncMark", "histResumeUrl",
   "edgeSwipeDecision", "homeIsEmptyForProfile",
   "webKeyAction", "webUsesPseudoFullscreen", "lsSet",
 ];

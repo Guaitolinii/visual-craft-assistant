@@ -3699,6 +3699,324 @@ async function ottFavMerge(cfg, token, perfil, itens, fetchImpl) {
   }
 }
 
+// ── Histórico do perfil na conta ("Continuar assistindo" e canais recentes; celular, web e TV veem o mesmo) ──
+// Só ids e metadados (nunca o link do stream: o app monta o link com as próprias credenciais).
+// Chaves: filme "f:<stream_id>", episódio "e:<episode_id>", canal "c:<nome normalizado>" (mesmas da TV).
+const OTT_HIST_MAX = 40;
+const OTT_HIST_TIPOS = ["filme", "episodio", "canal"];
+
+function ottHistKeyMovie(id) {
+  const s = String(id == null ? "" : id).trim();
+  return OTT_FAV_ID_RE.test(s) ? "f:" + s : null;
+}
+
+function ottHistKeyEpisode(id) {
+  const s = String(id == null ? "" : id).trim();
+  return OTT_FAV_ID_RE.test(s) ? "e:" + s : null;
+}
+
+function ottHistKeyChannel(nome) {
+  return ottFavKeyChannel(nome);
+}
+
+// Id do "continuar" do aparelho ("resume-vod-<stream_id>" / "resume-series-<episode_id>") -> chave da conta
+function ottHistKeyFromContinueId(id) {
+  const m = /^resume-(vod|series)-(.+)$/.exec(String(id == null ? "" : id));
+  if (!m) return null;
+  return m[1] === "vod" ? ottHistKeyMovie(m[2]) : ottHistKeyEpisode(m[2]);
+}
+
+// Terminou: faltam menos de 60 s ou já passou de 97% (canal e duração desconhecida nunca terminam)
+function ottHistFinished(it) {
+  if (!it || it.tipo === "canal") return false;
+  const pos = Number(it.pos) || 0;
+  const dur = Number(it.dur) || 0;
+  return dur > 0 && (pos >= dur - 60 || pos >= 0.97 * dur);
+}
+
+// Extensão do arquivo no fim do caminho do link ("" se não houver). Só serve para montar o link de novo; o link em si nunca sobe.
+function ottHistExtOf(url) {
+  const caminho = String(url == null ? "" : url).split(/[?#]/)[0].replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+  const m = /\.([a-z0-9]{1,5})$/i.exec(caminho.split("/").pop() || "");
+  return m ? m[1].toLowerCase() : "";
+}
+
+// "Série · S02E03" -> { temporada: 2, numero: 3 } (null se o título não tiver o código)
+function ottHistEpCode(titulo) {
+  const m = /·\s*S(\d+)E(\d+)\s*$/i.exec(String(titulo == null ? "" : titulo));
+  return m ? { temporada: Number(m[1]), numero: Number(m[2]) } : null;
+}
+
+// Título do episódio como o app mostra: "Série · S02E03"
+function ottHistEpTitle(serie, temporada, numero) {
+  const pad = (n) => String(Number(n) || 1).padStart(2, "0");
+  return serie + " · S" + pad(temporada) + "E" + pad(numero);
+}
+
+function ottHistIso(ms) {
+  const n = Number(ms);
+  return new Date(n > 0 ? n : 0).toISOString();
+}
+
+// Entradas do "continuar" do aparelho ({ "resume-vod-5": {id, type, title, cover, url, progress, duration, ts, vodItem} }) -> itens da conta.
+// Mais recentes primeiro, no máximo 40. O link (url) NUNCA entra: só ids, título, capa e a extensão do arquivo.
+function ottHistItemsFromContinue(mapa) {
+  const out = [];
+  const m = mapa && typeof mapa === "object" ? mapa : {};
+  const chaves = Object.keys(m);
+  for (let i = 0; i < chaves.length; i++) {
+    const e = m[chaves[i]];
+    if (!e || typeof e !== "object") continue;
+    const k = ottHistKeyFromContinueId(e.id != null ? e.id : chaves[i]);
+    if (!k) continue;
+    const serie = k.charAt(0) === "e";
+    if ((e.type === "series") !== serie) continue;
+    const v = e.vodItem && typeof e.vodItem === "object" ? e.vodItem : {};
+    const ext = ottClip(e.ext || (!serie && v.container_extension) || ottHistExtOf(e.url), 5).toLowerCase();
+    const meta = {};
+    if (/^[a-z0-9]{1,5}$/.test(ext)) meta.ext = ext;
+    const capaSerie = ottFavCover(v.cover || v.stream_icon);
+    if (serie) {
+      const sid = String(v.series_id == null ? "" : v.series_id).trim();
+      if (OTT_FAV_ID_RE.test(sid)) meta.serieId = sid;
+      const sTitulo = ottClip(v.name || v.title, 120);
+      if (sTitulo) meta.serieTitulo = sTitulo;
+      if (capaSerie) meta.serieCapa = capaSerie;
+      const cod = ottHistEpCode(e.title);
+      if (cod) { meta.temporada = cod.temporada; meta.numero = cod.numero; }
+    }
+    const ano = ottYearOf(v);
+    if (ano > 0) meta.ano = ano;
+    out.push({
+      ts: Number(e.ts) || 0,
+      it: {
+        k, tipo: serie ? "episodio" : "filme",
+        titulo: ottClip(e.title, 120),
+        capa: ottFavCover(e.cover || capaSerie),
+        meta,
+        pos: Math.max(0, Math.floor(Number(e.progress) || 0)),
+        dur: Math.max(0, Math.floor(Number(e.duration) || 0)),
+        em: ottHistIso(e.ts),
+      },
+    });
+  }
+  out.sort((a, b) => b.ts - a.ts);
+  return out.slice(0, OTT_HIST_MAX).map((x) => x.it);
+}
+
+// Canais vistos recentemente ([{ nome, grupo, ts }], mais recentes primeiro) -> itens da conta
+function ottHistItemsFromChannels(recentes) {
+  const out = [];
+  const visto = {};
+  const lista = Array.isArray(recentes) ? recentes : [];
+  for (let i = 0; i < lista.length; i++) {
+    const r = lista[i];
+    if (!r || typeof r.nome !== "string") continue;
+    const k = ottHistKeyChannel(r.nome);
+    if (!k || visto[k]) continue;
+    visto[k] = true;
+    const meta = {};
+    const grupo = ottClip(r.grupo, 80);
+    if (grupo) meta.grupo = grupo;
+    out.push({ k, tipo: "canal", titulo: ottClip(r.nome, 120), capa: "", meta, pos: 0, dur: 0, em: ottHistIso(r.ts) });
+  }
+  return out.slice(0, OTT_HIST_MAX);
+}
+
+// Itens da conta -> o que o aparelho precisa gravar. O link NÃO é montado aqui (isso é com o script principal, que tem as credenciais):
+// { continuar: [entradas do "continuar"], canais: [{ nome, grupo, ts }] }. Terminados e itens inválidos ficam de fora.
+function ottHistLocalFromItems(itens) {
+  const continuar = [];
+  const canais = [];
+  const lista = Array.isArray(itens) ? itens : [];
+  for (let i = 0; i < lista.length; i++) {
+    const it = lista[i];
+    if (!it || typeof it.k !== "string" || it.k.length < 3 || it.k.charAt(1) !== ":") continue;
+    const id = it.k.slice(2);
+    const ts = ottParseIsoMs(ottStr(it.em));
+    const meta = it.meta && typeof it.meta === "object" ? it.meta : {};
+    const titulo = String(it.titulo || "");
+    if (it.tipo === "canal" && it.k.charAt(0) === "c") {
+      if (titulo.trim()) canais.push({ nome: titulo, grupo: ottStr(meta.grupo), ts });
+      continue;
+    }
+    const filme = it.tipo === "filme" && it.k.charAt(0) === "f";
+    const episodio = it.tipo === "episodio" && it.k.charAt(0) === "e";
+    if ((!filme && !episodio) || !OTT_FAV_ID_RE.test(id) || ottHistFinished(it)) continue;
+    const capa = ottFavCover(it.capa);
+    const ext = /^[a-z0-9]{1,5}$/i.test(ottStr(meta.ext)) ? meta.ext.toLowerCase() : "";
+    const e = {
+      id: (filme ? "resume-vod-" : "resume-series-") + id, type: filme ? "vod" : "series",
+      title: titulo, cover: capa,
+      progress: Math.max(0, Math.floor(Number(it.pos) || 0)), duration: Math.max(0, Math.floor(Number(it.dur) || 0)),
+      ts, ext, vodItem: null,
+    };
+    if (filme) {
+      const v = { stream_id: id, name: titulo };
+      if (capa) v.stream_icon = capa;
+      if (ext) v.container_extension = ext;
+      if (Number(meta.ano) > 0) v.year = String(Number(meta.ano));
+      e.vodItem = v;
+    } else {
+      const sid = String(meta.serieId == null ? "" : meta.serieId).trim();
+      const sTitulo = ottClip(meta.serieTitulo, 120);
+      if (sTitulo && Number(meta.temporada) >= 0 && Number(meta.numero) >= 0 && meta.temporada != null && meta.numero != null) {
+        e.title = ottHistEpTitle(sTitulo, meta.temporada, meta.numero);
+      }
+      if (OTT_FAV_ID_RE.test(sid)) {
+        const serieCapa = ottFavCover(meta.serieCapa);
+        const v = { series_id: sid, name: sTitulo || titulo };
+        if (serieCapa || capa) v.cover = serieCapa || capa;
+        e.vodItem = v;
+      }
+      if (!e.cover) e.cover = ottFavCover(meta.serieCapa);
+    }
+    continuar.push(e);
+  }
+  return { continuar, canais };
+}
+
+// Regra de sincronização (a mesma da TV). Primeira vez: união (o que só existe no aparelho sobe).
+// Depois: a conta manda; só os pendentes (ainda não enviados) sobrevivem do aparelho. Conflito do mesmo item: vale o mais recente (em).
+// "removidos" = remoções que ainda não chegaram à conta: saem do resultado e `remover` diz o que apagar lá. Máximo de 40 itens.
+// enviar: do mais antigo ao mais novo (a conta carimba a hora do envio; assim a ordem se mantém).
+function ottHistPlan(i) {
+  const pend = {};
+  const rem = {};
+  for (let a = 0; a < (i.pendentes || []).length; a++) pend[i.pendentes[a]] = true;
+  for (let a = 0; a < (i.removidos || []).length; a++) rem[i.removidos[a]] = true;
+  const cand = [];
+  const naConta = {};
+  const remover = [];
+  for (let a = 0; a < i.conta.length; a++) {
+    const it = i.conta[a];
+    naConta[it.k] = it;
+    if (rem[it.k]) { remover.push(it.k); continue; }
+    cand.push({ it, local: false, ms: ottParseIsoMs(ottStr(it.em)) });
+  }
+  for (let a = 0; a < i.local.length; a++) {
+    const it = i.local[a];
+    if (rem[it.k]) continue;
+    const ms = ottParseIsoMs(ottStr(it.em));
+    const c = naConta[it.k];
+    if (!c) {
+      if (i.primeira || pend[it.k]) cand.push({ it, local: true, ms });
+    } else if ((i.primeira || pend[it.k]) && ms > ottParseIsoMs(ottStr(c.em))) {
+      for (let b = 0; b < cand.length; b++) if (cand[b].it.k === it.k) { cand[b] = { it, local: true, ms }; break; }
+    }
+  }
+  cand.sort((x, y) => y.ms - x.ms);
+  const ficam = cand.slice(0, OTT_HIST_MAX);
+  const enviar = ficam.filter((c) => c.local).sort((x, y) => x.ms - y.ms).map((c) => c.it);
+  return { resultado: ficam.map((c) => c.it), enviar, remover };
+}
+
+// Aplica o resultado no "continuar" do aparelho sem mexer no que já está certo: mantém as entradas que já existem (link, item completo),
+// só atualiza o minuto quando a conta é mais nova, acrescenta o que veio da conta e tira o que saiu ou terminou.
+// "manter" = chaves pendentes (mudaram aqui e ainda não foram enviadas): nunca saem. Entradas antigas sem chave ficam como estão.
+function ottHistApplyContinue(atual, resultado, manter) {
+  const base = atual && typeof atual === "object" ? atual : {};
+  const res = Array.isArray(resultado) ? resultado : [];
+  const seguras = {};
+  for (let i = 0; i < (manter || []).length; i++) seguras[manter[i]] = true;
+  const novo = ottHistLocalFromItems(res);
+  const quer = {};
+  const novas = {};
+  for (let i = 0; i < novo.continuar.length; i++) novas[novo.continuar[i].id] = novo.continuar[i];
+  for (let i = 0; i < res.length; i++) {
+    const k = res[i] && res[i].k;
+    if (typeof k === "string" && k.charAt(0) !== "c" && k.charAt(1) === ":") quer[(k.charAt(0) === "f" ? "resume-vod-" : "resume-series-") + k.slice(2)] = true;
+  }
+  const map = {};
+  const chaves = Object.keys(base);
+  for (let i = 0; i < chaves.length; i++) {
+    const e = base[chaves[i]];
+    const k = e && ottHistKeyFromContinueId(e.id != null ? e.id : chaves[i]);
+    if (!k) { map[chaves[i]] = e; continue; }
+    const id = chaves[i];
+    if (seguras[k]) { map[id] = e; continue; }
+    if (!quer[id]) continue;          // saiu da conta (ou foi removido em outro aparelho)
+    const n = novas[id];
+    if (!n) continue;                 // terminou: não é mais "continuar"
+    if (n.ts > (Number(e.ts) || 0)) { map[id] = Object.assign({}, e, { progress: n.progress, duration: n.duration, ts: n.ts }); }
+    else map[id] = e;
+  }
+  for (let i = 0; i < novo.continuar.length; i++) if (!map[novo.continuar[i].id]) map[novo.continuar[i].id] = novo.continuar[i];
+  return { map, mudou: JSON.stringify(map) !== JSON.stringify(base) };
+}
+
+// Aplica os canais do resultado nos recentes do aparelho ([{ id, type: "channel", ts }]). `canais` = [{ id, name }] da lista carregada agora.
+// A conta manda (mantendo os pendentes); recente cujo canal não está nesta lista não é tocado; canal da conta que não existe na lista é ignorado.
+function ottHistApplyChannels(atuais, resultado, canais, manter) {
+  const base = Array.isArray(atuais) ? atuais : [];
+  const seguras = {};
+  for (let i = 0; i < (manter || []).length; i++) seguras[manter[i]] = true;
+  const porId = {};
+  const porChave = {};
+  const lista = Array.isArray(canais) ? canais : [];
+  for (let i = 0; i < lista.length; i++) {
+    const k = ottHistKeyChannel(lista[i].name);
+    porId[lista[i].id] = k;
+    if (k && !porChave[k]) porChave[k] = lista[i];
+  }
+  const quer = {};
+  const res = Array.isArray(resultado) ? resultado : [];
+  for (let i = 0; i < res.length; i++) if (res[i] && res[i].tipo === "canal" && typeof res[i].k === "string") quer[res[i].k] = ottParseIsoMs(ottStr(res[i].em));
+  const out = [];
+  const tem = {};
+  for (let i = 0; i < base.length; i++) {
+    const r = base[i];
+    const k = r ? porId[r.id] : null;
+    if (!k) { out.push(r); continue; }
+    if (quer[k] !== undefined || seguras[k]) { out.push(r); tem[k] = true; }
+  }
+  const nomes = Object.keys(quer);
+  for (let i = 0; i < nomes.length; i++) {
+    const ch = porChave[nomes[i]];
+    if (ch && !tem[nomes[i]]) out.push({ id: ch.id, type: "channel", ts: quer[nomes[i]] });
+  }
+  out.sort((a, b) => ((b && b.ts) || 0) - ((a && a.ts) || 0));
+  const recents = out.slice(0, 20);
+  return { recents, mudou: JSON.stringify(recents) !== JSON.stringify(base) };
+}
+
+// Linha da conta -> item normalizado (null se a chave ou o tipo não servirem)
+function ottHistNormalize(r) {
+  if (!r || typeof r.k !== "string" || !/^[fec]:.{1,120}$/.test(r.k) || OTT_HIST_TIPOS.indexOf(r.tipo) < 0) return null;
+  let meta = r.meta;
+  if (typeof meta === "string") { try { meta = JSON.parse(meta); } catch (e) { meta = null; } }
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) meta = {};
+  const inteiro = (v) => Math.max(0, Math.floor(Number(v) || 0));
+  return { k: r.k, tipo: r.tipo, titulo: ottClip(r.titulo, 120), capa: ottFavCover(r.capa), meta, pos: inteiro(r.pos), dur: inteiro(r.dur), em: ottStr(r.em) };
+}
+
+// Lê o histórico da conta (mais recentes primeiro). Resposta que não seja "ok" vira erro (nunca lista vazia: a conta manda, e uma lista vazia por engano apagaria o aparelho).
+async function ottHistList(cfg, token, perfil, fetchImpl) {
+  const data = await ottCallRpc(cfg, "hist_list", { p_token: token, p_perfil: perfil }, fetchImpl);
+  if (!data || data.status !== "ok" || !Array.isArray(data.itens)) throw new Error("Não foi possível ler o histórico da conta.");
+  const out = [];
+  for (let i = 0; i < data.itens.length; i++) {
+    const it = ottHistNormalize(data.itens[i]);
+    if (it) out.push(it);
+  }
+  return out;
+}
+
+// Grava (ou atualiza) um item na conta
+async function ottHistPut(cfg, token, perfil, it, fetchImpl) {
+  const data = await ottCallRpc(cfg, "hist_put", {
+    p_token: token, p_perfil: perfil, p_chave: it.k, p_tipo: it.tipo, p_titulo: it.titulo, p_capa: it.capa,
+    p_meta: it.meta || {}, p_pos: Math.max(0, Math.floor(Number(it.pos) || 0)), p_dur: Math.max(0, Math.floor(Number(it.dur) || 0)),
+  }, fetchImpl);
+  if (!data || data.status !== "ok") throw new Error("Não foi possível salvar o histórico na conta.");
+}
+
+// Tira um item da conta
+async function ottHistRemove(cfg, token, perfil, chave, fetchImpl) {
+  const data = await ottCallRpc(cfg, "hist_remove", { p_token: token, p_perfil: perfil, p_chave: chave }, fetchImpl);
+  if (!data || data.status !== "ok") throw new Error("Não foi possível remover o item do histórico da conta.");
+}
+
 // ── Pré-carregamento em fatias (mesmo comportamento do createWarmer da TV) ──
 // Roda as etapas uma por fatia agendada (idle/setTimeout), nunca tudo de uma vez: não pesa na navegação.
 // Falha numa etapa não derruba as outras; cancelar para antes da próxima etapa; iniciar duas vezes não repete o trabalho.
@@ -4113,7 +4431,7 @@ function filterMyListEntries(entries, query) {
 const PROFILE_ACTIVE_KEY = "sint_profile_active";
 const PROFILES_CACHE_KEY = "sint_profiles";
 const PROFILES_MIGRATED_KEY = "sint_profiles_migrated";
-const PER_PROFILE_BASES = ["sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync"];
+const PER_PROFILE_BASES = ["sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync"];
 
 // Chave de dados no perfil dado (nulo = chave antiga). Só as 5 bases acima são por perfil.
 // Ex.: ("sint_fav", "3f2b8c1e-...") -> "sint_p3f2b8c1e_fav"
@@ -4225,6 +4543,7 @@ function selectChannel(ch, autoPlay = true) {
   const recents = [{ id: ch.id, type: "channel", ts: now }, ..._state.recents.filter(r => r.id !== ch.id)].slice(0, 20);
   setState({ selected: ch, playing: false, recents });
   lsSet(profKey("sint_recents"), JSON.stringify(recents));
+  histPush(ottHistItemsFromChannels([{ nome: ch.name, grupo: ch.category, ts: now }])[0], true); // conta: canal visto agora
   pendingResumeAt = 0; // canal ao vivo nunca retoma de um ponto salvo
   _resumeLookup = null;
   stopStream();
@@ -4371,6 +4690,193 @@ function favSyncStart() {
   setInterval(() => { if (document.visibilityState === "visible") syncFavorites(); }, FAVSYNC_EVERY_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - _favsync.last > 15000) syncFavorites();
+  });
+}
+
+// ─── Histórico do perfil na conta ("Continuar assistindo" e canais recentes; celular, web e TV veem o mesmo) ───
+// Local primeiro: sint_continue e sint_recents (por perfil) continuam sendo o que a tela mostra; a conta é sincronizada por cima, como nos favoritos.
+// A conta guarda só ids e metadados (nunca o link): o link do filme/episódio é montado aqui com as credenciais Xtream de agora.
+// Estado por perfil (sint_p<id8>_histsync): { feito, pendentes: [chaves alteradas aqui e ainda não enviadas], remover: [chaves removidas aqui e ainda não removidas na conta] }.
+// "feito" ausente = primeira vez deste perfil neste aparelho (união); depois a conta manda. Sem conta, sem perfil ou sem rede vale o que está no aparelho.
+const HISTSYNC_KEY = "sint_histsync";
+const HISTSYNC_EVERY_MS = 2 * 60 * 1000;
+const HIST_PUT_EVERY_MS = 20 * 1000;
+const _histsync = { busy: false, wired: false, last: 0, lastPut: {} };
+
+// Mesmo formato do estado dos favoritos (tolera lixo; só listas de textos)
+function histSyncParse(raw) { return favSyncParse(raw); }
+function histSyncMark(st, chave, on, enviado) { return favSyncMark(st, chave, on, enviado); }
+
+function histSyncLoad(perfilId) {
+  try { return histSyncParse(localStorage.getItem(profKeyFor(HISTSYNC_KEY, perfilId))); } catch (e) { return histSyncParse(null); }
+}
+
+function histSyncSave(perfilId, st) {
+  try { localStorage.setItem(profKeyFor(HISTSYNC_KEY, perfilId), JSON.stringify(st)); } catch (e) { /* sem espaço: tenta de novo depois */ }
+}
+
+// Link de reprodução de uma entrada do "Continuar assistindo": o que ela já tem (assistida neste aparelho) ou, se veio da conta,
+// o montado agora com as credenciais Xtream atuais e a extensão guardada. Vazio se não houver como montar.
+function histResumeUrl(item, creds) {
+  if (!item) return "";
+  if (item.url) return item.url;
+  if (!creds) return "";
+  const m = /^resume-(vod|series)-([A-Za-z0-9_-]{1,50})$/.exec(String(item.id || ""));
+  if (!m) return "";
+  const v = item.vodItem || {};
+  if (m[1] === "series") return buildSeriesEpisodeUrl(creds, m[2], item.ext || undefined);
+  return buildVodStreamUrl(creds, m[2], item.ext || v.container_extension);
+}
+
+// O "continuar" do perfil ativo neste aparelho ({ "resume-vod-5": {...} })
+function histReadContinue() {
+  try { return JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}") || {}; } catch (e) { return {}; }
+}
+
+// Canais vistos recentemente ([{ nome, grupo, ts }]); recente cujo canal não está na lista carregada fica de fora
+function histRecentChannels() {
+  const lista = getChannels();
+  const out = [];
+  (_state.recents || []).forEach(r => {
+    if (!r || r.type !== "channel") return;
+    const ch = lista.find(c => c.id === r.id);
+    if (ch && ch.name) out.push({ nome: ch.name, grupo: ch.category, ts: r.ts });
+  });
+  return out;
+}
+
+// O que este aparelho tem hoje, no formato da conta (canais só com a lista carregada: sem ela os ids dos recentes não têm nome)
+function histLocalItems() {
+  const itens = ottHistItemsFromContinue(histReadContinue());
+  if (_state.channels !== null) ottHistItemsFromChannels(histRecentChannels()).forEach(i => itens.push(i));
+  return itens;
+}
+
+// Filme/episódio ou canal alterado aqui: a chave fica pendente até a conta confirmar (se o app fechar no meio, a próxima sincronização envia).
+// Filme/episódio durante a reprodução: no máximo a cada 20 s, a não ser com force (pausa, saída, canal).
+function histPush(item, force) {
+  const ctx = profileCtx();
+  const pid = activeProfileId();
+  if (!item || !ctx || !ottPerfilIdOk(pid)) return;
+  const st = histSyncLoad(pid);
+  if (st.pendentes.indexOf(item.k) < 0 || st.remover.indexOf(item.k) >= 0) histSyncSave(pid, histSyncMark(st, item.k, true, false));
+  if (!force && item.tipo !== "canal" && Date.now() - (_histsync.lastPut[item.k] || 0) < HIST_PUT_EVERY_MS) return;
+  _histsync.lastPut[item.k] = Date.now();
+  ottHistPut(ctx.cfg, ctx.token, pid, item).then(
+    () => {
+      const s = histSyncLoad(pid);
+      if (s.remover.indexOf(item.k) < 0) histSyncSave(pid, histSyncMark(s, item.k, true, true)); // se saiu da lista enquanto enviava, a remoção continua valendo
+    },
+    () => { /* sem rede: continua pendente */ }
+  );
+}
+
+// Item tocando agora (filme/episódio) com o minuto de agora, vindo da entrada que o "Continuar assistindo" já guardou
+function histPutCurrent(force) {
+  try {
+    const sel = _state.selected;
+    if (!sel || !sel.isVod || !sel.continueId) return;
+    const e = histReadContinue()[sel.continueId];
+    if (!e) return; // só entra no histórico depois dos primeiros 10 s (saveContinueWatching) e some quando termina
+    const v = document.getElementById("player-video");
+    const entry = Object.assign({}, e);
+    if (v && isFinite(v.duration) && v.duration > 0 && v.currentTime >= 10) { entry.progress = v.currentTime; entry.duration = v.duration; entry.ts = Date.now(); }
+    const mapa = {};
+    mapa[sel.continueId] = entry;
+    histPush(ottHistItemsFromContinue(mapa)[0], force);
+  } catch (e) { /* o histórico na conta nunca atrapalha a reprodução */ }
+}
+
+// Removeu do "Continuar assistindo" / dos recentes (ou terminou): sai da conta também. Se não chegar, fica para remover na próxima sincronização.
+function histDrop(chave) {
+  const ctx = profileCtx();
+  const pid = activeProfileId();
+  if (!chave || !ctx || !ottPerfilIdOk(pid)) return;
+  histSyncSave(pid, histSyncMark(histSyncLoad(pid), chave, false, false));
+  ottHistRemove(ctx.cfg, ctx.token, pid, chave).then(
+    () => {
+      const s = histSyncLoad(pid);
+      if (s.pendentes.indexOf(chave) < 0) histSyncSave(pid, histSyncMark(s, chave, false, true)); // se voltou a ser assistido enquanto removia, o envio continua valendo
+    },
+    () => { /* sem rede: continua para remover */ }
+  );
+}
+
+// Canais recentes só sincronizam com a lista de canais carregada (como os favoritos fixos, espera até 45 s por ela)
+function histSyncReady() {
+  if (_state.channels !== null) return true;
+  try { if (!localStorage.getItem(LS.URL)) return true; } catch (e) { return true; }
+  return typeof performance !== "undefined" && performance.now() > 45000;
+}
+
+// Puxa o histórico da conta e deixa este aparelho igual a ela (primeira vez: união). Falha de rede ou conta antiga = ignora.
+async function syncHistory() {
+  if (_histsync.busy) return;
+  const ctx = profileCtx();
+  const pid = activeProfileId();
+  if (!ctx || !ottPerfilIdOk(pid) || !_profile.chosen || !histSyncReady()) return; // só depois de escolher o perfil
+  _histsync.busy = true;
+  _histsync.last = Date.now();
+  try {
+    const st = histSyncLoad(pid);
+    // 1) a lista da conta (resposta que não seja "ok" lança: nunca apaga o aparelho por engano)
+    const conta = await ottHistList(ctx.cfg, ctx.token, pid);
+    // 2) plano: primeira vez = união; depois a conta manda, mantendo só o que ainda não foi enviado
+    const local = histLocalItems();
+    const existe = {};
+    local.forEach(i => { existe[i.k] = true; });
+    const plano = ottHistPlan({ primeira: !st.feito, local, conta, pendentes: st.pendentes.filter(k => existe[k]), removidos: st.remover });
+    // 3) remoções que não tinham chegado à conta
+    const aindaRemover = [];
+    for (const k of plano.remover) {
+      try { await ottHistRemove(ctx.cfg, ctx.token, pid, k); }
+      catch (e) { aindaRemover.push(k); }
+    }
+    // 4) o que só existe aqui (ou mudou aqui) sobe, do mais antigo ao mais novo
+    const enviados = {};
+    for (const it of plano.enviar) {
+      await ottHistPut(ctx.cfg, ctx.token, pid, it);
+      enviados[it.k] = true;
+    }
+    // 5) trocou de perfil enquanto esperava a rede: não aplica no perfil errado
+    if (activeProfileId() !== pid) return;
+    // O usuário pode ter mexido durante a espera: pendências e remoções novas continuam valendo
+    const cur = histSyncLoad(pid);
+    const remover = cur.remover.filter(k => st.remover.indexOf(k) < 0).concat(aindaRemover);
+    const pendentes = cur.pendentes.filter(k => !enviados[k] && (existe[k] || st.pendentes.indexOf(k) < 0));
+    histSyncSave(pid, { feito: true, pendentes, remover });
+    const resultado = plano.resultado.filter(i => remover.indexOf(i.k) < 0);
+    // 6) aplica só o que mudou
+    const rc = ottHistApplyContinue(histReadContinue(), resultado, pendentes);
+    if (rc.mudou) lsSet(profKey(CONTINUE_KEY), JSON.stringify(rc.map));
+    let mudouCanais = false;
+    if (_state.channels !== null) {
+      const rr = ottHistApplyChannels(_state.recents, resultado, _state.channels.map(c => ({ id: c.id, name: c.name })), pendentes);
+      if (rr.mudou) {
+        mudouCanais = true;
+        lsSet(profKey("sint_recents"), JSON.stringify(rr.recents));
+        setState({ recents: rr.recents }, true);
+      }
+    }
+    if (rc.mudou || mudouCanais) {
+      refreshPersonalLists();
+      if (mudouCanais && _state.section === "catalog" && _state.active === "Recentes") renderCatalog();
+    }
+  } catch (e) {
+    /* sem rede, conta indisponível ou servidor ainda sem o histórico: vale o que está no aparelho */
+  } finally {
+    _histsync.busy = false;
+  }
+}
+
+// Depois de definido o perfil: sincroniza já e passa a sincronizar ao voltar ao app e a cada 2 minutos
+function histSyncStart() {
+  syncHistory();
+  if (_histsync.wired) return;
+  _histsync.wired = true;
+  setInterval(() => { if (document.visibilityState === "visible") syncHistory(); }, HISTSYNC_EVERY_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - _histsync.last > 15000) syncHistory();
   });
 }
 
@@ -4598,6 +5104,7 @@ async function loadPlaylistFromUrl(url) {
     setState({ channels, categories: cats, loadingPlaylist: false });
     ensureEssentialFavorites();
     syncFavorites(); // a 1ª sincronização do perfil principal espera os canais (favoritos fixos entram na união)
+    syncHistory(); // idem: os canais recentes esperam a lista
 
     // Nada de canal automático: mantém a escolha só se ela ainda existir
     setState({ selected: keepSelectionIfPresent(_state.selected, channels) }, true);
@@ -5217,6 +5724,7 @@ function stopWatchdog() {
 // resume with a clean slate when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") pushProgressToAccount(true); // sai do app: grava o minuto na conta
+  if (document.visibilityState === "hidden") histPutCurrent(true); // e o item no histórico da conta
   const action = getVisibilityAction(document.visibilityState);
   if (action === "SUSPEND_WATCHDOG") {
     stopWatchdog();
@@ -7425,6 +7933,12 @@ function saveContinueWatching(entry) {
   const map = JSON.parse(localStorage.getItem(profKey(CONTINUE_KEY)) || "{}");
   map[entry.id] = { ...entry, ts: Date.now() };
   lsSet(profKey(CONTINUE_KEY), JSON.stringify(map));
+  // Conta: o item (só ids e metadados, nunca o link) no máximo a cada 20 s durante a reprodução
+  try {
+    const so = {};
+    so[entry.id] = map[entry.id];
+    histPush(ottHistItemsFromContinue(so)[0], false);
+  } catch (e) { /* o histórico na conta nunca atrapalha a reprodução */ }
 }
 
 function removeContinueWatching(id) {
@@ -7435,6 +7949,7 @@ function removeContinueWatching(id) {
     lsSet(profKey(CONTINUE_KEY), JSON.stringify(map));
     // Terminou ou foi removido: o minuto também sai da conta (o id é "resume-<tipo>-<id do provedor>")
     clearProgressOnAccount(entry.type === "series" ? "episode" : "vod", String(id).replace(/^resume-(vod|series)-/, ""));
+    histDrop(ottHistKeyFromContinueId(id)); // e o item sai do histórico da conta (TV e navegador também)
   }
 }
 
@@ -7593,6 +8108,7 @@ function closeCardActions() {
 function closeMiniPlayer() {
   // Sai do PiP do navegador, se estiver ativo, antes de parar o vídeo
   try { if (document.pictureInPictureElement) document.exitPictureInPicture(); } catch (e) {}
+  histPutCurrent(true); // saindo: grava o minuto exato no histórico da conta
   stopStream();
   setState({ selected: null, playing: false });
 }
@@ -7610,6 +8126,7 @@ function runCardAction(actionId) {
       const recents = _state.recents.filter(r => r.id !== ctx.channelId);
       lsSet(profKey("sint_recents"), JSON.stringify(recents));
       setState({ recents });
+      histDrop(ottHistKeyChannel(ctx.title)); // sai do histórico da conta também
     } else if (ctx.recentId) {
       removeContinueWatching(ctx.recentId);
       refreshPersonalLists();
@@ -9430,6 +9947,7 @@ function profileChoose(p) {
   profileCloseGate();
   renderProfileUi();
   favSyncStart(); // favoritos do perfil: puxa da conta agora, ao voltar ao app e a cada 2 min
+  histSyncStart(); // histórico (continuar assistindo e canais recentes): idem
 }
 
 // Abertura com 2+ perfis já conhecidos: desenha o seletor a partir do cache logo no início (o <head> já o põe na tela),
@@ -10061,7 +10579,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = _vodCardsIndex[card.dataset.vodKey];
     if (!item) return;
     if (card.dataset.vodResume === "1") {
-      playVodSelection(item.url, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null, castInfo: castInfoFromResume(item) });
+      // Item que veio da conta e nunca foi assistido aqui não tem link: monta com as credenciais Xtream de agora
+      const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
+      const resumeUrl = histResumeUrl(item, creds);
+      if (!resumeUrl) { showToast("Configure suas credenciais Xtream em Configurações para continuar este título."); return; }
+      playVodSelection(resumeUrl, { id: item.id, contType: item.type, title: item.title, cover: item.cover, continueId: item.id, resumeAt: item.progress, vodItem: item.vodItem || null, castInfo: castInfoFromResume(item) });
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
@@ -10352,6 +10874,7 @@ document.addEventListener("DOMContentLoaded", () => {
     userPausedVod = true;
     setPlayPauseIcons(false);
     pushProgressToAccount(true); // pausou: grava o minuto na conta
+    histPutCurrent(true); // e o item no histórico da conta
   });
   document.getElementById("player-video").addEventListener("play", () => {
     if (!_state.selected || !_state.selected.isVod) return;

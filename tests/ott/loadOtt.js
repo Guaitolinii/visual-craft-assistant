@@ -24,6 +24,8 @@ export function loadOtt() {
         ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
         ottNormName, ottFavKeyChannel, ottFavKeyVod, ottFavKeySeries, ottFavItemsFromChannels, ottFavItemsFromMyList,
         ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge, createWarmer,
+        ottHistKeyMovie, ottHistKeyEpisode, ottHistKeyChannel, ottHistKeyFromContinueId, ottHistFinished, ottHistItemsFromContinue,
+        ottHistItemsFromChannels, ottHistLocalFromItems, ottHistPlan, ottHistApplyContinue, ottHistApplyChannels, ottHistList, ottHistPut, ottHistRemove,
         OTT_WEB_KEYS, ottIsWebPath, ottWebInstallId, ottWebParseSession, ottWebNeedsRefresh, ottWebRefresh, ottWebRegister, ottWebLogout,
         ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid };`,
     ctx
