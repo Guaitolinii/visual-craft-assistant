@@ -3340,6 +3340,186 @@ async function ottPerfilDelete(cfg, token, id, fetchImpl) {
   await ottCallRpc(cfg, "perfil_delete", { p_token: token, p_id: id }, fetchImpl);
 }
 
+// ── Favoritos do perfil na conta (celular e TV veem os mesmos; só ids e nomes, nunca links) ──
+// Chaves: canal "c:<nome normalizado>", filme "f:<stream_id>", série "s:<series_id>" (iguais às da TV)
+const OTT_FAV_ID_RE = /^[A-Za-z0-9_-]{1,50}$/;
+
+// Minúsculas, sem acento, espaços colapsados, até 120 caracteres
+function ottNormName(s) {
+  return String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function ottFavKeyChannel(nome) {
+  const n = ottNormName(nome);
+  return n ? "c:" + n : null;
+}
+
+function ottFavKeyVod(id) {
+  const s = String(id == null ? "" : id).trim();
+  return OTT_FAV_ID_RE.test(s) ? "f:" + s : null;
+}
+
+function ottFavKeySeries(id) {
+  const s = String(id == null ? "" : id).trim();
+  return OTT_FAV_ID_RE.test(s) ? "s:" + s : null;
+}
+
+// Capa só se for http(s) e curta; senão vazio
+function ottFavCover(url) {
+  const s = String(url == null ? "" : url).trim();
+  return /^https?:\/\//i.test(s) && s.length <= 300 ? s : "";
+}
+
+// Nomes dos canais favoritos -> itens da conta (nome em branco fica de fora)
+function ottFavItemsFromChannels(nomes) {
+  const out = [];
+  const list = Array.isArray(nomes) ? nomes : [];
+  for (let i = 0; i < list.length; i++) {
+    if (typeof list[i] !== "string") continue;
+    const k = ottFavKeyChannel(list[i]);
+    if (k) out.push({ k, tipo: "canal", titulo: ottClip(list[i], 120), capa: "", ano: 0 });
+  }
+  return out;
+}
+
+// Primeiro valor preenchido entre os dois candidatos
+function ottFavFirst(a, b) {
+  return a != null && String(a).trim() !== "" ? a : b;
+}
+
+// Entradas da "Minha lista" ({type:"vod"|"series", id, title, cover, item}) -> itens da conta
+function ottFavItemsFromMyList(entradas) {
+  const out = [];
+  const list = Array.isArray(entradas) ? entradas : [];
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
+    if (!e) continue;
+    const item = e.item || {};
+    const serie = e.type === "series";
+    if (!serie && e.type !== "vod") continue;
+    const id = serie ? ottFavFirst(item.series_id, e.id) : ottFavFirst(item.stream_id, e.id);
+    const k = serie ? ottFavKeySeries(id) : ottFavKeyVod(id);
+    if (!k) continue;
+    out.push({
+      k, tipo: serie ? "serie" : "filme",
+      titulo: ottClip(ottFavFirst(e.title, ottFavFirst(item.name, item.title)), 120),
+      capa: ottFavCover(ottFavFirst(e.cover, ottFavFirst(item.stream_icon, item.cover))),
+      ano: ottYearOf(item),
+    });
+  }
+  return out;
+}
+
+// Itens da conta -> { canais: [nomes], minhaLista: [entradas mínimas] }. O ts segue a ordem da conta (mais recente primeiro).
+function ottFavLocalFromItems(itens, nowMs) {
+  const canais = [];
+  const minhaLista = [];
+  const base = Number(nowMs) > 0 ? Number(nowMs) : Date.now();
+  const list = Array.isArray(itens) ? itens : [];
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    if (!it || typeof it.k !== "string" || it.k.length < 3 || it.k.charAt(1) !== ":") continue;
+    const id = it.k.slice(2);
+    const titulo = String(it.titulo || "");
+    if (it.tipo === "canal" && it.k.charAt(0) === "c") {
+      if (titulo.trim()) canais.push(titulo);
+    } else if ((it.tipo === "filme" && it.k.charAt(0) === "f") || (it.tipo === "serie" && it.k.charAt(0) === "s")) {
+      if (!OTT_FAV_ID_RE.test(id)) continue;
+      const serie = it.tipo === "serie";
+      const capa = ottFavCover(it.capa);
+      const mini = serie ? { series_id: id, name: titulo, cover: capa } : { stream_id: id, name: titulo, stream_icon: capa };
+      if (Number(it.ano) > 0) mini.year = String(it.ano);
+      minhaLista.push({ type: serie ? "series" : "vod", id, title: titulo, cover: capa, ts: base - i, item: mini });
+    }
+  }
+  return { canais, minhaLista };
+}
+
+// Regra de sincronização. Primeira vez: união (o que só existe no aparelho é enviado).
+// Depois: a conta manda; só os pendentes (ainda não enviados) sobrevivem do local.
+function ottFavPlan(i) {
+  const naConta = {};
+  for (let a = 0; a < i.conta.length; a++) naConta[i.conta[a].k] = true;
+  const pend = {};
+  for (let a = 0; a < i.pendentes.length; a++) pend[i.pendentes[a]] = true;
+  const resultado = i.conta.slice();
+  const enviar = [];
+  for (let a = 0; a < i.local.length; a++) {
+    const it = i.local[a];
+    if (naConta[it.k]) continue;
+    if (i.primeira || pend[it.k]) { resultado.push(it); enviar.push(it); }
+  }
+  return { resultado, enviar };
+}
+
+// Aplica o resultado nos favoritos do aparelho sem mexer no que já está certo:
+// mantém as entradas que já existem (nome original, item completo, ts), acrescenta só o que veio da conta e tira o que saiu.
+// Favoritos antigos por número (sem nome) e entradas sem id válido não têm chave: ficam como estão.
+function ottFavApply(favoritosAtuais, minhaListaAtual, resultado, nowMs) {
+  const novo = ottFavLocalFromItems(resultado, nowMs);
+  const querCanal = {};
+  const querLista = {};
+  const res = Array.isArray(resultado) ? resultado : [];
+  for (let i = 0; i < res.length; i++) {
+    if (res[i] && typeof res[i].k === "string") { if (res[i].tipo === "canal") querCanal[res[i].k] = true; else querLista[res[i].k] = true; }
+  }
+  const atuais = Array.isArray(favoritosAtuais) ? favoritosAtuais : [];
+  const mantidos = [];
+  const sobra = [];
+  const temCanal = {};
+  for (let i = 0; i < atuais.length; i++) {
+    if (typeof atuais[i] !== "string") { sobra.push(atuais[i]); continue; }
+    const k = ottFavKeyChannel(atuais[i]);
+    if (k && querCanal[k]) { mantidos.push(atuais[i]); temCanal[k] = true; }
+  }
+  const novos = [];
+  for (let i = 0; i < novo.canais.length; i++) if (!temCanal[ottFavKeyChannel(novo.canais[i])]) novos.push(novo.canais[i]);
+  const canais = novos.concat(mantidos, sobra);
+
+  const lista = Array.isArray(minhaListaAtual) ? minhaListaAtual : [];
+  const keptList = [];
+  const temLista = {};
+  for (let i = 0; i < lista.length; i++) {
+    const e = lista[i];
+    const k = e && (e.type === "series" ? ottFavKeySeries(e.id) : ottFavKeyVod(e.id));
+    if (!k) { keptList.push(e); continue; }
+    if (querLista[k]) { keptList.push(e); temLista[k] = true; }
+  }
+  const addList = novo.minhaLista.filter((e) => !temLista[e.type === "series" ? ottFavKeySeries(e.id) : ottFavKeyVod(e.id)]);
+  const minhaLista = addList.concat(keptList);
+  return {
+    canais, minhaLista,
+    mudouCanais: JSON.stringify(canais) !== JSON.stringify(atuais),
+    mudouLista: JSON.stringify(minhaLista) !== JSON.stringify(lista),
+  };
+}
+
+// Lê a lista da conta. Resposta que não seja "ok" vira erro (nunca lista vazia: a conta manda, e uma lista vazia por engano apagaria o aparelho).
+async function ottFavList(cfg, token, perfil, fetchImpl) {
+  const data = await ottCallRpc(cfg, "fav_list", { p_token: token, p_perfil: perfil }, fetchImpl);
+  if (!data || data.status !== "ok" || !Array.isArray(data.itens)) throw new Error("Não foi possível ler os favoritos da conta.");
+  const out = [];
+  for (let i = 0; i < data.itens.length; i++) {
+    const r = data.itens[i];
+    if (r && typeof r.k === "string") out.push({ k: r.k, tipo: r.tipo, titulo: String(r.titulo || ""), capa: String(r.capa || ""), ano: Number(r.ano) || 0 });
+  }
+  return out;
+}
+
+// Marca (on) ou desmarca um favorito na conta
+async function ottFavSet(cfg, token, perfil, it, on, fetchImpl) {
+  const data = await ottCallRpc(cfg, "fav_set", { p_token: token, p_perfil: perfil, p_chave: it.k, p_tipo: it.tipo, p_titulo: it.titulo, p_capa: it.capa, p_ano: it.ano, p_on: on }, fetchImpl);
+  if (!data || data.status !== "ok") throw new Error("Não foi possível salvar o favorito na conta.");
+}
+
+// Envia em lotes de 300 (só acrescenta, nunca remove)
+async function ottFavMerge(cfg, token, perfil, itens, fetchImpl) {
+  for (let i = 0; i < itens.length; i += 300) {
+    const data = await ottCallRpc(cfg, "fav_merge", { p_token: token, p_perfil: perfil, p_itens: itens.slice(i, i + 300) }, fetchImpl);
+    if (!data || data.status !== "ok") throw new Error("Não foi possível enviar os favoritos para a conta.");
+  }
+}
+
 // TVs ativas da mesma conta
 async function ottCastTargets(cfg, token, fetchImpl) {
   const data = await ottCallRpc(cfg, "cast_targets", { p_token: token }, fetchImpl);
@@ -3533,7 +3713,7 @@ function filterMyListEntries(entries, query) {
 const PROFILE_ACTIVE_KEY = "sint_profile_active";
 const PROFILES_CACHE_KEY = "sint_profiles";
 const PROFILES_MIGRATED_KEY = "sint_profiles_migrated";
-const PER_PROFILE_BASES = ["sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist"];
+const PER_PROFILE_BASES = ["sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync"];
 
 // Chave de dados no perfil dado (nulo = chave antiga). Só as 5 bases acima são por perfil.
 // Ex.: ("sint_fav", "3f2b8c1e-...") -> "sint_p3f2b8c1e_fav"
@@ -3654,10 +3834,151 @@ function selectChannel(ch, autoPlay = true) {
   }
 }
 
+// ─── Favoritos do perfil na conta (celular e TV veem os mesmos) ───
+// Local primeiro: tudo continua gravado neste aparelho (sint_fav / sint_mylist por perfil) e a conta é sincronizada por cima.
+// Estado por perfil (sint_p<id8>_favsync): { feito, pendentes: [chaves marcadas e ainda não enviadas], remover: [chaves desmarcadas e ainda não enviadas] }.
+// "feito" ausente = primeira vez deste perfil neste aparelho (faz a união); depois disso a conta manda.
+// Sem conta, sem perfil ou sem rede nada acontece e vale o que está no aparelho.
+const FAVSYNC_KEY = "sint_favsync";
+const FAVSYNC_EVERY_MS = 2 * 60 * 1000;
+const _favsync = { busy: false, wired: false, last: 0, done: null, retry: null };
+
+// Lê o estado gravado (tolera lixo)
+function favSyncParse(raw) {
+  let o = null;
+  try { o = JSON.parse(raw || "null"); } catch (e) { o = null; }
+  const lista = v => (Array.isArray(v) ? v.filter(k => typeof k === "string").slice(0, 600) : []);
+  return { feito: !!(o && o.feito === true), pendentes: lista(o && o.pendentes), remover: lista(o && o.remover) };
+}
+
+// Depois de marcar (on) ou desmarcar um favorito: enviado=false deixa a chave pendente, enviado=true tira dela
+function favSyncMark(st, chave, on, enviado) {
+  const pendentes = (st.pendentes || []).filter(k => k !== chave);
+  const remover = (st.remover || []).filter(k => k !== chave);
+  if (!enviado) (on ? pendentes : remover).push(chave);
+  return { feito: st.feito === true, pendentes, remover };
+}
+
+// Tipo da conta a partir do prefixo da chave (c: canal, f: filme, s: série)
+function favTipoDaChave(chave) {
+  return chave.charAt(0) === "c" ? "canal" : chave.charAt(0) === "f" ? "filme" : "serie";
+}
+
+function favSyncLoad(perfilId) {
+  try { return favSyncParse(localStorage.getItem(profKeyFor(FAVSYNC_KEY, perfilId))); } catch (e) { return favSyncParse(null); }
+}
+
+function favSyncSave(perfilId, st) {
+  try { localStorage.setItem(profKeyFor(FAVSYNC_KEY, perfilId), JSON.stringify(st)); } catch (e) { /* sem espaço: tenta de novo depois */ }
+  if (st.feito) _favsync.done = perfilId;
+}
+
+// O perfil ativo já fez a primeira sincronização? (daí em diante a conta manda, inclusive nos favoritos fixos)
+function favSyncIsDone() {
+  const pid = activeProfileId();
+  if (!pid) return false;
+  if (_favsync.done === pid) return true;
+  if (!favSyncLoad(pid).feito) return false;
+  _favsync.done = pid;
+  return true;
+}
+
+// A primeira sincronização do perfil principal espera a lista de canais (os favoritos fixos entram na união)
+function favSyncReady() {
+  if (!activeProfileIsMain() || _state.channels !== null) return true;
+  try { if (!localStorage.getItem(LS.URL)) return true; } catch (e) { return true; }
+  return typeof performance !== "undefined" && performance.now() > 45000;
+}
+
+// Favoritos locais (canais por nome + Minha lista) no formato da conta
+function favLocalItems() {
+  const canais = getChannels();
+  const nomes = [];
+  _state.favorites.forEach(f => {
+    if (typeof f === "string") nomes.push(f);
+    else if (_state.channels) { const ch = canais.find(c => c.id === f); if (ch) nomes.push(ch.name); }
+  });
+  return ottFavItemsFromChannels(nomes).concat(ottFavItemsFromMyList(loadMyList()));
+}
+
+// Marcar/desmarcar: grava na conta sem esperar. A chave fica pendente até a conta confirmar (se o app fechar no meio, a próxima sincronização envia).
+function favPush(item, on) {
+  const ctx = profileCtx();
+  const pid = activeProfileId();
+  if (!item || !ctx || !ottPerfilIdOk(pid)) return;
+  favSyncSave(pid, favSyncMark(favSyncLoad(pid), item.k, on, false));
+  ottFavSet(ctx.cfg, ctx.token, pid, item, on).then(
+    () => favSyncSave(pid, favSyncMark(favSyncLoad(pid), item.k, on, true)),
+    () => { /* sem rede: continua pendente */ }
+  );
+}
+
+function favSyncLater(ms) {
+  clearTimeout(_favsync.retry);
+  _favsync.retry = setTimeout(syncFavorites, ms);
+}
+
+// Puxa a lista da conta e deixa este aparelho igual a ela (primeira vez: união). Falha de rede = ignora.
+async function syncFavorites() {
+  if (_favsync.busy) return;
+  const ctx = profileCtx();
+  const pid = activeProfileId();
+  if (!ctx || !ottPerfilIdOk(pid) || !_profile.chosen || !favSyncReady()) return; // só depois de escolher o perfil
+  _favsync.busy = true;
+  _favsync.last = Date.now();
+  try {
+    const st = favSyncLoad(pid);
+    const antes = JSON.stringify([_state.favorites, loadMyList()]);
+    // 1) desmarcações que não chegaram à conta
+    const aindaRemover = [];
+    for (const k of st.remover) {
+      try { await ottFavSet(ctx.cfg, ctx.token, pid, { k, tipo: favTipoDaChave(k), titulo: "", capa: "", ano: 0 }, false); }
+      catch (e) { aindaRemover.push(k); }
+    }
+    // 2) a lista da conta (sem as que ainda estão para sair)
+    let conta = await ottFavList(ctx.cfg, ctx.token, pid);
+    if (aindaRemover.length) conta = conta.filter(i => aindaRemover.indexOf(i.k) < 0);
+    // 3) plano: primeira vez = união; depois a conta manda, mantendo só o que ainda não foi enviado
+    const local = favLocalItems();
+    const existe = {};
+    local.forEach(i => { existe[i.k] = true; });
+    const plano = ottFavPlan({ primeira: !st.feito, local, conta, pendentes: st.pendentes.filter(k => existe[k]) });
+    if (plano.enviar.length) await ottFavMerge(ctx.cfg, ctx.token, pid, plano.enviar);
+    // 4) trocou de perfil ou o usuário mexeu enquanto esperava a rede: não sobrescreve, tenta de novo daqui a pouco
+    if (activeProfileId() !== pid) return;
+    if (JSON.stringify([_state.favorites, loadMyList()]) !== antes) { favSyncLater(3000); return; }
+    // 5) aplica só o que mudou
+    const r = ottFavApply(_state.favorites, loadMyList(), plano.resultado, Date.now());
+    favSyncSave(pid, { feito: true, pendentes: [], remover: aindaRemover });
+    if (r.mudouLista) saveMyList(r.minhaLista);
+    if (r.mudouCanais) {
+      localStorage.setItem(profKey("sint_fav"), JSON.stringify(r.canais));
+      setState({ favorites: r.canais });
+    }
+    if (r.mudouLista) refreshPersonalLists();
+  } catch (e) {
+    /* sem rede ou conta indisponível: vale o que está no aparelho */
+  } finally {
+    _favsync.busy = false;
+  }
+}
+
+// Depois de definido o perfil: sincroniza já e passa a sincronizar ao voltar ao app e a cada 2 minutos
+function favSyncStart() {
+  syncFavorites();
+  if (_favsync.wired) return;
+  _favsync.wired = true;
+  setInterval(() => { if (document.visibilityState === "visible") syncFavorites(); }, FAVSYNC_EVERY_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - _favsync.last > 15000) syncFavorites();
+  });
+}
+
 // Garante o retorno e persistência de canais essenciais favoritos
 // Só roda no perfil principal (ou sem perfil): os outros perfis começam sem favoritos.
 function ensureEssentialFavorites() {
   if (!activeProfileIsMain()) return;
+  if (favSyncIsDone()) return; // depois da 1ª sincronização a conta manda: não recoloca o que foi removido
   const all = getChannels();
   if (!all || all.length === 0) return;
   const essentials = ["Combate", "Combate SD²", "ESPN", "ESPN 2", "ESPN 3", "ESPN 4", "ESPN 5", "ESPN 6"];
@@ -3693,6 +4014,7 @@ function toggleFav(id) {
 
   setState({ favorites });
   localStorage.setItem(profKey("sint_fav"), JSON.stringify(favorites));
+  if (chName) favPush(ottFavItemsFromChannels([chName])[0], !isAlreadyFav);
   showToast(isAlreadyFav ? "Removido dos favoritos" : "Adicionado aos favoritos!");
 }
 
@@ -3875,6 +4197,7 @@ async function loadPlaylistFromUrl(url) {
 
     setState({ channels, categories: cats, loadingPlaylist: false });
     ensureEssentialFavorites();
+    syncFavorites(); // a 1ª sincronização do perfil principal espera os canais (favoritos fixos entram na união)
 
     // Nada de canal automático: mantém a escolha só se ela ainda existir
     setState({ selected: keepSelectionIfPresent(_state.selected, channels) }, true);
@@ -6616,6 +6939,7 @@ function toggleMyListFor(rawItem, contType) {
   const entry = buildMyListEntry(rawItem, contType);
   const wasIn = isInMyList(loadMyList(), entry.type, entry.id);
   saveMyList(toggleMyListEntry(loadMyList(), entry, Date.now()));
+  favPush(ottFavItemsFromMyList([entry])[0], !wasIn);
   showToast(wasIn ? "Removido da Minha Lista" : "Adicionado à Minha Lista");
   refreshPersonalLists();
 }
@@ -8194,6 +8518,7 @@ function profileChoose(p) {
   if (activeProfileId() === p.id && p.id !== PROFILE_LOADED_ID) { location.reload(); return; }
   profileCloseGate();
   renderProfileUi();
+  favSyncStart(); // favoritos do perfil: puxa da conta agora, ao voltar ao app e a cada 2 min
 }
 
 // Depois da conta liberada (ottOnOk): busca os perfis, valida o ativo local e decide entre entrar direto e perguntar.

@@ -28,6 +28,7 @@ const PURE_HELPER_NAMES = [
   "providerKeyForItem", "attachProviders", "groupItemsByProvider",
   "resolveInjectedDefault", "seedInjectedDefaults",
   "profKey", "profKeyFor", "activeProfileId", "activeProfileIsMain", "profileAdoptLegacy",
+  "favSyncParse", "favSyncMark", "favTipoDaChave",
 ];
 
 function toHostRealm(value) {

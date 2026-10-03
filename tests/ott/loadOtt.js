@@ -21,7 +21,9 @@ export function loadOtt() {
         ottBuildCastPayload, ottCastTargets, ottCastSend, ottCastStatus, ottCastIsFinal, ottCastStatusText,
         ottProgressKey, ottPickResume, ottProgressGet, ottProgressPut, ottProgressClear,
         ottPerfilIdOk, ottPerfilNormalize, ottPerfilPickActive, ottPerfilDecide, ottGreeting, ottPerfilValidName,
-        ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX };`,
+        ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
+        ottNormName, ottFavKeyChannel, ottFavKeyVod, ottFavKeySeries, ottFavItemsFromChannels, ottFavItemsFromMyList,
+        ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge };`,
     ctx
   );
   return ctx.__ott;
