@@ -186,7 +186,7 @@ await withPage(pathToFileURL("sintoniza-link.html").href + "?noott=1", { native:
   confere(tocouP, "com perfil o envio deveria seguir direto até 'Tocando na TV': " + JSON.stringify(await page.eval(`window.__vistos`)));
   const envioP = await rpc("cast_send");
   confere(envioP.length === 1 && envioP[0].p_payload.perfilId === PERFIL && envioP[0].p_payload.positionSec === 300, "o cast_send do filme deveria levar perfilId e positionSec: " + JSON.stringify(envioP));
-  confere(!(await page.eval(`document.getElementById("profile-gate") && !document.getElementById("profile-gate").classList.contains("hidden")`)), "o envio não pode abrir nenhuma tela de perfil");
+  confere(!(await page.eval(`document.documentElement.classList.contains("profile-open") || getComputedStyle(document.getElementById("profile-gate")).display !== "none"`)), "o envio não pode abrir nenhuma tela de perfil");
   await espera(`!_castBusy`);
   await page.eval(`window.__semAvisoPendente(); window.__status = 0; window.__vistos = []; selectChannel(getChannels()[0], false)`);
   await page.sleep(500);

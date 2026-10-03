@@ -6,6 +6,7 @@
   <title>Sintoniza — IPTV</title>
   <meta name="description" content="Reprodutor IPTV — carregue sua lista M3U e assista seus canais." />
   <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1)document.documentElement.classList.add("ott-open");}catch(e){}})();</script>
+  <script>(function(){try{var q=location.search;if(q.indexOf("noott")!==-1)return;var C=window.Capacitor;if(!((C&&C.isNativePlatform&&C.isNativePlatform())||location.protocol==="capacitor:"||q.indexOf("ott")!==-1))return;if(!localStorage.getItem("sint_profile_active"))return;try{if(sessionStorage.getItem("sint_profile_chosen")==="1")return;}catch(e){}var l=JSON.parse(localStorage.getItem("sint_profiles")||"[]");if(l&&l.length>=2)document.documentElement.classList.add("profile-open");}catch(e){}})();</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" />
@@ -95,11 +96,6 @@
     .user-card {
       display: flex; align-items: center; gap: .75rem;
       background: var(--secondary); border-radius: .5rem; padding: .75rem;
-    }
-    .avatar {
-      display: grid; width: 2.2rem; height: 2.2rem; place-items: center;
-      border-radius: 999px; background: var(--primary); color: var(--primary-fg);
-      font-size: .75rem; font-weight: 600; flex-shrink: 0;
     }
     .user-info { flex: 1; min-width: 0; }
     .user-name { font-size: .875rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1203,6 +1199,166 @@
     /* só com conta ativa o botão do modal vira flex (sem conta, a regra abaixo o esconde) */
     body.ott-mode #vod-modal-tv { display: inline-flex; align-items: center; gap: .5rem; }
     body:not(.ott-mode) .tv-only { display: none; }
+    /* ════════════ AVATARES (catálogo de 12 mascotes; só o focado/selecionado anima com .avatar-vivo) ════════════ */
+    .avatar{display:block;position:relative;width:100%;height:100%;overflow:hidden}.avatar-base,.avatar-camada{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none}.avatar img,.avatar svg{display:block;width:100%;height:100%}.avatar-vivo .avatar-antena-a1{transform-origin:50% 25%;animation:av-ondas 2.4s ease-out 0s infinite}.avatar-antena-a2{opacity:0}.avatar-vivo .avatar-antena-a2{transform-origin:50% 56.7%;animation:av-piscar 3.8s linear 0.6s infinite}.avatar-vivo .avatar-pipoca-a1{transform-origin:25.1% 19.4%;animation:av-pula 2.2s ease-out 0s infinite}.avatar-vivo .avatar-pipoca-a2{transform-origin:76.6% 23.7%;animation:av-pula 2.2s ease-out 0.9s infinite}.avatar-vivo .avatar-claquete-a1{transform-origin:25.5% 35%;animation:av-bate 3s ease-in 0s infinite}.avatar-claquete-a2{opacity:0}.avatar-vivo .avatar-claquete-a2{transform-origin:50% 60.4%;animation:av-piscar 4.2s linear 1.3s infinite}.avatar-vivo .avatar-controle-a1{transform-origin:45.6% 29.8%;animation:av-anel 2.2s ease-out 0s infinite}.avatar-controle-a2{opacity:0}.avatar-vivo .avatar-controle-a2{transform-origin:49.1% 46.1%;animation:av-piscar 3.6s linear 0.2s infinite}.avatar-oculos3d-a1{opacity:0}.avatar-vivo .avatar-oculos3d-a1{transform-origin:50% 52.9%;animation:av-reflexo 3.4s ease-in-out 0s infinite}.avatar-oculos3d-a2{opacity:0}.avatar-vivo .avatar-oculos3d-a2{transform-origin:50% 52.9%;animation:av-piscar 4s linear 1.8s infinite}.avatar-vivo .avatar-rolo-a1{transform-origin:39.4% 46.3%;animation:av-gira 4s linear 0s infinite}.avatar-rolo-a2{opacity:0}.avatar-vivo .avatar-rolo-a2{transform-origin:39.4% 44.7%;animation:av-piscar 3.4s linear 2s infinite}.avatar-vivo .avatar-satelite-a1{transform-origin:50% 46.9%;animation:av-balanca 3.6s ease-in-out 0s infinite}.avatar-satelite-a2{opacity:0}.avatar-vivo .avatar-satelite-a2{transform-origin:50% 61.5%;animation:av-piscar 3.8s linear 2.4s infinite}.avatar-vivo .avatar-microfone-a1{transform-origin:50% 33.2%;animation:av-notas 2.8s ease-in-out 0s infinite}.avatar-microfone-a2{opacity:0}.avatar-vivo .avatar-microfone-a2{transform-origin:50% 35.7%;animation:av-piscar 3.7s linear 0.9s infinite}.avatar-vivo .avatar-trofeu-a1{transform-origin:50% 38.3%;animation:av-brilha 2.8s ease-in-out 0s infinite}.avatar-trofeu-a2{opacity:0}.avatar-vivo .avatar-trofeu-a2{transform-origin:50% 39.2%;animation:av-piscar 4s linear 0.4s infinite}.avatar-vivo .avatar-robotv-a1{transform-origin:50% 39.8%;animation:av-antenas 2.6s ease-in-out 0s infinite}.avatar-robotv-a2{opacity:0}.avatar-vivo .avatar-robotv-a2{transform-origin:50% 55.6%;animation:av-piscar 3.3s linear 1.1s infinite}.avatar-vivo .avatar-lente-a1{transform-origin:50% 48.2%;animation:av-foca 3.6s ease-in-out 0s infinite}.avatar-vivo .avatar-lente-a2{transform-origin:63.7% 31.9%;animation:av-brilha 2.8s ease-in-out 1.2s infinite}.avatar-vivo .avatar-estrela-a1{transform-origin:50% 49.9%;animation:av-brilha 2.8s ease-in-out 0s infinite}.avatar-estrela-a2{opacity:0}.avatar-vivo .avatar-estrela-a2{transform-origin:50% 49.1%;animation:av-piscar 3.9s linear 1.6s infinite}@keyframes av-ondas{0%{opacity:0;transform:scale(.55)}25%{opacity:1}70%{opacity:1;transform:scale(1.05)}100%{opacity:0;transform:scale(1.25)}}@keyframes av-piscar{0%,88%{opacity:0}90%,95%{opacity:1}97%,100%{opacity:0}}@keyframes av-pula{0%,100%{transform:translateY(0) rotate(0)}22%{transform:translateY(-11%) rotate(-14deg)}42%{transform:translateY(0) rotate(0)}52%{transform:translateY(-3%) rotate(6deg)}62%{transform:translateY(0) rotate(0)}}@keyframes av-bate{0%,38%{transform:rotate(0)}44%{transform:rotate(15deg)}48%{transform:rotate(11deg)}52%,70%{transform:rotate(14deg)}86%,100%{transform:rotate(0)}}@keyframes av-anel{0%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(1.7)}}@keyframes av-reflexo{0%,45%{opacity:0;transform:translateX(-3%)}60%{opacity:1}85%{opacity:1;transform:translateX(3.5%)}100%{opacity:0;transform:translateX(4%)}}@keyframes av-gira{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}@keyframes av-balanca{0%,100%{transform:rotate(-24deg)}50%{transform:rotate(24deg)}}@keyframes av-notas{0%{opacity:0;transform:translateY(5%)}25%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateY(-12%)}}@keyframes av-brilha{0%,100%{opacity:.35;transform:scale(.7) rotate(0)}50%{opacity:1;transform:scale(1.08) rotate(14deg)}}@keyframes av-antenas{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}@keyframes av-foca{0%,100%{transform:translate(0,0) scale(1)}25%{transform:translate(-6%,-2%) scale(.88)}55%{transform:translate(5%,1%) scale(1.14)}80%{transform:translate(0,3%) scale(.95)}}
+    /* ════════════ PERFIS: "Quem está assistindo?" (celular) ════════════
+       Tela cheia como o #ott-gate (fundo #08080D, laranja #F97316, Outfit), um degrau ABAIXO dele
+       (ativação/bloqueio sempre ficam por cima) e ACIMA da tela cheia simulada (99999) e dos avisos (10002).
+       Os avatares (avatares.css, logo acima) são os protagonistas; só o focado/selecionado anima (.avatar-vivo). */
+    #profile-gate {
+      display: none; position: fixed; inset: 0; z-index: 2147482000;
+      flex-direction: column; align-items: center;
+      padding: calc(1.25rem + env(safe-area-inset-top)) 1rem calc(1.5rem + env(safe-area-inset-bottom));
+      background: #08080D; color: #F3F4F6; font-family: "Outfit", system-ui, sans-serif;
+      overflow-y: auto; overflow-x: hidden; isolation: isolate;
+    }
+    html.profile-open #profile-gate { display: flex; }
+    html.profile-open body > *:not(#profile-gate):not(#ott-gate):not(script) { visibility: hidden; }
+    #profile-gate [hidden] { display: none !important; }
+
+    /* Palco: foco de luz laranja, ondas de sinal (a "sintonia") e um grão fino de filme */
+    .pg-stage { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+    .pg-stage::before {
+      content: ""; position: absolute; left: 50%; top: -18%; width: 150%; height: 80%; margin-left: -75%;
+      background: radial-gradient(ellipse 50% 60% at 50% 0%, rgba(249,115,22,.42), rgba(249,115,22,.13) 45%, transparent 72%);
+      animation: pg-breathe 7s ease-in-out infinite;
+    }
+    .pg-stage::after {
+      content: ""; position: absolute; left: 50%; top: 4%; width: 190vmax; height: 190vmax; margin: -95vmax 0 0 -95vmax;
+      background: repeating-radial-gradient(circle at 50% 50%, transparent 0 4.4rem, rgba(249,115,22,.14) 4.4rem calc(4.4rem + 1px));
+      -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0, rgba(0,0,0,.55) 22%, transparent 42%);
+      mask-image: radial-gradient(circle at 50% 50%, #000 0, rgba(0,0,0,.55) 22%, transparent 42%);
+      animation: pg-ondas 9s ease-out infinite;
+    }
+    .pg-grain {
+      position: absolute; inset: 0; opacity: .05;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    }
+    @keyframes pg-breathe { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
+    @keyframes pg-ondas { 0% { opacity: 0; transform: scale(.82); } 18% { opacity: 1; } 100% { opacity: .35; transform: scale(1.04); } }
+    @keyframes pg-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    @keyframes pg-in { from { opacity: 0; transform: translateY(18px) scale(.84); } to { opacity: 1; transform: none; } }
+
+    .pg-inner { margin: auto; width: 100%; max-width: 46rem; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; }
+    .pg-screen { width: 100%; display: flex; flex-direction: column; align-items: center; }
+    .pg-eyebrow {
+      display: inline-flex; align-items: center; font-size: .72rem; font-weight: 600;
+      letter-spacing: .34em; text-transform: uppercase; color: #F97316; margin-bottom: .95rem; padding-left: .34em;
+      animation: pg-rise .6s cubic-bezier(.22,1,.36,1) backwards;
+    }
+    .pg-eyebrow::before, .pg-eyebrow::after { content: ""; width: 1.7rem; height: 1px; flex: none; }
+    .pg-eyebrow::before { margin-right: .8rem; background: linear-gradient(90deg, transparent, #F97316); }
+    .pg-eyebrow::after { margin-left: .5rem; background: linear-gradient(270deg, transparent, #F97316); }
+    #profile-title, #profile-editor-title {
+      font-size: clamp(1.95rem, 8.4vw, 3.1rem); font-weight: 600; line-height: 1.04; letter-spacing: -.025em;
+      background: linear-gradient(180deg, #FFFFFF 30%, #B8B8C8); -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: pg-rise .65s cubic-bezier(.22,1,.36,1) .06s backwards;
+    }
+    .pg-sub { color: #9CA3AF; font-size: .95rem; margin-top: .6rem; min-height: 1.4em; animation: pg-rise .65s cubic-bezier(.22,1,.36,1) .12s backwards; }
+
+    #profile-grid {
+      --pg-w: clamp(5.3rem, 26.5vw, 6.9rem);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+      width: 100%; max-width: 24rem; margin: 2rem auto 1.4rem;
+    }
+    .pg-card {
+      appearance: none; -webkit-appearance: none; background: none; border: 0; color: inherit; font: inherit; cursor: pointer;
+      width: var(--pg-w); margin: .8rem .4rem; display: flex; flex-direction: column; align-items: center; position: relative;
+      transition: transform .12s ease;
+      animation: pg-in .6s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(var(--i, 0) * 75ms + 160ms);
+    }
+    .pg-ring {
+      position: relative; display: block; width: var(--pg-w); height: var(--pg-w); border-radius: 50%; background: #12121C;
+      box-shadow: 0 0 0 2px #252538, 0 12px 26px rgba(0,0,0,.55);
+      transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
+    }
+    .pg-av { position: absolute; inset: 0; display: block; border-radius: 50%; overflow: hidden; }
+    .pg-name {
+      margin-top: .95rem; max-width: calc(var(--pg-w) + .9rem); font-size: 1rem; font-weight: 500; color: #9CA3AF;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .25s ease;
+    }
+    .pg-tag { margin-top: .15rem; font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; color: #6B7280; display: none; }
+    .pg-card.is-focus .pg-ring { transform: scale(1.05); box-shadow: 0 0 0 3px #08080D, 0 0 0 5.5px #F97316, 0 0 46px rgba(249,115,22,.5), 0 14px 30px rgba(0,0,0,.6); }
+    .pg-card.is-focus .pg-name { color: #F3F4F6; font-weight: 600; }
+    .pg-card:active, .pg-card.is-pressed { transform: scale(.94); }
+    @media (hover: hover) and (pointer: fine) { .pg-card:hover .pg-name { color: #F3F4F6; } }
+    .pg-card:focus-visible { outline: none; }
+    .pg-card:focus-visible .pg-ring { box-shadow: 0 0 0 3px #08080D, 0 0 0 5.5px #FDBA74; }
+    /* Modo gerenciar: avatar escurecido com lápis no centro; o principal ganha uma etiqueta */
+    .pg-edit {
+      position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%;
+      background: rgba(8,8,13,.58); color: #fff; opacity: 0; transition: opacity .25s ease; pointer-events: none;
+    }
+    #profile-gate.is-manage .pg-edit { opacity: 1; }
+    #profile-gate.is-manage .pg-tag { display: block; }
+    .pg-add .pg-ring { background: transparent; box-shadow: none; border: 2px dashed #3B3B55; display: grid; place-items: center; color: #F97316; }
+    .pg-add .pg-name { color: #F97316; }
+    .pg-add.is-focus .pg-ring { box-shadow: none; border-color: #F97316; transform: scale(1.05); }
+
+    #profile-manage-btn {
+      width: auto; min-width: 12.5rem; border-radius: 999px; background: rgba(28,28,43,.6); border-color: #34344C; color: #D1D5DB;
+      letter-spacing: .02em; animation: pg-rise .7s cubic-bezier(.22,1,.36,1) .5s backwards;
+    }
+    #profile-manage-btn svg { margin-right: .55rem; }
+    #profile-gate.is-manage #profile-manage-btn { background: #F97316; border-color: #F97316; color: #fff; }
+    .pg-close {
+      position: fixed; top: calc(.85rem + env(safe-area-inset-top)); right: 1rem; width: 2.6rem; height: 2.6rem; border-radius: 50%;
+      display: grid; place-items: center; background: rgba(28,28,43,.8); border: 1px solid #2B2B40; color: #D1D5DB; z-index: 2; padding: 0;
+    }
+    .pg-close:active { transform: scale(.92); }
+
+    /* Editor (criar / editar): avatar grande animado, nome e grade dos 12 avatares */
+    #profile-editor { max-width: 24rem; }
+    .pe-preview {
+      position: relative; width: 7rem; height: 7rem; border-radius: 50%; margin: 1.5rem 0 1.2rem; background: #12121C; overflow: hidden;
+      box-shadow: 0 0 0 3px #08080D, 0 0 0 5.5px #F97316, 0 0 46px rgba(249,115,22,.45), 0 14px 30px rgba(0,0,0,.6);
+    }
+    .pe-name { position: relative; display: block; width: 100%; }
+    #profile-name-input {
+      width: 100%; text-align: center; background: transparent; border: 0; border-bottom: 2px solid #2B2B40; border-radius: 0;
+      color: #F3F4F6; font: 600 1.55rem/1.3 "Outfit", system-ui, sans-serif; padding: .35rem .5rem; outline: none; cursor: text;
+      caret-color: #F97316; transition: border-color .2s ease;
+    }
+    #profile-name-input::placeholder { color: #5B5B73; font-weight: 500; }
+    #profile-name-input:focus { border-bottom-color: #F97316; }
+    .pe-count { position: absolute; right: 0; bottom: -1.35rem; font-size: .72rem; color: #6B7280; font-variant-numeric: tabular-nums; }
+    .pe-label { margin: 2.1rem 0 .9rem; font-size: .7rem; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: #9CA3AF; }
+    #profile-avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .85rem; width: 100%; padding: .3rem; }
+    .pe-av {
+      appearance: none; -webkit-appearance: none; position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; padding: 0; border: 0;
+      border-radius: 50%; background: #12121C; cursor: pointer; box-shadow: 0 0 0 2px #252538; transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease;
+    }
+    .pe-av-in { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; display: block; }
+    .pe-av.is-selected { transform: scale(1.08); box-shadow: 0 0 0 3px #08080D, 0 0 0 5px #F97316, 0 0 22px rgba(249,115,22,.45); }
+    .pe-av:active, .pe-av.is-pressed { transform: scale(.92); }
+    #profile-error { min-height: 1.3em; margin-top: 1rem; text-align: center; }
+    .pe-actions, .pe-confirm { width: 100%; display: flex; flex-direction: column; align-items: center; margin-top: .6rem; }
+    .pe-actions .ott-btn, .pe-confirm .ott-btn { margin-bottom: .65rem; }
+    .pe-danger { color: #FCA5A5; }
+    .pe-confirm p { color: #D1D5DB; font-size: .95rem; line-height: 1.45; margin: .4rem 0 1rem; }
+    .ott-btn.pe-danger-btn { background: #B91C1C; border-color: #B91C1C; color: #fff; }
+    @media (min-width: 640px) {
+      #profile-grid { --pg-w: 7.4rem; max-width: 46rem; }
+      .pg-card { margin: 1rem .8rem; }
+      .pg-name { font-size: 1.08rem; }
+    }
+    @media (max-height: 640px) { #profile-grid { margin-top: 1.2rem; } .pe-preview { width: 5.6rem; height: 5.6rem; margin: 1rem 0; } }
+
+    /* Avatar do perfil no topo, no menu lateral e nas Configurações */
+    #profile-btn { padding: .2rem; border-radius: 999px; line-height: 0; }
+    #profile-btn .pb-av { position: relative; display: block; width: 2.2rem; height: 2.2rem; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--border); }
+    /* a busca encaixada na barra reserva espaço para o botão do perfil (além do sino) */
+    body.has-profile-btn .search-box.docked { right: 8.1rem; }
+    @media (max-width: 768px) { body.has-profile-btn .search-box.docked { right: 6.95rem; } }
+    .user-avatar { position: relative; width: 2.2rem; height: 2.2rem; border-radius: 999px; overflow: hidden; flex-shrink: 0; background: var(--secondary); }
+    .user-card.has-profiles { cursor: pointer; transition: background 140ms; }
+    .user-card.has-profiles:active { background: var(--border); }
+    .pf-list { display: flex; flex-wrap: wrap; margin: 1rem 0 .15rem; }
+    .pf-chip { display: flex; align-items: center; margin: 0 1.1rem .75rem 0; }
+    .pf-chip-av { position: relative; width: 2.5rem; height: 2.5rem; border-radius: 50%; overflow: hidden; flex: none; box-shadow: 0 0 0 1px var(--border); }
+    .pf-chip.is-active .pf-chip-av { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--primary); }
+    .pf-chip-n { margin-left: .6rem; font-size: .9rem; font-weight: 500; }
+    .pf-chip-n small { display: block; font-size: .68rem; font-weight: 400; color: var(--muted-fg); }
   </style>
 </head>
 <body>
@@ -1253,6 +1409,48 @@
   </div>
 </div>
 
+<!-- ══ PERFIS: "Quem está assistindo?" (só com conta; cobre o app como o #ott-gate, um degrau abaixo dele) ══ -->
+<div id="profile-gate" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+  <div class="pg-stage" aria-hidden="true"><div class="pg-grain"></div></div>
+  <button class="pg-close" id="profile-close-btn" type="button" aria-label="Fechar" hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <div class="pg-inner">
+    <section class="pg-screen" id="profile-picker">
+      <p class="pg-eyebrow">Sintoniza</p>
+      <h1 id="profile-title">Quem está assistindo?</h1>
+      <p class="pg-sub" id="profile-sub">Escolha seu perfil para continuar</p>
+      <div id="profile-grid" role="list"></div>
+      <button class="ott-btn" id="profile-manage-btn" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        <span id="profile-manage-label">Gerenciar perfis</span>
+      </button>
+    </section>
+
+    <section class="pg-screen" id="profile-editor" hidden aria-labelledby="profile-editor-title">
+      <p class="pg-eyebrow" id="profile-editor-eyebrow">Perfil</p>
+      <h2 id="profile-editor-title">Novo perfil</h2>
+      <div class="pe-preview" id="profile-preview" aria-hidden="true"></div>
+      <label class="pe-name">
+        <input id="profile-name-input" type="text" maxlength="20" placeholder="Nome do perfil" aria-label="Nome do perfil" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" />
+        <span class="pe-count" id="profile-name-count" aria-hidden="true">0/20</span>
+      </label>
+      <p class="pe-label">Escolha um avatar</p>
+      <div id="profile-avatar-grid" role="radiogroup" aria-label="Avatar do perfil"></div>
+      <p class="ott-err" id="profile-error" role="alert"></p>
+      <div class="pe-actions" id="profile-editor-actions">
+        <button class="ott-btn ott-btn-primary" id="profile-save-btn" type="button">Salvar</button>
+        <button class="ott-btn" id="profile-cancel-btn" type="button">Cancelar</button>
+        <button class="ott-link pe-danger" id="profile-delete-btn" type="button" hidden>Excluir perfil</button>
+      </div>
+      <div class="pe-confirm" id="profile-delete-confirm" hidden>
+        <p id="profile-delete-text"></p>
+        <button class="ott-btn pe-danger-btn" id="profile-delete-yes" type="button">Sim, excluir</button>
+        <button class="ott-btn" id="profile-delete-no" type="button">Voltar</button>
+      </div>
+    </section>
+  </div>
+</div>
 
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
@@ -1301,10 +1499,10 @@
     <button class="nav-item" id="nav-settings-btn">
       <i data-lucide="settings" style="width:19px;height:19px"></i><span>Configurações</span>
     </button>
-    <div class="user-card">
-      <div class="avatar">GA</div>
+    <div class="user-card" id="user-card">
+      <div class="user-avatar" id="user-avatar"></div>
       <div class="user-info">
-        <p class="user-name">Guaitolini</p>
+        <p class="user-name" id="user-name">Convidado</p>
         <p class="user-plan" id="playlist-plan">Nenhuma lista carregada</p>
       </div>
     </div>
@@ -1325,6 +1523,8 @@
     <button class="icon-btn" aria-label="Notificações">
       <i data-lucide="bell" style="width:19px;height:19px"></i>
     </button>
+    <!-- Avatar do perfil ativo (só com conta e perfil carregado): abre o "Quem está assistindo?" -->
+    <button class="icon-btn ott-only" id="profile-btn" type="button" aria-label="Trocar de perfil" hidden></button>
   </header>
 
   <!-- ══ PLAYER (persistente entre views, sobrevive à troca de seção) ══ -->
@@ -1613,6 +1813,15 @@
         <div class="settings-actions">
           <a class="btn-primary" id="ott-account-panel" target="_blank" rel="noopener" href="#" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">Gerenciar minha conta</a>
           <button class="btn-ghost" id="ott-unlink-btn" type="button">Desvincular este aparelho</button>
+        </div>
+      </div>
+
+      <div class="settings-card ott-only" id="profiles-card">
+        <h2 style="font-size:1.1rem;font-weight:600">Perfis</h2>
+        <p class="url-hint" style="margin-top:.4rem">Cada pessoa tem seus favoritos, sua lista e o ponto onde parou. Os perfis valem no celular e na TV.</p>
+        <div class="pf-list" id="profiles-card-list"></div>
+        <div class="settings-actions">
+          <button class="btn-primary" id="profiles-card-manage" type="button">Gerenciar perfis</button>
         </div>
       </div>
 
@@ -3219,6 +3428,66 @@ function ottAccountSummary(account, nowMs) {
     return { tone: "ok", text: "Teste gratuito: " + (dias === 1 ? "resta 1 dia" : "restam " + dias + " dias") + " (até " + ottFormatDateBr(a.trial_fim) + ")" };
   }
   return { tone: "bad", text: "Acesso encerrado" };
+}
+</script>
+
+<script id="avatars">
+// Avatares do Sintoniza para o app de celular (arquivo único). Gerado por scripts/gerar.mjs; não edite à mão.
+// Cole num <script> clássico do app e inclua saida/celular/avatares.css.
+// avatarHtml(id, { vivo }) devolve o HTML do contêiner; "vivo" liga as animações (use só no avatar focado/selecionado).
+const AVATARS = [{"id":"antena","nome":"Antena","camadas":["a1","a2"]},{"id":"pipoca","nome":"Pipoca","camadas":["a1","a2"]},{"id":"claquete","nome":"Claquete","camadas":["a1","a2"]},{"id":"controle","nome":"Controle","camadas":["a1","a2"]},{"id":"oculos3d","nome":"Óculos 3D","camadas":["a1","a2"]},{"id":"rolo","nome":"Rolo de filme","camadas":["a1","a2"]},{"id":"satelite","nome":"Satélite","camadas":["a1","a2"]},{"id":"microfone","nome":"Microfone","camadas":["a1","a2"]},{"id":"trofeu","nome":"Troféu","camadas":["a1","a2"]},{"id":"robotv","nome":"Robô TV","camadas":["a1","a2"]},{"id":"lente","nome":"Lente","camadas":["a1","a2"]},{"id":"estrela","nome":"Estrela","camadas":["a1","a2"]}];
+const AVATAR_SVGS = {
+ "antena": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#2E2A8C\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#49469B\"/><g transform=\"translate(128 130) scale(1.16) translate(-128 -135)\"><ellipse cx=\"128\" cy=\"214\" rx=\"62\" ry=\"9\" fill=\"#282174\"/><path d=\"M110 104L86 64M146 104L170 64\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"84\" cy=\"58\" r=\"10\" fill=\"#F5B642\"/><circle cx=\"172\" cy=\"58\" r=\"10\" fill=\"#F5B642\"/><g transform=\"translate(0 6)\"><circle cx=\"128\" cy=\"152\" r=\"58\" fill=\"#BB5621\"/></g><circle cx=\"128\" cy=\"152\" r=\"58\" fill=\"#F97316\"/><path d=\"M84 128Q90 108 108 104\" fill=\"none\" stroke=\"#FCB98B\" stroke-width=\"7\" stroke-linecap=\"round\"/><circle cx=\"106\" cy=\"148\" r=\"14\" fill=\"#FFF\"/><circle cx=\"106\" cy=\"149.5\" r=\"8.7\" fill=\"#1A1033\"/><circle cx=\"103.2\" cy=\"146.1\" r=\"2.9\" fill=\"#FFF\"/><circle cx=\"150\" cy=\"148\" r=\"14\" fill=\"#FFF\"/><circle cx=\"150\" cy=\"149.5\" r=\"8.7\" fill=\"#1A1033\"/><circle cx=\"147.2\" cy=\"146.1\" r=\"2.9\" fill=\"#FFF\"/><ellipse cx=\"84\" cy=\"168\" rx=\"8.5\" ry=\"5.5\" fill=\"#FC604A\"/><ellipse cx=\"172\" cy=\"168\" rx=\"8.5\" ry=\"5.5\" fill=\"#FC604A\"/><path d=\"M113 164Q128 169 143 164Q141 186 128 186Q115 186 113 164Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"181\" rx=\"7.5\" ry=\"4.6\" fill=\"#FF7A8A\"/></g></svg>",
+ "antena-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.16) translate(-128 -135)\"><path d=\"M114.2 66.4A18 18 0 0 1 141.8 66.4\" fill=\"none\" stroke=\"#FFE3C4\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M104.3 58.1A31 31 0 0 1 151.7 58.1\" fill=\"none\" stroke=\"#FFE3C4\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "antena-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.16) translate(-128 -135)\"><circle cx=\"106\" cy=\"148\" r=\"15.6\" fill=\"#F97316\"/><path d=\"M97.3 149Q106 156.7 114.7 149\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"150\" cy=\"148\" r=\"15.6\" fill=\"#F97316\"/><path d=\"M141.3 149Q150 156.7 158.7 149\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "pipoca": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#38A9F0\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#52B4F2\"/><g transform=\"translate(128 130) scale(1.1) translate(-128 -133)\"><ellipse cx=\"128\" cy=\"216\" rx=\"62\" ry=\"9\" fill=\"#2F7ABA\"/><circle cx=\"100\" cy=\"98\" r=\"22\" fill=\"#F0CC84\"/><circle cx=\"98\" cy=\"94\" r=\"22\" fill=\"#FFF1C9\"/><circle cx=\"160\" cy=\"98\" r=\"22\" fill=\"#F0CC84\"/><circle cx=\"158\" cy=\"94\" r=\"22\" fill=\"#FFF1C9\"/><circle cx=\"130\" cy=\"86\" r=\"25\" fill=\"#F0CC84\"/><circle cx=\"128\" cy=\"82\" r=\"25\" fill=\"#FFF1C9\"/><circle cx=\"140\" cy=\"76\" r=\"6\" fill=\"#FFD54A\"/><circle cx=\"86\" cy=\"118\" r=\"20\" fill=\"#F0CC84\"/><circle cx=\"84\" cy=\"114\" r=\"20\" fill=\"#FFF1C9\"/><circle cx=\"78\" cy=\"108\" r=\"5\" fill=\"#FFD54A\"/><circle cx=\"118\" cy=\"112\" r=\"24\" fill=\"#F0CC84\"/><circle cx=\"116\" cy=\"108\" r=\"24\" fill=\"#FFF1C9\"/><circle cx=\"148\" cy=\"112\" r=\"24\" fill=\"#F0CC84\"/><circle cx=\"146\" cy=\"108\" r=\"24\" fill=\"#FFF1C9\"/><circle cx=\"154\" cy=\"100\" r=\"6\" fill=\"#FFD54A\"/><circle cx=\"174\" cy=\"118\" r=\"20\" fill=\"#F0CC84\"/><circle cx=\"172\" cy=\"114\" r=\"20\" fill=\"#FFF1C9\"/><g transform=\"translate(0 6)\"><polygon points=\"88,128 168,128 158,206 98,206\" fill=\"#AC2B3C\" stroke=\"#AC2B3C\" stroke-width=\"12\" stroke-linejoin=\"round\"/></g><polygon points=\"88,128 168,128 158,206 98,206\" fill=\"#E5383B\" stroke=\"#E5383B\" stroke-width=\"12\" stroke-linejoin=\"round\"/><polygon points=\"104,128 116.8,128 119.6,206 110,206\" fill=\"#FFF6E8\"/><polygon points=\"139.2,128 152,128 146,206 136.4,206\" fill=\"#FFF6E8\"/><g transform=\"translate(0 5)\"><rect x=\"74\" y=\"114\" width=\"108\" height=\"20\" rx=\"10\" fill=\"#BF4455\"/></g><rect x=\"74\" y=\"114\" width=\"108\" height=\"20\" rx=\"10\" fill=\"#FF5A5F\"/><ellipse cx=\"128\" cy=\"172\" rx=\"38\" ry=\"35\" fill=\"#FFF6E8\"/><circle cx=\"112\" cy=\"166\" r=\"12\" fill=\"#FFF\"/><circle cx=\"112\" cy=\"167.5\" r=\"7.4\" fill=\"#1A1033\"/><circle cx=\"109.6\" cy=\"164.6\" r=\"2.5\" fill=\"#FFF\"/><circle cx=\"144\" cy=\"166\" r=\"12\" fill=\"#FFF\"/><circle cx=\"144\" cy=\"167.5\" r=\"7.4\" fill=\"#1A1033\"/><circle cx=\"141.6\" cy=\"164.6\" r=\"2.5\" fill=\"#FFF\"/><ellipse cx=\"96\" cy=\"182\" rx=\"7\" ry=\"4.5\" fill=\"#FFA2B3\"/><ellipse cx=\"160\" cy=\"182\" rx=\"7\" ry=\"4.5\" fill=\"#FFA2B3\"/><path d=\"M117 181Q128 186 139 181Q137 196 128 196Q119 196 117 181Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"191\" rx=\"5.5\" ry=\"4.6\" fill=\"#FF7A8A\"/></g></svg>",
+ "pipoca-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -133)\"><circle cx=\"72\" cy=\"64\" r=\"13\" fill=\"#F0CC84\"/><circle cx=\"70\" cy=\"60\" r=\"13\" fill=\"#FFF1C9\"/><circle cx=\"74\" cy=\"57\" r=\"5.2\" fill=\"#FFD54A\"/></g></svg>",
+ "pipoca-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -133)\"><circle cx=\"188\" cy=\"60\" r=\"12\" fill=\"#F0CC84\"/><circle cx=\"186\" cy=\"56\" r=\"12\" fill=\"#FFF1C9\"/><circle cx=\"190\" cy=\"53\" r=\"4.8\" fill=\"#FFD54A\"/><circle cx=\"210\" cy=\"102\" r=\"8\" fill=\"#F0CC84\"/><circle cx=\"208\" cy=\"98\" r=\"8\" fill=\"#FFF1C9\"/><circle cx=\"212\" cy=\"95\" r=\"3.2\" fill=\"#FFD54A\"/></g></svg>",
+ "claquete": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#F5B642\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#F6BF5B\"/><g transform=\"translate(128 130) scale(1.12) translate(-128 -132)\"><ellipse cx=\"128\" cy=\"214\" rx=\"62\" ry=\"9\" fill=\"#B48341\"/><g transform=\"translate(0 6)\"><rect x=\"64\" y=\"112\" width=\"128\" height=\"96\" rx=\"14\" fill=\"#241B3F\"/></g><rect x=\"64\" y=\"112\" width=\"128\" height=\"96\" rx=\"14\" fill=\"#2B2840\"/><g transform=\"translate(0 4)\"><rect x=\"64\" y=\"98\" width=\"128\" height=\"20\" rx=\"7\" fill=\"#BDB7DB\"/></g><rect x=\"64\" y=\"98\" width=\"128\" height=\"20\" rx=\"7\" fill=\"#F5F1FF\"/><polygon points=\"64,98 73,98 64,109.3\" fill=\"#2B2840\"/><polygon points=\"88,98 101,98 85,118 72,118\" fill=\"#2B2840\"/><polygon points=\"116,98 129,98 113,118 100,118\" fill=\"#2B2840\"/><polygon points=\"144,98 157,98 141,118 128,118\" fill=\"#2B2840\"/><polygon points=\"172,98 185,98 169,118 156,118\" fill=\"#2B2840\"/><polygon points=\"192,118 184,118 192,108\" fill=\"#2B2840\"/><path d=\"M80 196H116\" fill=\"none\" stroke=\"#5E5984\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M132 196H156\" fill=\"none\" stroke=\"#5E5984\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"104\" cy=\"154\" r=\"13\" fill=\"#FFF\"/><circle cx=\"104\" cy=\"155.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"101.4\" cy=\"152.4\" r=\"2.7\" fill=\"#FFF\"/><circle cx=\"152\" cy=\"154\" r=\"13\" fill=\"#FFF\"/><circle cx=\"152\" cy=\"155.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"149.4\" cy=\"152.4\" r=\"2.7\" fill=\"#FFF\"/><ellipse cx=\"84\" cy=\"176\" rx=\"8.5\" ry=\"5.5\" fill=\"#E8587A\"/><ellipse cx=\"172\" cy=\"176\" rx=\"8.5\" ry=\"5.5\" fill=\"#E8587A\"/><path d=\"M114 172Q128 185 142 172\" fill=\"none\" stroke=\"#F5B642\" stroke-width=\"5.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "claquete-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -132)\"><g transform=\"rotate(-14 72 96)\"><g transform=\"translate(0 4)\"><rect x=\"64\" y=\"76\" width=\"128\" height=\"20\" rx=\"7\" fill=\"#BDB7DB\"/></g><rect x=\"64\" y=\"76\" width=\"128\" height=\"20\" rx=\"7\" fill=\"#F5F1FF\"/><polygon points=\"74,76 87,76 71,96 64,96 64,88.5\" fill=\"#2B2840\"/><polygon points=\"102,76 115,76 99,96 86,96\" fill=\"#2B2840\"/><polygon points=\"130,76 143,76 127,96 114,96\" fill=\"#2B2840\"/><polygon points=\"158,76 171,76 155,96 142,96\" fill=\"#2B2840\"/><polygon points=\"186,76 192,76 192,84.8 183,96 170,96\" fill=\"#2B2840\"/><circle cx=\"72\" cy=\"96\" r=\"6\" fill=\"#F5B642\"/></g></g></svg>",
+ "claquete-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -132)\"><circle cx=\"104\" cy=\"154\" r=\"14.6\" fill=\"#2B2840\"/><path d=\"M95.9 155Q104 162.1 112.1 155\" fill=\"none\" stroke=\"#FFF\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"152\" cy=\"154\" r=\"14.6\" fill=\"#2B2840\"/><path d=\"M143.9 155Q152 162.1 160.1 155\" fill=\"none\" stroke=\"#FFF\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "controle": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#19C3B0\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#37CBBA\"/><g transform=\"translate(128 130) scale(1.12) translate(-128 -135)\"><ellipse cx=\"128\" cy=\"216\" rx=\"54\" ry=\"9\" fill=\"#1A8C8E\"/><g transform=\"rotate(-12 128 134)\"><g transform=\"translate(0 6)\"><rect x=\"84\" y=\"58\" width=\"88\" height=\"152\" rx=\"38\" fill=\"#B3A8E8\"/></g><rect x=\"84\" y=\"58\" width=\"88\" height=\"152\" rx=\"38\" fill=\"#F4F1FF\"/><circle cx=\"128\" cy=\"86\" r=\"12\" fill=\"#EF4444\"/><circle cx=\"125\" cy=\"82\" r=\"3.5\" fill=\"#FF9A9A\"/><circle cx=\"108\" cy=\"124\" r=\"13.5\" fill=\"#FFF\"/><circle cx=\"108\" cy=\"125.5\" r=\"8.4\" fill=\"#1A1033\"/><circle cx=\"105.3\" cy=\"122.3\" r=\"2.8\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"124\" r=\"13.5\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"125.5\" r=\"8.4\" fill=\"#1A1033\"/><circle cx=\"145.3\" cy=\"122.3\" r=\"2.8\" fill=\"#FFF\"/><ellipse cx=\"94\" cy=\"148\" rx=\"7\" ry=\"4.5\" fill=\"#FA9FBE\"/><ellipse cx=\"162\" cy=\"148\" rx=\"7\" ry=\"4.5\" fill=\"#FA9FBE\"/><path d=\"M116 146Q128 148 140 146Q138 163 128 163Q118 163 116 146Z\" fill=\"#1A1033\"/><circle cx=\"108\" cy=\"184\" r=\"9\" fill=\"#F97316\"/><circle cx=\"128\" cy=\"184\" r=\"9\" fill=\"#F5B642\"/><circle cx=\"148\" cy=\"184\" r=\"9\" fill=\"#6C63F0\"/><rect x=\"112\" y=\"198\" width=\"32\" height=\"6\" rx=\"3\" fill=\"#CFC6F5\"/></g></g></svg>",
+ "controle-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -135)\"><g transform=\"rotate(-12 128 134)\"><circle cx=\"128\" cy=\"86\" r=\"19\" fill=\"none\" stroke=\"#EF4444\" stroke-width=\"4.5\"/></g></g></svg>",
+ "controle-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -135)\"><g transform=\"rotate(-12 128 134)\"><circle cx=\"108\" cy=\"124\" r=\"15.1\" fill=\"#F4F1FF\"/><path d=\"M99.6 125Q108 132.4 116.4 125\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"148\" cy=\"124\" r=\"15.1\" fill=\"#F4F1FF\"/><path d=\"M139.6 125Q148 132.4 156.4 125\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></g></svg>",
+ "oculos3d": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#8B46E0\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#9A5EE4\"/><g transform=\"translate(128 130) scale(1.08) translate(-128 -137)\"><ellipse cx=\"128\" cy=\"214\" rx=\"62\" ry=\"9\" fill=\"#6934AF\"/><circle cx=\"58\" cy=\"146\" r=\"13\" fill=\"#B98D3B\"/><circle cx=\"198\" cy=\"146\" r=\"13\" fill=\"#B98D3B\"/><g transform=\"translate(0 6)\"><circle cx=\"128\" cy=\"138\" r=\"70\" fill=\"#B98D3B\"/></g><circle cx=\"128\" cy=\"138\" r=\"70\" fill=\"#F7C03A\"/><g transform=\"translate(0 4)\"><rect x=\"66\" y=\"112\" width=\"124\" height=\"60\" rx=\"27\" fill=\"#B9BCD8\"/></g><rect x=\"66\" y=\"112\" width=\"124\" height=\"60\" rx=\"27\" fill=\"#FFF\"/><rect x=\"75\" y=\"120\" width=\"46\" height=\"44\" rx=\"21\" fill=\"#E8404B\"/><rect x=\"135\" y=\"120\" width=\"46\" height=\"44\" rx=\"21\" fill=\"#22C7EE\"/><path d=\"M80 100Q97 88 115 97M141 97Q159 88 176 100\" fill=\"none\" stroke=\"#7E5C3C\" stroke-width=\"6.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"98\" cy=\"142\" r=\"13\" fill=\"#FFF\"/><circle cx=\"99\" cy=\"143.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"96.4\" cy=\"140.4\" r=\"2.7\" fill=\"#FFF\"/><circle cx=\"158\" cy=\"142\" r=\"13\" fill=\"#FFF\"/><circle cx=\"159\" cy=\"143.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"156.4\" cy=\"140.4\" r=\"2.7\" fill=\"#FFF\"/><path d=\"M82 132Q84 127 90 126M142 132Q144 127 150 126\" fill=\"none\" stroke=\"#FFF\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><ellipse cx=\"80\" cy=\"188\" rx=\"8.5\" ry=\"5.5\" fill=\"#FB875C\"/><ellipse cx=\"176\" cy=\"188\" rx=\"8.5\" ry=\"5.5\" fill=\"#FB875C\"/><path d=\"M106 184Q128 189 150 184Q148 206 128 206Q108 206 106 184Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"201\" rx=\"11\" ry=\"4.6\" fill=\"#FF7A8A\"/></g></svg>",
+ "oculos3d-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.08) translate(-128 -137)\"><polygon points=\"96,126 102,126 92,158 86,158\" fill=\"#FFF\"/><polygon points=\"104,128 107,128 100,146 97,146\" fill=\"#FFF\"/><polygon points=\"156,126 162,126 152,158 146,158\" fill=\"#FFF\"/><polygon points=\"164,128 167,128 160,146 157,146\" fill=\"#FFF\"/></g></svg>",
+ "oculos3d-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.08) translate(-128 -137)\"><circle cx=\"98\" cy=\"142\" r=\"14.6\" fill=\"#E8404B\"/><path d=\"M89.9 143Q98 150.1 106.1 143\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"158\" cy=\"142\" r=\"14.6\" fill=\"#22C7EE\"/><path d=\"M149.9 143Q158 150.1 166.1 143\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "rolo": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#F97316\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#FA8534\"/><g transform=\"translate(128 130) scale(1.04) translate(-128 -131)\"><ellipse cx=\"128\" cy=\"218\" rx=\"70\" ry=\"9\" fill=\"#B65422\"/><path d=\"M124 176Q196 166 208 210\" fill=\"none\" stroke=\"#2A2540\" stroke-width=\"28\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M124 176Q196 166 208 210\" fill=\"none\" stroke=\"#FFF1CF\" stroke-width=\"22\" stroke-dasharray=\"4 8\"/><path d=\"M124 176Q196 166 208 210\" fill=\"none\" stroke=\"#2A2540\" stroke-width=\"13\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M124 176Q196 166 208 210\" fill=\"none\" stroke=\"#4A4570\" stroke-width=\"8\" stroke-dasharray=\"15 7\"/><g transform=\"translate(0 6)\"><circle cx=\"102\" cy=\"120\" r=\"74\" fill=\"#23183F\"/></g><circle cx=\"102\" cy=\"120\" r=\"74\" fill=\"#2A2540\"/><circle cx=\"102\" cy=\"120\" r=\"41\" fill=\"#FFE9B0\"/><circle cx=\"87\" cy=\"116\" r=\"12\" fill=\"#FFF\"/><circle cx=\"87\" cy=\"117.5\" r=\"7.4\" fill=\"#1A1033\"/><circle cx=\"84.6\" cy=\"114.6\" r=\"2.5\" fill=\"#FFF\"/><circle cx=\"117\" cy=\"116\" r=\"12\" fill=\"#FFF\"/><circle cx=\"117\" cy=\"117.5\" r=\"7.4\" fill=\"#1A1033\"/><circle cx=\"114.6\" cy=\"114.6\" r=\"2.5\" fill=\"#FFF\"/><ellipse cx=\"75\" cy=\"132\" rx=\"6.5\" ry=\"4.2\" fill=\"#FF9B97\"/><ellipse cx=\"129\" cy=\"132\" rx=\"6.5\" ry=\"4.2\" fill=\"#FF9B97\"/><path d=\"M91 132Q102 142 113 132\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "rolo-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.04) translate(-128 -131)\"><circle cx=\"102\" cy=\"63\" r=\"12\" fill=\"#F97316\"/><circle cx=\"151.4\" cy=\"91.5\" r=\"12\" fill=\"#F5B642\"/><circle cx=\"151.4\" cy=\"148.5\" r=\"12\" fill=\"#F97316\"/><circle cx=\"102\" cy=\"177\" r=\"12\" fill=\"#F5B642\"/><circle cx=\"52.6\" cy=\"148.5\" r=\"12\" fill=\"#F97316\"/><circle cx=\"52.6\" cy=\"91.5\" r=\"12\" fill=\"#F5B642\"/></g></svg>",
+ "rolo-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.04) translate(-128 -131)\"><circle cx=\"87\" cy=\"116\" r=\"13.6\" fill=\"#FFE9B0\"/><path d=\"M79.6 117Q87 123.4 94.4 117\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"117\" cy=\"116\" r=\"13.6\" fill=\"#FFE9B0\"/><path d=\"M109.6 117Q117 123.4 124.4 117\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "satelite": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#0F1B4D\"/><circle cx=\"128\" cy=\"128\" r=\"102\" fill=\"#2E3964\"/><g transform=\"translate(128 130) scale(1.1) translate(-128 -111)\"><path d=\"M46 50Q47.3 56.7 54 58Q47.3 59.3 46 66Q44.7 59.3 38 58Q44.7 56.7 46 50Z\" fill=\"#FFF\"/><path d=\"M214 46Q215 51 220 52Q215 53 214 58Q213 53 208 52Q213 51 214 46Z\" fill=\"#FFF\"/><path d=\"M206 199Q207.1 204.9 213 206Q207.1 207.1 206 213Q204.9 207.1 199 206Q204.9 204.9 206 199Z\" fill=\"#FFF\"/><path d=\"M46 195Q46.8 199.2 51 200Q46.8 200.8 46 205Q45.2 200.8 41 200Q45.2 199.2 46 195Z\" fill=\"#FFF\"/><circle cx=\"70\" cy=\"36\" r=\"2.4\" fill=\"#FFF\"/><circle cx=\"190\" cy=\"30\" r=\"2.4\" fill=\"#FFF\"/><circle cx=\"228\" cy=\"140\" r=\"2.4\" fill=\"#FFF\"/><circle cx=\"26\" cy=\"130\" r=\"2.4\" fill=\"#FFF\"/><rect x=\"74\" y=\"134\" width=\"20\" height=\"10\" rx=\"4\" fill=\"#C9D1F5\"/><rect x=\"162\" y=\"134\" width=\"20\" height=\"10\" rx=\"4\" fill=\"#C9D1F5\"/><g transform=\"translate(0 5)\"><rect x=\"30\" y=\"100\" width=\"44\" height=\"78\" rx=\"8\" fill=\"#3261C2\"/></g><rect x=\"30\" y=\"100\" width=\"44\" height=\"78\" rx=\"8\" fill=\"#3B82F6\"/><path d=\"M52 108V170M36 126H68M36 152H68\" fill=\"none\" stroke=\"#9CC2FF\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><g transform=\"translate(0 5)\"><rect x=\"182\" y=\"100\" width=\"44\" height=\"78\" rx=\"8\" fill=\"#3261C2\"/></g><rect x=\"182\" y=\"100\" width=\"44\" height=\"78\" rx=\"8\" fill=\"#3B82F6\"/><path d=\"M204 108V170M188 126H220M188 152H220\" fill=\"none\" stroke=\"#9CC2FF\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><g transform=\"translate(0 6)\"><rect x=\"90\" y=\"102\" width=\"76\" height=\"76\" rx=\"24\" fill=\"#B98D3B\"/></g><rect x=\"90\" y=\"102\" width=\"76\" height=\"76\" rx=\"24\" fill=\"#F7C03A\"/><path d=\"M102 124Q104 114 114 112\" fill=\"none\" stroke=\"#FBE3A6\" stroke-width=\"6\" stroke-linecap=\"round\"/><circle cx=\"110\" cy=\"136\" r=\"12.5\" fill=\"#FFF\"/><circle cx=\"110\" cy=\"137.5\" r=\"7.8\" fill=\"#1A1033\"/><circle cx=\"107.5\" cy=\"134.5\" r=\"2.6\" fill=\"#FFF\"/><circle cx=\"146\" cy=\"136\" r=\"12.5\" fill=\"#FFF\"/><circle cx=\"146\" cy=\"137.5\" r=\"7.8\" fill=\"#1A1033\"/><circle cx=\"143.5\" cy=\"134.5\" r=\"2.6\" fill=\"#FFF\"/><ellipse cx=\"98\" cy=\"154\" rx=\"7.5\" ry=\"5\" fill=\"#FB875C\"/><ellipse cx=\"158\" cy=\"154\" rx=\"7.5\" ry=\"5\" fill=\"#FB875C\"/><path d=\"M119 150Q128 159 137 150\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "satelite-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -111)\"><g transform=\"translate(128 102) scale(1.25) translate(-128 -102)\"><rect x=\"124\" y=\"86\" width=\"8\" height=\"18\" rx=\"3\" fill=\"#C9D1F5\"/><path d=\"M98 72Q128 116 158 72Z\" fill=\"#E8ECFF\"/><ellipse cx=\"128\" cy=\"72\" rx=\"30\" ry=\"7\" fill=\"#9AA6E0\"/><path d=\"M128 70V46\" fill=\"none\" stroke=\"#C9D1F5\" stroke-width=\"4.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"128\" cy=\"43\" r=\"6\" fill=\"#F97316\"/></g></g></svg>",
+ "satelite-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -111)\"><circle cx=\"110\" cy=\"136\" r=\"14.1\" fill=\"#F7C03A\"/><path d=\"M102.3 137Q110 143.8 117.8 137\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"146\" cy=\"136\" r=\"14.1\" fill=\"#F7C03A\"/><path d=\"M138.3 137Q146 143.8 153.8 137\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "microfone": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#EE4B5A\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#F0626F\"/><g transform=\"translate(128 130) scale(1.1) translate(-128 -131)\"><ellipse cx=\"128\" cy=\"216\" rx=\"50\" ry=\"9\" fill=\"#AF3851\"/><path d=\"M104 156L152 156L144 212Q128 220 112 212Z\" fill=\"#D5DCEB\"/><path d=\"M104 156L152 156L150 170L106 170Z\" fill=\"#B3BDD3\"/><rect x=\"108\" y=\"180\" width=\"40\" height=\"9\" rx=\"4\" fill=\"#F5B642\"/><g transform=\"translate(0 4)\"><rect x=\"98\" y=\"144\" width=\"60\" height=\"18\" rx=\"8\" fill=\"#3D3D63\"/></g><rect x=\"98\" y=\"144\" width=\"60\" height=\"18\" rx=\"8\" fill=\"#4A5072\"/><g transform=\"translate(0 6)\"><circle cx=\"128\" cy=\"100\" r=\"54\" fill=\"#14172A\"/></g><circle cx=\"128\" cy=\"100\" r=\"54\" fill=\"#2B2F45\"/><circle cx=\"128\" cy=\"100\" r=\"47\" fill=\"none\" stroke=\"#6A7199\" stroke-width=\"4.5\" stroke-linecap=\"round\" stroke-dasharray=\"0.1 8.6\"/><circle cx=\"128\" cy=\"100\" r=\"52\" fill=\"none\" stroke=\"#6A7199\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-dasharray=\"0.1 10\"/><circle cx=\"128\" cy=\"102\" r=\"41\" fill=\"#FFF1D6\"/><circle cx=\"112\" cy=\"96\" r=\"12.5\" fill=\"#FFF\"/><circle cx=\"112\" cy=\"97.5\" r=\"7.8\" fill=\"#1A1033\"/><circle cx=\"109.5\" cy=\"94.5\" r=\"2.6\" fill=\"#FFF\"/><circle cx=\"144\" cy=\"96\" r=\"12.5\" fill=\"#FFF\"/><circle cx=\"144\" cy=\"97.5\" r=\"7.8\" fill=\"#1A1033\"/><circle cx=\"141.5\" cy=\"94.5\" r=\"2.6\" fill=\"#FFF\"/><ellipse cx=\"98\" cy=\"114\" rx=\"7\" ry=\"4.5\" fill=\"#FF9FAA\"/><ellipse cx=\"158\" cy=\"114\" rx=\"7\" ry=\"4.5\" fill=\"#FF9FAA\"/><path d=\"M120 112Q128 110 136 112Q135 128 128 128Q121 128 120 112Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"124\" rx=\"5\" ry=\"3.2\" fill=\"#FF7A8A\"/></g></svg>",
+ "microfone-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -131)\"><g transform=\"translate(206 80) scale(1)\"><ellipse cx=\"0\" cy=\"0\" rx=\"9\" ry=\"7\" fill=\"#FFF\" transform=\"rotate(-20)\"/><rect x=\"6\" y=\"-30\" width=\"4.5\" height=\"30\" rx=\"2\" fill=\"#FFF\"/><path d=\"M10.5 -30Q26 -26 22 -10Q18 -19 10.5 -18Z\" fill=\"#FFF\"/></g><g transform=\"translate(50 64) scale(0.8)\"><ellipse cx=\"0\" cy=\"0\" rx=\"9\" ry=\"7\" fill=\"#FFF\" transform=\"rotate(-20)\"/><rect x=\"6\" y=\"-30\" width=\"4.5\" height=\"30\" rx=\"2\" fill=\"#FFF\"/><path d=\"M10.5 -30Q26 -26 22 -10Q18 -19 10.5 -18Z\" fill=\"#FFF\"/></g></g></svg>",
+ "microfone-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -131)\"><circle cx=\"112\" cy=\"96\" r=\"14.1\" fill=\"#FFF1D6\"/><path d=\"M104.3 97Q112 103.8 119.8 97\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"144\" cy=\"96\" r=\"14.1\" fill=\"#FFF1D6\"/><path d=\"M136.3 97Q144 103.8 151.8 97\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "trofeu": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#0E8A60\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#2D9975\"/><g transform=\"translate(128 130) scale(1.1) translate(-128 -139)\"><ellipse cx=\"128\" cy=\"218\" rx=\"58\" ry=\"9\" fill=\"#126456\"/><path d=\"M84 88Q44 88 50 114Q56 140 90 142\" fill=\"none\" stroke=\"#CB9D3C\" stroke-width=\"11\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M172 88Q212 88 206 114Q200 140 166 142\" fill=\"none\" stroke=\"#CB9D3C\" stroke-width=\"11\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"114\" y=\"168\" width=\"28\" height=\"30\" rx=\"6\" fill=\"#CB9D3C\"/><g transform=\"translate(0 6)\"><path d=\"M80 72H176V118Q176 168 128 174Q80 168 80 118Z\" fill=\"#B98F3C\"/></g><path d=\"M80 72H176V118Q176 168 128 174Q80 168 80 118Z\" fill=\"#F7C23C\"/><g transform=\"translate(0 4)\"><rect x=\"72\" y=\"62\" width=\"112\" height=\"18\" rx=\"9\" fill=\"#BB9A60\"/></g><rect x=\"72\" y=\"62\" width=\"112\" height=\"18\" rx=\"9\" fill=\"#F9D16D\"/><g transform=\"translate(0 4)\"><rect x=\"88\" y=\"194\" width=\"80\" height=\"22\" rx=\"9\" fill=\"#B98F3C\"/></g><rect x=\"88\" y=\"194\" width=\"80\" height=\"22\" rx=\"9\" fill=\"#F7C23C\"/><rect x=\"112\" y=\"201\" width=\"32\" height=\"8\" rx=\"3\" fill=\"#94703C\"/><path d=\"M89 96Q89 110 92 124\" fill=\"none\" stroke=\"#FCE7B1\" stroke-width=\"7\" stroke-linecap=\"round\"/><circle cx=\"108\" cy=\"112\" r=\"13\" fill=\"#FFF\"/><circle cx=\"108\" cy=\"113.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"105.4\" cy=\"110.4\" r=\"2.7\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"112\" r=\"13\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"113.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"145.4\" cy=\"110.4\" r=\"2.7\" fill=\"#FFF\"/><ellipse cx=\"90\" cy=\"134\" rx=\"8.5\" ry=\"5.5\" fill=\"#FB885D\"/><ellipse cx=\"166\" cy=\"134\" rx=\"8.5\" ry=\"5.5\" fill=\"#FB885D\"/><path d=\"M112 132Q128 137 144 132Q142 152 128 152Q114 152 112 132Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"147\" rx=\"8\" ry=\"4.6\" fill=\"#FF7A8A\"/></g></svg>",
+ "trofeu-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -139)\"><path d=\"M44 49Q46.1 59.9 57 62Q46.1 64.1 44 75Q41.9 64.1 31 62Q41.9 59.9 44 49Z\" fill=\"#FFF\"/><path d=\"M212 78Q213.6 86.4 222 88Q213.6 89.6 212 98Q210.4 89.6 202 88Q210.4 86.4 212 78Z\" fill=\"#FFF\"/><path d=\"M198 37Q199.1 42.9 205 44Q199.1 45.1 198 51Q196.9 45.1 191 44Q196.9 42.9 198 37Z\" fill=\"#FFF\"/><path d=\"M52 162Q53 167 58 168Q53 169 52 174Q51 169 46 168Q51 167 52 162Z\" fill=\"#FFF\"/></g></svg>",
+ "trofeu-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -139)\"><circle cx=\"108\" cy=\"112\" r=\"14.6\" fill=\"#F7C23C\"/><path d=\"M99.9 113Q108 120.1 116.1 113\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"148\" cy=\"112\" r=\"14.6\" fill=\"#F7C23C\"/><path d=\"M139.9 113Q148 120.1 156.1 113\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "robotv": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#A6D82F\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#B2DD4A\"/><g transform=\"translate(128 130) scale(1.12) translate(-128 -127)\"><ellipse cx=\"128\" cy=\"216\" rx=\"62\" ry=\"9\" fill=\"#7C9B33\"/><rect x=\"92\" y=\"188\" width=\"20\" height=\"20\" rx=\"7\" fill=\"#2B2F45\"/><rect x=\"144\" y=\"188\" width=\"20\" height=\"20\" rx=\"7\" fill=\"#2B2F45\"/><circle cx=\"60\" cy=\"150\" r=\"10\" fill=\"#5C51CC\"/><circle cx=\"196\" cy=\"150\" r=\"10\" fill=\"#5C51CC\"/><g transform=\"translate(0 6)\"><rect x=\"66\" y=\"98\" width=\"124\" height=\"96\" rx=\"30\" fill=\"#554ABE\"/></g><rect x=\"66\" y=\"98\" width=\"124\" height=\"96\" rx=\"30\" fill=\"#6C63F0\"/><rect x=\"78\" y=\"110\" width=\"100\" height=\"72\" rx=\"22\" fill=\"#14122B\"/><ellipse cx=\"108\" cy=\"138\" rx=\"9\" ry=\"13\" fill=\"#2DD4BF\"/><ellipse cx=\"148\" cy=\"138\" rx=\"9\" ry=\"13\" fill=\"#2DD4BF\"/><circle cx=\"105\" cy=\"132\" r=\"3.2\" fill=\"#FFF\"/><circle cx=\"145\" cy=\"132\" r=\"3.2\" fill=\"#FFF\"/><ellipse cx=\"90\" cy=\"160\" rx=\"7\" ry=\"4\" fill=\"#FF6F8A\"/><ellipse cx=\"166\" cy=\"160\" rx=\"7\" ry=\"4\" fill=\"#FF6F8A\"/><path d=\"M115 160Q128 172 141 160\" fill=\"none\" stroke=\"#2DD4BF\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"180\" cy=\"104\" r=\"3.5\" fill=\"#BDB9F8\"/></g></svg>",
+ "robotv-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -127)\"><path d=\"M112 104L84 62M144 104L172 62\" fill=\"none\" stroke=\"#2B2F45\" stroke-width=\"8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"82\" cy=\"56\" r=\"10\" fill=\"#F97316\"/><circle cx=\"174\" cy=\"56\" r=\"10\" fill=\"#F5B642\"/><ellipse cx=\"128\" cy=\"100\" rx=\"22\" ry=\"7\" fill=\"#2B2F45\"/></g></svg>",
+ "robotv-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.12) translate(-128 -127)\"><ellipse cx=\"108\" cy=\"138\" rx=\"10.6\" ry=\"14.6\" fill=\"#14122B\"/><ellipse cx=\"148\" cy=\"138\" rx=\"10.6\" ry=\"14.6\" fill=\"#14122B\"/><path d=\"M98 139H118M138 139H158\" fill=\"none\" stroke=\"#2DD4BF\" stroke-width=\"4.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "lente": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#F1E5CC\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#F3E8D3\"/><g transform=\"translate(128 130) scale(1.1) translate(-128 -120)\"><ellipse cx=\"128\" cy=\"214\" rx=\"64\" ry=\"9\" fill=\"#B1A4A1\"/><g transform=\"translate(0 4)\"><rect x=\"106\" y=\"36\" width=\"44\" height=\"22\" rx=\"8\" fill=\"#3D3562\"/></g><rect x=\"106\" y=\"36\" width=\"44\" height=\"22\" rx=\"8\" fill=\"#4A4570\"/><circle cx=\"128\" cy=\"44\" r=\"5\" fill=\"#EF4444\"/><g transform=\"translate(0 6)\"><circle cx=\"128\" cy=\"126\" r=\"78\" fill=\"#231A3F\"/></g><circle cx=\"128\" cy=\"126\" r=\"78\" fill=\"#2B2840\"/><circle cx=\"128\" cy=\"114\" r=\"53\" fill=\"#F97316\"/><circle cx=\"128\" cy=\"114\" r=\"46\" fill=\"#2A2780\"/><circle cx=\"128\" cy=\"114\" r=\"34\" fill=\"#4338CA\"/><path d=\"M96 96A38 38 0 0 1 118 78\" fill=\"none\" stroke=\"#8F8AFF\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><ellipse cx=\"88\" cy=\"178\" rx=\"8.5\" ry=\"5.5\" fill=\"#E8587A\"/><ellipse cx=\"168\" cy=\"178\" rx=\"8.5\" ry=\"5.5\" fill=\"#E8587A\"/><path d=\"M110 178Q128 192 146 178\" fill=\"none\" stroke=\"#F5B642\" stroke-width=\"6.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "lente-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -120)\"><circle cx=\"128\" cy=\"114\" r=\"21\" fill=\"#1A1033\"/><circle cx=\"119\" cy=\"105\" r=\"8\" fill=\"#FFF\"/><circle cx=\"138\" cy=\"124\" r=\"3.6\" fill=\"#FFF\"/></g></svg>",
+ "lente-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.1) translate(-128 -120)\"><path d=\"M166 67Q168.4 79.6 181 82Q168.4 84.4 166 97Q163.6 84.4 151 82Q163.6 79.6 166 67Z\" fill=\"#FFF\"/><path d=\"M152 62Q153 67 158 68Q153 69 152 74Q151 69 146 68Q151 67 152 62Z\" fill=\"#FFF\"/></g></svg>",
+ "estrela": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#F0558A\"/><circle cx=\"128\" cy=\"122\" r=\"102\" fill=\"#F26B99\"/><g transform=\"translate(128 130) scale(1.08) translate(-128 -130)\"><ellipse cx=\"128\" cy=\"216\" rx=\"54\" ry=\"9\" fill=\"#B03F73\"/><circle cx=\"36\" cy=\"190\" r=\"3\" fill=\"#FFF\"/><circle cx=\"222\" cy=\"170\" r=\"3\" fill=\"#FFF\"/><circle cx=\"64\" cy=\"40\" r=\"2.6\" fill=\"#FFF\"/><g transform=\"translate(0 7)\"><polygon points=\"128,54 151.5,95.6 198.4,105.1 166,140.4 171.5,187.9 128,168 84.5,187.9 90,140.4 57.6,105.1 104.5,95.6\" fill=\"#BF933D\" stroke=\"#BF933D\" stroke-width=\"16\" stroke-linejoin=\"round\"/></g><polygon points=\"128,54 151.5,95.6 198.4,105.1 166,140.4 171.5,187.9 128,168 84.5,187.9 90,140.4 57.6,105.1 104.5,95.6\" fill=\"#FFC83D\" stroke=\"#FFC83D\" stroke-width=\"16\" stroke-linejoin=\"round\"/><path d=\"M92 86L104 62\" fill=\"none\" stroke=\"#FFECBB\" stroke-width=\"7\" stroke-linecap=\"round\"/><circle cx=\"108\" cy=\"126\" r=\"13\" fill=\"#FFF\"/><circle cx=\"108\" cy=\"127.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"105.4\" cy=\"124.4\" r=\"2.7\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"126\" r=\"13\" fill=\"#FFF\"/><circle cx=\"148\" cy=\"127.5\" r=\"8.1\" fill=\"#1A1033\"/><circle cx=\"145.4\" cy=\"124.4\" r=\"2.7\" fill=\"#FFF\"/><ellipse cx=\"90\" cy=\"148\" rx=\"8.5\" ry=\"5.5\" fill=\"#FF8B5D\"/><ellipse cx=\"166\" cy=\"148\" rx=\"8.5\" ry=\"5.5\" fill=\"#FF8B5D\"/><path d=\"M114 144Q128 149 142 144Q140 162 128 162Q116 162 114 144Z\" fill=\"#1A1033\"/><ellipse cx=\"128\" cy=\"157\" rx=\"7\" ry=\"4.6\" fill=\"#FF7A8A\"/></g></svg>",
+ "estrela-a1": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.08) translate(-128 -130)\"><path d=\"M48 61Q50.4 73.6 63 76Q50.4 78.4 48 91Q45.6 78.4 33 76Q45.6 73.6 48 61Z\" fill=\"#FFF\"/><path d=\"M210 63Q211.8 72.2 221 74Q211.8 75.8 210 85Q208.2 75.8 199 74Q208.2 72.2 210 63Z\" fill=\"#FFF\"/><path d=\"M204 188Q205.3 194.7 212 196Q205.3 197.3 204 204Q202.7 197.3 196 196Q202.7 194.7 204 188Z\" fill=\"#FFF\"/><path d=\"M52 169Q53.1 174.9 59 176Q53.1 177.1 52 183Q50.9 177.1 45 176Q50.9 174.9 52 169Z\" fill=\"#FFF\"/></g></svg>",
+ "estrela-a2": "<svg viewBox=\"0 0 256 256\"><g transform=\"translate(128 130) scale(1.08) translate(-128 -130)\"><circle cx=\"108\" cy=\"126\" r=\"14.6\" fill=\"#FFC83D\"/><path d=\"M99.9 127Q108 134.1 116.1 127\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"148\" cy=\"126\" r=\"14.6\" fill=\"#FFC83D\"/><path d=\"M139.9 127Q148 134.1 156.1 127\" fill=\"none\" stroke=\"#1A1033\" stroke-width=\"4.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>",
+ "padrao": "<svg viewBox=\"0 0 256 256\"><rect width=\"256\" height=\"256\" fill=\"#0B0B11\"/><circle cx=\"128\" cy=\"126\" r=\"104\" fill=\"#1A1A27\"/><path d=\"M92.3 191.8c-.2-2.9 2.1-5.6 4.9-6.4c2.5-.6 11.9 0 15.4-.4l.1-4.5c-3.1-.6-8.9 .4-11.4-.3c1.1-1.1 3.8-2.4 5.4-3.5c1-.8 3.8-3.2 4.8-3.5c1.2-.4 4.5-.1 6-.1c4 0 8.1 0 12.1 0c11.4 0 22.8 0 34.2 0c5.4 0 10.8 0 16.2 0c2-.1 4.7 .5 6.3-1.1c1.4-1.4 1.1-3.2 1.1-5c0-3.5 0-7 0-10.5c0-14.8 .1-29.5 0-44.2c0-4 0-7.9 0-11.8c0-2.2-.2-4.2-2.6-5c-1.4-.5-3-.3-4.5-.1c-3.1 .4-5.5 1.2-8.2 2.8c-6 3.7-11.7 13.5-16.1 19.2c-1.3 1.7-2.5 3.7-4.1 5.1l-4.9-4.7c.8-1.7 2.4-3.2 3.5-4.7c2.7-3.4 5.1-7 7.6-10.6c5.8-8 12.9-14.1 23.2-14.4c1.4 0 2.9-.1 4.3 .1c3.8 .6 7.1 3.5 8.3 7.2c.8 2.2 .6 4.6 .6 6.9c0 3.6 0 7.1 0 10.6c0 12.5 0 25 0 37.5c0 5 0 10.1 0 15.1c0 4.6 .4 8.1-3.1 11.7c-3.9 4-9.7 3.1-14.8 3.1c-7.3 0-14.6 0-22 0c-3.3 .1-8.3-.2-11.4 .1l0 4.5c1.1 .3 2.2 .2 3.3 .2c2.3 0 4.6 .1 6.8 .1c1.7 0 3.5-.2 5.1 .2c3.1 .6 5 3.3 5.3 6.4c-1.8 .5-5.8 .2-7.8 .2c-5.3 0-10.6 0-15.9 0c-10.5 0-21.1 0-31.7 0c-3.3 0-6.5 0-9.8 0c-2 0-4.2 .2-6.2-.2z\" fill=\"#F16F16\" fill-rule=\"evenodd\"/><path d=\"M120 87.9c-1.1-1.9-2.9-3.4-4.4-4.9c-2.2-2.3-4.4-4.6-6.6-6.9c-1.5-1.6-3.7-3.6-2.3-6c.4-.6 1-1.1 1.7-1.4c2.1-.8 3.6 .8 4.8 2.2c3 3.3 6.2 6.3 9.2 9.5c1.8 1.8 3.5 4.1 5.6 5.6c1.8-1.5 5.5-5.5 7.2-7.4c4.1-4.2 8.2-8.5 12.2-12.7c.8-.9 1.7-1.8 2.5-2.7c1.6-1.6 3.3-3.5 5.7-2.1c.6 .4 1 .9 1.3 1.6c1 2.5-1.7 4.5-3.2 6.2c-3.5 3.7-6.9 7.4-10.4 11c-2.5 2.6-5.2 5.1-7.4 8c1.6 .5 5.5 .2 7.3 .2c4.4 0 8.7 0 13 0c2.2 0 4.7-.3 6.9 .2c-.8 1-3.3 3-4.5 4.3c-.7 .7-1.6 2.1-2.4 2.5c-.9 .3-4 .1-5.1 .1c-3.9 0-7.9 0-11.8 0c-16.4 0-32.8 0-49.1 0c-4.7 0-9.4 0-14.1 0c-1.9 0-4.4-.4-6 .8c-1.7 1.1-1.7 3-1.7 4.8c0 3.4 0 6.8 0 10.2c0 15 0 30 0 44.9c0 3.9 0 7.8 0 11.6c0 1.9 0 3.9 1.8 5c1.1 .7 2.4 .6 3.6 .6c2.5 0 4.9-.1 7.4-.4c10.1-1.3 17.9-6 25.3-12.9c2-1.8 3.8-4 5.6-6c.9-1 1.7-2.3 2.9-3c2.8-1.6 6.1 1.3 5 4.3c-.7 1.8-5.6 6.7-7.2 8.3c-6.5 6.8-14.8 12.8-24 15.1c-2.2 .6-4.5 .9-6.7 1.2c-3.6 .6-9.5 1.2-13 .2c-1.8-.5-3.4-1.5-4.7-2.9c-1.5-1.6-2.5-3.5-2.9-5.6c-.4-2.2-.1-10.6-.1-13.4c0-15.9 0-31.7 0-47.5c0-2.6 0-5.1 0-7.6c0-4.8-.4-8.4 3.5-12c3.1-2.8 6-2.8 10-2.8c2.1 0 4.1 0 6.2 0c8.9 0 17.8 0 26.7 0c2.6 0 5.2 0 7.8 0c1.4 0 3 .2 4.4-.2z\" fill=\"#F16F16\" fill-rule=\"evenodd\"/><path d=\"M155.8 156.7c-1.8 .4-3.5-.8-3.9-2.5c-.1-1 0-1.9-.1-2.9c-.1-1.6-.4-3.2-.7-4.8c-1.5-6.8-5.2-13.2-10.3-18c-4.7-4.4-10.4-7.5-16.7-9c-1.7-.3-3.4-.6-5.1-.7c-1.1-.1-2.4 .1-3.4-.3c-2-.8-2.6-3.5-1.1-5.1c1-1 2.6-1 3.9-.9c3.2 .1 6.3 .7 9.3 1.5c13.2 3.6 23.3 13.5 28 26.2c1.3 3.8 2.1 7.8 2.4 11.8c.1 1.9-.1 4.1-2.3 4.7z\" fill=\"#F16F16\" fill-rule=\"evenodd\"/><path d=\"M143.1 156.7c-1.7 .4-3.2-.7-3.7-2.3c-.2-.9-.1-1.9-.2-2.8c-.1-.8-.3-1.6-.5-2.4c-.8-4.4-3.2-8.5-6.5-11.6c-3-2.9-6.7-4.9-10.8-5.8c-.7-.1-1.5-.3-2.2-.3c-1.4-.2-2.8 .1-4-.6c-2.1-1.1-2-4.4 .2-5.5c2-1 6.8 .1 8.9 .7c8.6 2.6 15.7 8.5 19.1 17c1.2 2.9 2.1 6.3 2.1 9.5c.1 1.8-.4 3.6-2.4 4.1z\" fill=\"#F16F16\" fill-rule=\"evenodd\"/><path d=\"M130.5 156.7c-.7 .1-1.4 .1-2.1-.3c-1.9-.9-1.6-2.9-2-4.7c-.3-1.4-1-2.9-1.9-4.1c-1.3-1.7-3.5-3-5.6-3.4c-1.4-.3-3 0-4.2-1c-1.7-1.5-1.2-4.5 1-5.3c1.4-.5 3.3-.1 4.7 .2c5 1.2 9.3 4.7 11.3 9.6c1 2.5 2.6 8.1-1.3 9z\" fill=\"#F16F16\" fill-rule=\"evenodd\"/></svg>"
+};
+function avatarHtml(id, opcoes) {
+  // id desconhecido cai no avatar padrão (marca do Sintoniza)
+  var existe = typeof id === "string" && Object.prototype.hasOwnProperty.call(AVATAR_SVGS, id) && !/-a\d$/.test(id);
+  var chave = existe ? id : "padrao";
+  var vivo = !!(opcoes && opcoes.vivo);
+  var camadas = [];
+  for (var i = 0; i < AVATARS.length; i++) if (AVATARS[i].id === chave) camadas = AVATARS[i].camadas;
+  var html = '<span class="avatar avatar-' + chave + (vivo ? " avatar-vivo" : "") + '">' +
+    '<span class="avatar-base">' + AVATAR_SVGS[chave] + "</span>";
+  for (var j = 0; j < camadas.length; j++) {
+    html += '<span class="avatar-camada avatar-' + chave + "-" + camadas[j] + '">' + AVATAR_SVGS[chave + "-" + camadas[j]] + "</span>";
+  }
+  return html + "</span>";
 }
 </script>
 
@@ -7649,6 +7918,8 @@ function ottOnOk(d) {
   }
   ottRenderAccountCard();
   ottScheduleRevalidate();
+  // Perfis: valida o perfil ativo, entra direto (1 perfil) ou abre o "Quem está assistindo?" (2+, na abertura)
+  profileBoot().catch(() => {});
 }
 
 function ottApplyDecision(d) {
@@ -7685,6 +7956,7 @@ async function ottUnlink() {
   try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
   [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY].forEach(k => localStorage.removeItem(k));
   ottApplyPlaylist(localStorage, null);
+  try { sessionStorage.removeItem(PROFILE_CHOSEN_KEY); } catch (e) { /* ignora */ }
   location.reload();
 }
 
@@ -7704,7 +7976,7 @@ function ottWire() {
     setTimeout(() => { btn.textContent = "Copiar código"; }, 2000);
   });
   // Toque: marca o botão como pressionado (no iOS o :active só vale com ouvinte de toque)
-  document.querySelectorAll("#ott-gate .ott-btn, #ott-gate .ott-link").forEach(el => {
+  document.querySelectorAll("#ott-gate .ott-btn, #ott-gate .ott-link, #profile-gate .ott-btn, #profile-gate .ott-link").forEach(el => {
     const on = () => el.classList.add("is-pressed");
     const off = () => el.classList.remove("is-pressed");
     el.addEventListener("pointerdown", on);
@@ -7726,6 +7998,434 @@ async function ottBoot() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PERFIS ("Quem está assistindo?", avatar, saudação e gerenciar)
+// Só existem com conta (OTT). A lista mora no servidor (RPCs do ott-core); os dados de cada perfil ficam
+// neste aparelho (profKey). Sem conta o app segue como antes: sem perfil, chaves antigas, saudação sem nome.
+// Nenhuma referência a ott*/avatar* fora de funções (esses scripts vêm antes, mas os testes carregam só trechos).
+// O envio à TV não passa por aqui: o botão de enviar nunca pede nem espera perfil.
+// ═══════════════════════════════════════════════════════════════
+const PROFILE_CHOSEN_KEY = "sint_profile_chosen";   // sessionStorage: já escolheu nesta abertura do app (sobrevive ao reload da troca)
+const PROFILE_LOADED_ID = activeProfileId();        // perfil cujos dados ESTA página carregou ao abrir (mudou = recarrega)
+const PROFILE_PENCIL_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const PROFILE_PLUS_SVG = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const _profile = {
+  list: [],            // lista atual (servidor; na falta dele, o cache sint_profiles)
+  chosen: false,       // já escolheu nesta sessão: a revalidação de 6 h não pergunta de novo
+  open: false,         // o seletor está aberto
+  voluntary: false,    // aberto pelo usuário (topo, menu, Configurações): pode fechar sem escolher
+  manage: false,       // modo "gerenciar": os cartões abrem o editor
+  editing: null,       // perfil em edição (null = novo)
+  editorOpen: false,
+  avatar: "padrao",    // avatar escolhido no editor
+  busy: false,
+  booting: false,
+  wired: false,
+};
+try { _profile.chosen = sessionStorage.getItem(PROFILE_CHOSEN_KEY) === "1"; } catch (e) { /* sem sessionStorage: pergunta a cada abertura */ }
+
+function profileReadCache() {
+  try {
+    const l = JSON.parse(localStorage.getItem(PROFILES_CACHE_KEY) || "[]");
+    return Array.isArray(l) ? l.filter(p => p && typeof p.id === "string" && p.id && typeof p.nome === "string" && p.nome) : [];
+  } catch (e) { return []; }
+}
+
+function profileWriteCache(list) {
+  try { localStorage.setItem(PROFILES_CACHE_KEY, JSON.stringify(list)); } catch (e) { /* sem espaço: segue sem cache */ }
+}
+
+function profileMarkChosen() {
+  _profile.chosen = true;
+  try { sessionStorage.setItem(PROFILE_CHOSEN_KEY, "1"); } catch (e) { /* ignora */ }
+}
+
+// Configuração do backend e token do aparelho (null = sem conta ainda)
+function profileCtx() {
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  return _ott.cfg && token ? { cfg: _ott.cfg, token } : null;
+}
+
+// Perfis só existem com conta: modo conta já ligado, ou conta habilitada neste aparelho (cache pronto antes da rede)
+function profilesOn() {
+  return document.body.classList.contains("ott-mode") || ottEnabled();
+}
+
+// Perfil ativo (registro do cache) ou null
+function profileActive() {
+  const id = activeProfileId();
+  if (!id) return null;
+  const l = profileReadCache();
+  for (let i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+  return null;
+}
+
+// Nome para a saudação e o menu: perfil ativo; sem perfil, o nome da conta; sem nada, vazio
+function profileDisplayName() {
+  const p = profileActive();
+  if (p) return p.nome;
+  try {
+    const a = JSON.parse(localStorage.getItem(OTT_KEYS.ACCOUNT) || "null");
+    return (a && typeof a.nome === "string" && a.nome.trim()) || "";
+  } catch (e) { return ""; }
+}
+
+// Saudação do catálogo: "Boa noite, Ana." (nome do perfil ativo); sem perfil nem conta, só "Boa noite"
+function renderWelcome() {
+  const el = document.getElementById("welcome-h1");
+  if (!el) return;
+  const saudacao = ottGreeting(new Date().getHours());
+  const nome = profilesOn() ? profileDisplayName() : "";
+  el.textContent = "";
+  el.appendChild(document.createTextNode(nome ? saudacao + ", " : saudacao));
+  if (nome) {
+    const destaque = document.createElement("span");
+    destaque.textContent = nome + ".";
+    el.appendChild(destaque);
+  }
+}
+
+// Atualiza tudo que mostra o perfil: menu lateral, botão do topo, cartão das Configurações e saudação
+function renderProfileUi() {
+  const on = profilesOn();
+  const p = on ? profileActive() : null;
+  const avatarEl = document.getElementById("user-avatar");
+  const nameEl = document.getElementById("user-name");
+  if (avatarEl) avatarEl.innerHTML = avatarHtml(p ? p.avatar : "padrao");
+  if (nameEl) nameEl.textContent = (on && profileDisplayName()) || (on ? "Minha conta" : "Convidado");
+  const card = document.getElementById("user-card");
+  if (card) card.classList.toggle("has-profiles", !!p);
+  const btn = document.getElementById("profile-btn");
+  if (btn) {
+    btn.hidden = !p;
+    if (p) {
+      btn.innerHTML = '<span class="pb-av">' + avatarHtml(p.avatar) + "</span>";
+      btn.setAttribute("aria-label", "Perfil " + p.nome + ". Trocar de perfil");
+    }
+  }
+  document.body.classList.toggle("has-profile-btn", !!p);
+  profileRenderSettingsCard();
+  renderWelcome();
+}
+
+// Cartão "Perfis" das Configurações: quem está na conta e quem está ativo neste aparelho
+function profileRenderSettingsCard() {
+  const box = document.getElementById("profiles-card-list");
+  if (!box) return;
+  const list = profileReadCache();
+  const ativo = activeProfileId();
+  box.innerHTML = list.map(p =>
+    '<div class="pf-chip' + (p.id === ativo ? " is-active" : "") + '"><span class="pf-chip-av">' + avatarHtml(p.avatar) +
+    '</span><span class="pf-chip-n">' + escapeHtmlText(p.nome) + (p.id === ativo ? "<small>Neste aparelho</small>" : "") + "</span></div>"
+  ).join("");
+}
+
+// ─── Seletor ───
+function profileShowScreen(which) {
+  document.getElementById("profile-picker").hidden = which !== "picker";
+  document.getElementById("profile-editor").hidden = which !== "editor";
+  _profile.editorOpen = which === "editor";
+  const gate = document.getElementById("profile-gate");
+  if (gate) gate.scrollTop = 0;
+}
+
+// O cartão em foco (anel laranja) e o ÚNICO avatar animado da grade
+function profileSetFocus(card) {
+  const grid = document.getElementById("profile-grid");
+  grid.querySelectorAll(".pg-card.is-focus").forEach(c => c.classList.remove("is-focus"));
+  grid.querySelectorAll(".avatar-vivo").forEach(a => a.classList.remove("avatar-vivo"));
+  if (!card) return;
+  card.classList.add("is-focus");
+  const av = card.querySelector(".avatar");
+  if (av && !card.classList.contains("pg-add")) av.classList.add("avatar-vivo");
+}
+
+function profileRenderGrid() {
+  const grid = document.getElementById("profile-grid");
+  const manage = _profile.manage;
+  const sugerido = ottPerfilPickActive(_profile.list, activeProfileId());
+  const cards = _profile.list.map((p, i) => {
+    const nome = escapeHtmlText(p.nome);
+    return '<button class="pg-card" type="button" role="listitem" data-id="' + escapeHtmlText(p.id) + '" style="--i:' + i + '" aria-label="' +
+      (manage ? "Editar perfil " : "") + nome + '"><span class="pg-ring"><span class="pg-av">' + avatarHtml(p.avatar) +
+      '</span><span class="pg-edit" aria-hidden="true">' + PROFILE_PENCIL_SVG + '</span></span><span class="pg-name">' + nome + "</span>" +
+      (p.padrao ? '<span class="pg-tag">Principal</span>' : "") + "</button>";
+  });
+  if (manage && _profile.list.length < OTT_PERFIL_MAX) {
+    cards.push('<button class="pg-card pg-add" type="button" role="listitem" data-add="1" style="--i:' + _profile.list.length +
+      '" aria-label="Adicionar perfil"><span class="pg-ring">' + PROFILE_PLUS_SVG + '</span><span class="pg-name">Adicionar perfil</span></button>');
+  }
+  grid.innerHTML = cards.join("");
+  if (!manage && sugerido) profileSetFocus(grid.querySelector('.pg-card[data-id="' + sugerido.id + '"]'));
+  const gate = document.getElementById("profile-gate");
+  gate.classList.toggle("is-manage", manage);
+  document.getElementById("profile-title").textContent = manage ? "Gerenciar perfis" : "Quem está assistindo?";
+  document.getElementById("profile-sub").textContent = !_profile.list.length ? "Carregando perfis..." :
+    manage ? "Toque em um perfil para editar ou crie um novo" : "Escolha seu perfil para continuar";
+  document.getElementById("profile-manage-label").textContent = manage ? "Concluído" : "Gerenciar perfis";
+  document.getElementById("profile-manage-btn").classList.toggle("ott-btn-primary", manage);
+  document.getElementById("profile-manage-btn").hidden = !_profile.list.length;
+}
+
+function profileOpenGate(opts) {
+  _profile.open = true;
+  _profile.voluntary = !!(opts && opts.voluntary);
+  _profile.manage = !!(opts && opts.manage);
+  document.getElementById("profile-close-btn").hidden = !_profile.voluntary;
+  profileShowScreen("picker");
+  profileRenderGrid();
+  document.documentElement.classList.add("profile-open");
+}
+
+function profileCloseGate() {
+  _profile.open = false;
+  _profile.voluntary = false;
+  _profile.manage = false;
+  _profile.editing = null;
+  document.documentElement.classList.remove("profile-open");
+}
+
+// Escolhe o perfil: adota os dados antigos (1ª vez do principal), grava o ativo e, se mudou de perfil, recarrega
+// (as chaves por perfil são lidas ao abrir a página).
+function profileChoose(p) {
+  if (!p || !p.id) return;
+  profileAdoptLegacy(p.id, p.padrao === true);
+  try { localStorage.setItem(PROFILE_ACTIVE_KEY, p.id); } catch (e) { /* sem espaço: segue sem trocar */ }
+  profileMarkChosen();
+  if (activeProfileId() === p.id && p.id !== PROFILE_LOADED_ID) { location.reload(); return; }
+  profileCloseGate();
+  renderProfileUi();
+}
+
+// Depois da conta liberada (ottOnOk): busca os perfis, valida o ativo local e decide entre entrar direto e perguntar.
+// Falha de rede usa o cache; sem cache e sem perfil o app abre como antes (chaves antigas).
+async function profileBoot() {
+  if (_profile.booting) return;
+  _profile.booting = true;
+  try {
+    const ctx = profileCtx();
+    let list = profileReadCache();
+    // Abertura com 2+ perfis já conhecidos: o seletor aparece na hora, sem esperar a rede.
+    // Aparelho sem nenhum perfil conhecido: cobre o app com a tela de espera para ele não piscar antes do seletor.
+    if (!_profile.chosen && !_profile.open) {
+      if (list.length >= 2) { _profile.list = list; profileOpenGate({ voluntary: false }); }
+      else if (!list.length && ctx) { _profile.list = []; profileOpenGate({ voluntary: false }); }
+    }
+    if (ctx) {
+      try {
+        const fresh = await ottPerfilList(ctx.cfg, ctx.token);
+        if (fresh.length) { list = fresh; profileWriteCache(list); }
+      } catch (e) { /* offline: segue com o cache */ }
+    }
+    _profile.list = list;
+    const d = ottPerfilDecide(list, activeProfileId(), _profile.chosen);
+    if (d.kind === "none") {
+      if (!_profile.voluntary) profileCloseGate();
+    } else if (d.kind === "enter") {
+      // Sem perfil válido no aparelho (ou o ativo foi excluído em outro aparelho): ottPerfilDecide já devolve o principal
+      if (_profile.open && (_profile.voluntary || _profile.manage || _profile.editorOpen)) profileRenderGrid();
+      else profileChoose(d.perfil);
+    } else {
+      // Vai perguntar. Se o perfil ativo deste aparelho não existe mais na conta (excluído em outro aparelho),
+      // regrava o ativo no principal agora: escolher qualquer perfil recarrega, porque a página abriu com os dados do antigo.
+      const alvo = ottPerfilPickActive(list, activeProfileId());
+      if (alvo && activeProfileId() && activeProfileId() !== alvo.id) {
+        try { localStorage.setItem(PROFILE_ACTIVE_KEY, alvo.id); } catch (e) { /* ignora */ }
+      }
+      if (!_profile.open) profileOpenGate({ voluntary: false });
+      else if (!_profile.editorOpen) profileRenderGrid();
+    }
+    renderProfileUi();
+  } finally {
+    _profile.booting = false;
+  }
+}
+
+// ─── Editor (criar / editar / excluir) ───
+function profileShowError(msg) { document.getElementById("profile-error").textContent = msg || ""; }
+
+function profileSelectAvatar(id) {
+  _profile.avatar = id;
+  document.querySelectorAll("#profile-avatar-grid .pe-av").forEach(b => {
+    const sel = b.dataset.av === id;
+    b.classList.toggle("is-selected", sel);
+    b.setAttribute("aria-checked", sel ? "true" : "false");
+    const av = b.querySelector(".avatar");
+    if (av) av.classList.toggle("avatar-vivo", sel);
+  });
+  document.getElementById("profile-preview").innerHTML = avatarHtml(id, { vivo: true });
+}
+
+function profileOpenEditor(p) {
+  _profile.editing = p || null;
+  const input = document.getElementById("profile-name-input");
+  input.value = p ? p.nome : "";
+  document.getElementById("profile-name-count").textContent = input.value.length + "/20";
+  document.getElementById("profile-editor-title").textContent = p ? "Editar perfil" : "Novo perfil";
+  document.getElementById("profile-editor-eyebrow").textContent = p && p.padrao ? "Perfil principal" : "Perfil";
+  document.getElementById("profile-delete-btn").hidden = !p || p.padrao === true;   // o principal não pode ser excluído
+  document.getElementById("profile-delete-confirm").hidden = true;
+  document.getElementById("profile-editor-actions").hidden = false;
+  profileShowError("");
+  _profile.busy = false;
+  document.getElementById("profile-save-btn").disabled = false;
+  document.getElementById("profile-save-btn").textContent = "Salvar";
+  // Avatar inicial: o do perfil; no novo, o primeiro do catálogo que ninguém usa ainda
+  let inicial = p ? p.avatar : "";
+  if (!inicial) {
+    const usados = _profile.list.map(x => x.avatar);
+    inicial = (AVATARS.filter(a => usados.indexOf(a.id) < 0)[0] || AVATARS[0]).id;
+  }
+  document.getElementById("profile-avatar-grid").innerHTML = AVATARS.map(a =>
+    '<button class="pe-av" type="button" role="radio" aria-checked="false" data-av="' + a.id + '" aria-label="' + escapeHtmlText(a.nome) +
+    '"><span class="pe-av-in">' + avatarHtml(a.id) + "</span></button>"
+  ).join("");
+  profileSelectAvatar(inicial);
+  profileShowScreen("editor");
+}
+
+function profileCloseEditor() {
+  _profile.editing = null;
+  profileShowScreen("picker");
+  profileRenderGrid();
+}
+
+async function profileSave() {
+  if (_profile.busy) return;
+  const nome = ottPerfilValidName(document.getElementById("profile-name-input").value);
+  if (!nome) { profileShowError("Dê um nome ao perfil (de 1 a 20 caracteres)."); return; }
+  const ctx = profileCtx();
+  if (!ctx) { profileShowError("Sem conexão com a conta. Tente de novo."); return; }
+  _profile.busy = true;
+  const btn = document.getElementById("profile-save-btn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+  profileShowError("");
+  try {
+    const salvo = await ottPerfilSave(ctx.cfg, ctx.token, _profile.editing ? _profile.editing.id : null, nome, _profile.avatar);
+    let achou = false;
+    _profile.list = _profile.list.map(p => { if (p.id === salvo.id) { achou = true; return salvo; } return p; });
+    if (!achou) _profile.list.push(salvo);
+    profileWriteCache(_profile.list);
+    _profile.busy = false;
+    renderProfileUi();
+    profileCloseEditor();
+  } catch (e) {
+    _profile.busy = false;
+    btn.disabled = false;
+    btn.textContent = "Salvar";
+    profileShowError(e && e.message ? e.message : "Não foi possível salvar o perfil.");
+  }
+}
+
+// Apaga deste aparelho o que era do perfil excluído (as chaves sint_p<id8>_...)
+function profileForgetLocal(perfilId) {
+  try { PER_PROFILE_BASES.forEach(base => localStorage.removeItem(profKeyFor(base, perfilId))); } catch (e) { /* ignora */ }
+}
+
+function profileAskDelete() {
+  const p = _profile.editing;
+  if (!p || p.padrao) return;
+  document.getElementById("profile-delete-text").textContent =
+    "Excluir o perfil \"" + p.nome + "\"? Favoritos, lista e o ponto em que parou nos filmes deste perfil serão apagados.";
+  document.getElementById("profile-editor-actions").hidden = true;
+  document.getElementById("profile-delete-confirm").hidden = false;
+}
+
+async function profileDelete() {
+  const p = _profile.editing;
+  if (!p || p.padrao || _profile.busy) return;
+  const ctx = profileCtx();
+  if (!ctx) { profileShowError("Sem conexão com a conta. Tente de novo."); return; }
+  _profile.busy = true;
+  try {
+    await ottPerfilDelete(ctx.cfg, ctx.token, p.id);
+  } catch (e) {
+    _profile.busy = false;
+    document.getElementById("profile-delete-confirm").hidden = true;
+    document.getElementById("profile-editor-actions").hidden = false;
+    profileShowError(e && e.message ? e.message : "Não foi possível excluir o perfil.");
+    return;
+  }
+  _profile.busy = false;
+  const eraAtivo = activeProfileId() === p.id;
+  _profile.list = _profile.list.filter(x => x.id !== p.id);
+  profileWriteCache(_profile.list);
+  profileForgetLocal(p.id);
+  if (eraAtivo) { profileChoose(ottPerfilPickActive(_profile.list, null)); return; }   // volta ao principal
+  renderProfileUi();
+  profileCloseEditor();
+}
+
+// Abre o seletor a pedido do usuário (topo, menu lateral, Configurações) e atualiza a lista pela rede
+function profileOpenFromUi(manage) {
+  _profile.list = profileReadCache();
+  profileOpenGate({ voluntary: true, manage: !!manage });
+  const ctx = profileCtx();
+  if (!ctx) return;
+  ottPerfilList(ctx.cfg, ctx.token).then(fresh => {
+    if (!fresh.length) return;
+    profileWriteCache(fresh);
+    _profile.list = fresh;
+    if (_profile.open && !_profile.editorOpen) profileRenderGrid();
+    renderProfileUi();
+  }).catch(() => { /* offline: fica com o cache */ });
+}
+
+function profileWire() {
+  if (_profile.wired) return;
+  _profile.wired = true;
+  const grid = document.getElementById("profile-grid");
+  grid.addEventListener("click", e => {
+    const card = e.target.closest(".pg-card");
+    if (!card) return;
+    if (card.dataset.add) { profileOpenEditor(null); return; }
+    let p = null;
+    for (let i = 0; i < _profile.list.length; i++) if (_profile.list[i].id === card.dataset.id) p = _profile.list[i];
+    if (!p) return;
+    if (_profile.manage) profileOpenEditor(p); else profileChoose(p);
+  });
+  // O foco (anel + animação) acompanha o dedo, o mouse e o teclado
+  grid.addEventListener("pointerdown", e => { const c = e.target.closest(".pg-card"); if (c) { profileSetFocus(c); c.classList.add("is-pressed"); } });
+  grid.addEventListener("pointerover", e => { if (e.pointerType === "mouse") { const c = e.target.closest(".pg-card"); if (c) profileSetFocus(c); } });
+  grid.addEventListener("focusin", e => { const c = e.target.closest(".pg-card"); if (c) profileSetFocus(c); });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => grid.addEventListener(ev, () => grid.querySelectorAll(".is-pressed").forEach(c => c.classList.remove("is-pressed"))));
+  document.getElementById("profile-manage-btn").addEventListener("click", () => { _profile.manage = !_profile.manage; profileRenderGrid(); });
+  document.getElementById("profile-close-btn").addEventListener("click", profileCloseGate);
+  document.getElementById("profile-save-btn").addEventListener("click", profileSave);
+  document.getElementById("profile-cancel-btn").addEventListener("click", profileCloseEditor);
+  document.getElementById("profile-delete-btn").addEventListener("click", profileAskDelete);
+  document.getElementById("profile-delete-yes").addEventListener("click", profileDelete);
+  document.getElementById("profile-delete-no").addEventListener("click", () => {
+    document.getElementById("profile-delete-confirm").hidden = true;
+    document.getElementById("profile-editor-actions").hidden = false;
+  });
+  const input = document.getElementById("profile-name-input");
+  input.addEventListener("input", () => {
+    document.getElementById("profile-name-count").textContent = input.value.length + "/20";
+    profileShowError("");
+  });
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
+  document.getElementById("profile-avatar-grid").addEventListener("click", e => {
+    const b = e.target.closest(".pe-av");
+    if (b) profileSelectAvatar(b.dataset.av);
+  });
+  document.getElementById("profile-avatar-grid").addEventListener("pointerdown", e => { const b = e.target.closest(".pe-av"); if (b) b.classList.add("is-pressed"); });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => document.getElementById("profile-avatar-grid").addEventListener(ev, () => document.querySelectorAll("#profile-avatar-grid .is-pressed").forEach(b => b.classList.remove("is-pressed"))));
+  // Pontos de entrada: avatar do topo, cartão do menu lateral e Configurações
+  document.getElementById("profile-btn").addEventListener("click", () => profileOpenFromUi(false));
+  document.getElementById("user-card").addEventListener("click", () => {
+    if (!document.getElementById("user-card").classList.contains("has-profiles")) return;
+    closeSidebar();
+    profileOpenFromUi(false);
+  });
+  document.getElementById("profiles-card-manage").addEventListener("click", () => profileOpenFromUi(true));
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape" || !_profile.open) return;
+    if (_profile.editorOpen) profileCloseEditor(); else if (_profile.voluntary) profileCloseGate();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
@@ -7738,9 +8438,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Saudação e data
   document.getElementById("welcome-date").textContent =
     new Date().toLocaleDateString("pt-BR", { weekday:"long", day:"numeric", month:"long" }).toUpperCase().replace(",","");
-  const h = new Date().getHours();
-  const greeting = h>=5&&h<12?"Bom dia":h>=12&&h<18?"Boa tarde":"Boa noite";
-  document.getElementById("welcome-h1").innerHTML = `${greeting}, <span>Guaitolini.</span>`;
+  // Perfis (só com conta): menu lateral, botão do topo, Configurações e a saudação com o nome do perfil
+  profileWire();
+  renderProfileUi();
 
   // Enquadramento salvo no player
   const savedFit = localStorage.getItem(LS.FIT) || "contain";
