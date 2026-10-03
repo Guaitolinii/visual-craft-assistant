@@ -4,10 +4,13 @@ import android.app.Activity;
 import android.app.PictureInPictureParams;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Rational;
+import android.view.View;
 import com.getcapacitor.BridgeActivity;
+import java.util.Collections;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -15,6 +18,40 @@ public class MainActivity extends BridgeActivity {
         // Plugins locais precisam ser registrados antes do super.onCreate
         registerPlugin(SintonizaPipPlugin.class);
         super.onCreate(savedInstanceState);
+        // Reaplica a faixa de exclusão do gesto de voltar sempre que o layout muda (rotação, teclado, etc.)
+        getWindow().getDecorView().addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                applyEdgeGestureExclusion();
+            }
+        });
+    }
+
+    // Arrastar da borda esquerda abre o menu lateral do app. No Android 10+ o gesto de voltar do
+    // sistema usa essa mesma borda e roubaria o arrasto; então uma faixa fina da borda esquerda
+    // (24 dp de largura, no meio da tela) fica fora da navegação por gesto. O Android só aceita até
+    // 200 dp de altura de exclusão por borda; o restante da borda continua voltando normalmente.
+    private void applyEdgeGestureExclusion() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return;
+        View root = getWindow().getDecorView();
+        int width = root.getWidth();
+        int height = root.getHeight();
+        if (width <= 0 || height <= 0) return;
+        float density = getResources().getDisplayMetrics().density;
+        int stripWidth = Math.round(24 * density);
+        int stripHeight = Math.min(height, Math.round(200 * density));
+        int stripTop = (height - stripHeight) / 2;
+        root.setSystemGestureExclusionRects(
+            Collections.singletonList(new Rect(0, stripTop, stripWidth, stripTop + stripHeight))
+        );
+    }
+
+    // Ao voltar o foco (ex.: depois da janela flutuante ou de um diálogo) reaplica a exclusão.
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyEdgeGestureExclusion();
     }
 
     // Entra na janela flutuante 16:9 (Android 8+ com suporte do aparelho).

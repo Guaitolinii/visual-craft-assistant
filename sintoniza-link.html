@@ -8067,6 +8067,70 @@ function closeSidebar() {
   document.body.classList.remove("sidebar-open");
 }
 
+// Arrastar da borda esquerda para o centro abre o menu (igual ao toque nas 3 listras);
+// com o menu aberto, arrastar para a esquerda fecha. Decisão pura, sem DOM.
+// startX/startY/x/y: pixels da tela; dtMs: duração do gesto; sidebarOpen: menu aberto agora.
+// Devolve "open", "close" ou null (gesto que não é para o menu: rolagem, carrossel, toque comum).
+const EDGE_SWIPE_ZONE_PX = 28;   // o toque tem de começar a até 28 px da borda esquerda
+const EDGE_SWIPE_MIN_PX = 56;    // deslocamento horizontal mínimo
+const EDGE_SWIPE_RATIO = 0.6;    // |dy| <= 0,6 * |dx|: claramente horizontal
+const EDGE_SWIPE_MAX_MS = 700;   // gesto lento é arrasto de rolagem, não do menu
+function edgeSwipeDecision(g) {
+  if (!g || [g.startX, g.startY, g.x, g.y, g.dtMs].some(n => typeof n !== "number" || !isFinite(n))) return null;
+  const dx = g.x - g.startX;
+  const dy = g.y - g.startY;
+  if (g.dtMs > EDGE_SWIPE_MAX_MS) return null;
+  if (Math.abs(dy) > EDGE_SWIPE_RATIO * Math.abs(dx)) return null;
+  if (g.sidebarOpen) return dx <= -EDGE_SWIPE_MIN_PX ? "close" : null;
+  return (g.startX <= EDGE_SWIPE_ZONE_PX && dx >= EDGE_SWIPE_MIN_PX) ? "open" : null;
+}
+
+// O gesto fica desligado fora do layout do celular (sem #menu-btn), em tela cheia do player,
+// com janela flutuante, modal/folha aberta e com as telas de conta/perfil por cima.
+function edgeSwipeBlocked() {
+  const menuBtn = document.getElementById("menu-btn");
+  if (!menuBtn || getComputedStyle(menuBtn).display === "none") return true;
+  const player = document.getElementById("player-screen");
+  if (player && player.classList.contains("pseudo-fullscreen")) return true;
+  if (document.fullscreenElement) return true;
+  if (document.body.classList.contains("pip-active")) return true;
+  const root = document.documentElement;
+  if (root.classList.contains("profile-open") || root.classList.contains("ott-open")) return true;
+  return ["vod-modal", "action-sheet", "tv-sheet"].some(id => {
+    const el = document.getElementById(id);
+    return !!el && !el.classList.contains("hidden");
+  });
+}
+
+// Liga o gesto no documento (ouvintes passivos: não atrapalham a rolagem vertical nem os carrosséis).
+function setupEdgeSwipe() {
+  let track = null; // { x, y, t } do toque que pode virar gesto do menu
+  const tryDecide = (touch) => {
+    if (!track || !touch) return;
+    const sidebarOpen = document.body.classList.contains("sidebar-open");
+    const r = edgeSwipeDecision({
+      startX: track.x, startY: track.y, x: touch.clientX, y: touch.clientY,
+      dtMs: Date.now() - track.t, sidebarOpen: sidebarOpen
+    });
+    if (!r) return;
+    track = null;
+    if (r === "open") openSidebar(); else closeSidebar();
+  };
+  document.addEventListener("touchstart", e => {
+    track = null;
+    if (e.touches.length !== 1 || edgeSwipeBlocked()) return;
+    const t = e.touches[0];
+    // Fora da zona de borda só interessa fechar o menu aberto; um carrossel na horizontal fica em paz.
+    const open = document.body.classList.contains("sidebar-open");
+    if (!open && t.clientX > EDGE_SWIPE_ZONE_PX) return;
+    if (open && e.target && e.target.closest && e.target.closest(".vod-carousel, .category-pills")) return;
+    track = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }, { passive: true });
+  document.addEventListener("touchmove", e => { if (track) tryDecide(e.touches[0]); }, { passive: true });
+  document.addEventListener("touchend", e => { if (track) tryDecide(e.changedTouches[0]); track = null; }, { passive: true });
+  document.addEventListener("touchcancel", () => { track = null; }, { passive: true });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ASSISTIR NA TV (envio do celular para a TV da mesma conta)
 // Usa as funções ottCast* do bloco ott-core; só funciona com conta ativa.
@@ -9025,6 +9089,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("menu-btn").addEventListener("click", openSidebar);
   document.getElementById("sidebar-close").addEventListener("click", closeSidebar);
   document.getElementById("sidebar-scrim").addEventListener("click", closeSidebar);
+  setupEdgeSwipe(); // arrastar da borda esquerda abre o menu; para a esquerda fecha
 
   // ── EPG: fecha o popover "a seguir" ao clicar fora, rolar ou apertar Esc ──
   document.addEventListener("click", e => {
