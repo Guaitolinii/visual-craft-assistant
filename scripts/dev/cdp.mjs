@@ -44,12 +44,14 @@ export async function withPage(url, opts, fn) {
     const pending = new Map();
     const listeners = new Map();
     const blocked = [];
+    const consoleMsgs = []; // console.* da página desde antes de navegar (sobrevive aos reloads)
     ws.addEventListener("message", (e) => {
       const m = JSON.parse(e.data);
       if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
       else if (m.method && listeners.has(m.method)) listeners.get(m.method).forEach((fn) => fn(m.params));
     });
     const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+    listeners.set("Runtime.consoleAPICalled", [(p) => { consoleMsgs.push(p.type + ": " + (p.args || []).map((a) => (a.value !== undefined ? String(a.value) : a.description || "")).join(" ")); }]);
     await send("Page.enable");
     await send("Runtime.enable");
     await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: desktop ? 1 : 2, mobile: !desktop });
@@ -73,6 +75,7 @@ export async function withPage(url, opts, fn) {
       send,
       sleep,
       blocked,
+      console: consoleMsgs,
       on(method, fn) { if (!listeners.has(method)) listeners.set(method, []); listeners.get(method).push(fn); },
       async eval(expression) {
         const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });

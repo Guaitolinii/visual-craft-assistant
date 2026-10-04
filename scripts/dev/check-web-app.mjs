@@ -4,10 +4,15 @@
 // com TODA requisição que não seja para 127.0.0.1 RECUSADA. Nenhum aparelho real é criado e o backend real não é tocado.
 //   (a) sem sessão do site -> redireciona para /?next=%2Fapp%2F (sem chamar o backend)
 //   (b) com sessão -> web_device_register com o Bearer do USUÁRIO (não a chave anon) e SEM tela de código/QR
-//   (c) tudo do provedor (lista M3U, player_api.php, vídeo/HLS) sai por /api/proxy com t=<token do aparelho>
+//   (c) provedor inalcançável direto (provedor.test: a página só alcança 127.0.0.1): lista M3U, player_api.php e HLS caem no /api/proxy
+//       com t=<token do aparelho> (o app tenta o direto primeiro e só usa o proxy depois de falhar)
 //   (d) 1440x900: grade com colunas, setas nos carrosséis, roda do mouse, volume e atalhos de teclado
 //   (e) 390x844 como atalho (navigator.standalone: este Chrome não emula display-mode): faixa da barra de status, tela cheia por CSS, sem volume
 //   (f) service worker registrado, shell servido do cache offline, e nada de /api/ ou backend no cache
+//   (g) v16, direto primeiro: provedores locais REAIS em 127.0.0.1 (CORS liberado, sem CORS, segmento sem CORS, <video> que recusa Referer)
+//       conferem rota direta (zero chamadas ao proxy), fallback, memória por host (d/p, validade) e os contadores window.__sintWeb.
+//       O Chrome daqui roda a página em http://127.0.0.1, então "http numa página https vai direto ao proxy" fica só nos testes
+//       de unidade (tests/vod/web-helpers.test.js e web-routed.test.js): aqui não há como servir a página em https.
 // Uso: node scripts/dev/check-web-app.mjs [pasta-das-capturas]   (as capturas são opcionais e não devem ser commitadas)
 import http from "node:http";
 import vm from "node:vm";
@@ -40,10 +45,10 @@ const appDir = path.join(out, "app");
 const proxyLog = [];
 const TIPOS = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".css": "text/css", ".woff2": "font/woff2" };
 
-function m3u() {
+function m3u(base = "http://provedor.test") {
   const grupos = ["Notícias", "Esportes", "Filmes"];
   let t = "#EXTM3U\n";
-  for (let i = 1; i <= 18; i++) t += `#EXTINF:-1 tvg-id="" tvg-name="Canal ${i}" tvg-logo="" group-title="${grupos[i % 3]}",Canal ${String(i).padStart(2, "0")}\nhttp://provedor.test/live/u/p/${i}.m3u8\n`;
+  for (let i = 1; i <= 18; i++) t += `#EXTINF:-1 tvg-id="" tvg-name="Canal ${i}" tvg-logo="" group-title="${grupos[i % 3]}",Canal ${String(i).padStart(2, "0")}\n${base}/live/u/p/${i}.m3u8\n`;
   return t;
 }
 function respostaApi(action, categoria) {
@@ -51,21 +56,54 @@ function respostaApi(action, categoria) {
   if (action === "get_vod_streams") return Array.from({ length: 24 }, (_, i) => ({ stream_id: Number(categoria) * 100 + i, name: `Filme ${categoria}-${i + 1}`, stream_icon: "", container_extension: "mp4", added: String(1700000000 + i), rating: "7" }));
   return [];
 }
+// WAV de 1 s em silêncio: o <video> do Chrome toca (serve de "filme" sem precisar de mp4 de verdade)
+function wav() {
+  const n = 8000, b = Buffer.alloc(44 + n, 128);
+  b.write("RIFF", 0); b.writeUInt32LE(36 + n, 4); b.write("WAVEfmt ", 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(8000, 24); b.writeUInt32LE(8000, 28); b.writeUInt16LE(1, 32); b.writeUInt16LE(8, 34); b.write("data", 36); b.writeUInt32LE(n, 40);
+  return b;
+}
+const SEGMENTO = Buffer.alloc(188 * 20, 0x47);
+// Conteúdo de um "provedor" (serve igual direto ou por trás do proxy simulado). hls: reescreve o segmento (só o proxy faz isso)
+function conteudo(alvo, resp, hls, tokenDoProxy) {
+  if (alvo.pathname === "/get.php") return resp(200, m3u(alvo.origin), "audio/x-mpegurl");
+  if (alvo.pathname === "/player_api.php") return resp(200, respostaApi(alvo.searchParams.get("action"), alvo.searchParams.get("category_id")));
+  if (alvo.pathname.endsWith(".m3u8")) {
+    const seg = hls ? `/api/proxy?u=${encodeURIComponent(alvo.origin + "/live/seg1.ts")}&t=${tokenDoProxy}&k=hls` : alvo.origin + "/live/seg1.ts";
+    return resp(200, `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:6.0,\n${seg}\n`, "application/vnd.apple.mpegurl");
+  }
+  if (alvo.pathname.endsWith(".ts")) return resp(200, SEGMENTO, "video/mp2t");
+  if (alvo.pathname.startsWith("/movie/")) return resp(200, wav(), "audio/wav");
+  return resp(404, { erro: "não encontrado" });
+}
 function proxy(req, res, url) {
   const u = url.searchParams.get("u"), t = url.searchParams.get("t"), k = url.searchParams.get("k");
-  proxyLog.push({ method: req.method, u, t, k });
-  const json = (status, corpo, tipo = "application/json") => { res.writeHead(status, { "Content-Type": tipo, "Cache-Control": "no-store" }); res.end(req.method === "HEAD" ? undefined : typeof corpo === "string" ? corpo : JSON.stringify(corpo)); };
+  let host = "";
+  try { host = new URL(u).host; } catch (e) { /* destino inválido */ }
+  proxyLog.push({ method: req.method, u, t, k, host });
+  const json = (status, corpo, tipo = "application/json") => { res.writeHead(status, { "Content-Type": tipo, "Cache-Control": "no-store" }); res.end(req.method === "HEAD" ? undefined : Buffer.isBuffer(corpo) || typeof corpo === "string" ? corpo : JSON.stringify(corpo)); };
   if (!t || t !== TOKEN) return json(401, { erro: "sessão inválida" });
   let alvo;
   try { alvo = new URL(u); } catch (e) { return json(400, { erro: "destino inválido" }); }
-  if (alvo.hostname !== "provedor.test") return json(502, { erro: "o provedor não respondeu" });
-  if (alvo.pathname === "/get.php") return json(200, m3u(), "audio/x-mpegurl");
-  if (alvo.pathname === "/player_api.php") return json(200, respostaApi(alvo.searchParams.get("action"), alvo.searchParams.get("category_id")));
-  if (alvo.pathname.endsWith(".m3u8")) {
-    const seg = `/api/proxy?u=${encodeURIComponent("http://provedor.test/live/seg1.ts")}&t=${t}&k=hls`;
-    return json(200, `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:6.0,\n${seg}\n`, "application/vnd.apple.mpegurl");
-  }
-  return json(404, { erro: "não encontrado" });
+  if (alvo.hostname !== "provedor.test" && alvo.hostname !== "127.0.0.1") return json(502, { erro: "o provedor não respondeu" });
+  return conteudo(alvo, json, true, t);
+}
+
+// ── provedores locais de verdade (127.0.0.1:<porta>): o Chrome aplica CORS entre a página e eles ──
+// cors: tudo liberado | "sem": nenhum cabeçalho CORS | "sem-segmento": liberado menos os .ts | refererRecusa: /movie/ responde 403 se vier Referer
+function criarProvedor({ cors, refererRecusa = false }) {
+  const hits = [];
+  const srv = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    hits.push({ path: url.pathname, referer: req.headers.referer || "", method: req.method });
+    const liberado = cors === true || (cors === "sem-segmento" && !url.pathname.endsWith(".ts"));
+    const cab = liberado ? { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "Content-Type, Content-Length" } : {};
+    if (req.method === "OPTIONS") { res.writeHead(204, { ...cab, "Access-Control-Allow-Headers": "*" }); return res.end(); }
+    if (refererRecusa && url.pathname.startsWith("/movie/") && req.headers.referer) { res.writeHead(403, cab); return res.end("recusado"); }
+    const resp = (status, corpo, tipo = "application/json") => { res.writeHead(status, { ...cab, "Content-Type": tipo, "Cache-Control": "no-store" }); res.end(req.method === "HEAD" ? undefined : Buffer.isBuffer(corpo) || typeof corpo === "string" ? corpo : JSON.stringify(corpo)); };
+    conteudo(new URL(req.url, "http://127.0.0.1:" + srv.address().port), resp, false, "");
+  });
+  return new Promise((r) => srv.listen(0, "127.0.0.1", () => r({ srv, hits, porta: srv.address().port, host: "127.0.0.1:" + srv.address().port, base: "http://127.0.0.1:" + srv.address().port })));
 }
 const servidor = http.createServer((req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
@@ -88,11 +126,13 @@ const PORTA = servidor.address().port;
 const URL_APP = `http://127.0.0.1:${PORTA}/app/`;
 
 // ── Supabase falso dentro da página (o estado do log fica no localStorage: sobrevive aos reloads do app) ──
-function preScript({ sessao, standalone = false }) {
+// m3u/vod: endereços do provedor na conta (padrão provedor.test, inalcançável direto); memoria: sint_web_hosts já gravado
+function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vodUrl = VOD_URL, memoria = null }) {
   const src = `(() => {
     ${standalone ? 'Object.defineProperty(navigator, "standalone", { get: () => true });' : ""}
     if (!localStorage.getItem("__seeded")) {
       ${sessao ? `localStorage.setItem("sintoniza_painel_sessao", ${JSON.stringify(JSON.stringify(sessao))});` : ""}
+      ${memoria ? `localStorage.setItem("sint_web_hosts", ${JSON.stringify(JSON.stringify(memoria))});` : ""}
       localStorage.setItem("__log", "[]");
       localStorage.setItem("__seeded", "1");
     }
@@ -101,7 +141,7 @@ function preScript({ sessao, standalone = false }) {
     window.fetch = async (url, init) => {
       url = String(url);
       const u = new URL(url, location.href);
-      if (u.origin === location.origin) return realFetch(url, init);
+      if (u.origin === location.origin || u.hostname === "127.0.0.1") return realFetch(url, init); // 127.0.0.1: provedores locais de verdade (CORS real)
       if (u.hostname === "falso.supabase.co") {
         const h = (init && init.headers) || {};
         const body = init && init.body ? JSON.parse(init.body) : {};
@@ -113,7 +153,7 @@ function preScript({ sessao, standalone = false }) {
         if (nome === "device_config") {
           if (body.p_token !== ${JSON.stringify(TOKEN)}) return J({ status: "unknown_device" });
           return J({ status: "ok", user: { nome: "Ana Teste", status: "active", acesso_fim: "2030-01-01T00:00:00Z" },
-            playlists: [{ id: "1", nome: "Principal", url_m3u: ${JSON.stringify(M3U_URL)}, url_vod: ${JSON.stringify(VOD_URL)}, url_epg: null }] });
+            playlists: [{ id: "1", nome: "Principal", url_m3u: ${JSON.stringify(m3uUrl)}, url_vod: ${JSON.stringify(vodUrl)}, url_epg: null }] });
         }
         if (nome === "perfil_list") return J({ status: "ok", perfis: [${JSON.stringify(PERFIL)}] });
         if (nome.indexOf("/auth/") === 0 || nome.indexOf("/auth") >= 0) return J({});
@@ -312,6 +352,118 @@ try {
     confere(off.web === "1" && /Sintoniza/.test(off.titulo), "offline: a página abre do cache (" + off.titulo + ")");
     await captura(page, "desktop-offline-shell.png");
   });
+
+  // ── (g) v16: direto primeiro, proxy só se falhar (provedores locais de verdade; cada cenário abre um Chrome novo) ──
+  console.log("(g) direto primeiro, proxy só se falhar");
+  const provs = [];
+  const novoProv = async (o) => { const p = await criarProvedor(o); provs.push(p); return p; };
+  const doProv = (p, re) => p.hits.filter((h) => re.test(h.path));
+  const viaProxyDe = (p, re = /./) => proxyLog.filter((x) => x.host === p.host && re.test(x.u || ""));
+  const contadores = async (page) => JSON.parse(await page.eval(`JSON.stringify(window.__sintWeb || null)`));
+  // window.__sintWeb zera a cada reload (o app recarrega ao registrar o aparelho): os totais do cenário saem do console, que sobrevive
+  const evWeb = (page, nome) => page.console.filter((l) => l.startsWith("debug: [web] " + nome + " ")).length;
+  const memoriaDe = (page) => page.eval(`JSON.parse(localStorage.getItem("sint_web_hosts") || "{}")`);
+  const esperaNode = async (page, fn, ms = 25000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await page.sleep(250); } return false; };
+  const urlsDe = (p) => { const u = `${p.base}/get.php?username=u&password=p&type=m3u_plus`; return { m3u: u, vod: u }; };
+  const cenario = (p, memoria, fn) => withPage(URL_APP, { width: 1440, height: 900, desktop: true, blockExternal: true, preScript: preScript({ sessao: sessaoOk(), ...urlsDe(p), memoria }) }, async (page) => {
+    confere(await espera(page, PRONTO, 25000), "a lista de canais carregou");
+    await fn(page);
+    confere(page.blocked.length === 0, "nenhuma requisição externa (" + page.blocked.join(", ") + ")");
+  });
+  const abrirCanal = async (page) => {
+    await page.eval(`document.querySelector('.sidebar-nav .nav-item[data-section="Todos os canais"]').click()`);
+    await page.sleep(600);
+    await page.eval(`document.querySelector(".channel-card .card-main").click()`);
+    await espera(page, `!!_state.selected`, 6000);
+  };
+  const abrirFilmes = async (page) => {
+    await page.eval(`document.getElementById("nav-vod-movies").click()`);
+    return espera(page, `document.querySelectorAll(".vod-row .vod-card").length > 6`, 15000);
+  };
+
+  console.log("(g1) provedor com CORS liberado: tudo direto, zero chamadas ao proxy");
+  const p1 = await novoProv({ cors: true });
+  await cenario(p1, null, async (page) => {
+    confere(doProv(p1, /get\.php/).length >= 1 && viaProxyDe(p1).length === 0, "a lista M3U foi direto ao provedor (proxy: " + viaProxyDe(p1).length + ")");
+    let c = await contadores(page);
+    confere(c && c.direto >= 1 && c.proxy === 0 && c.fallback === 0, "contadores: direto>=1, proxy=0, fallback=0 (" + JSON.stringify(c) + ")");
+    confere((await memoriaDe(page))[p1.host]?.m === "d", "o host ficou marcado 'd' na memória");
+    confere(await abrirFilmes(page), "o catálogo de filmes carregou");
+    confere(doProv(p1, /player_api\.php/).length > 0 && viaProxyDe(p1).length === 0, "o player_api.php foi direto");
+    await abrirCanal(page);
+    confere(await esperaNode(page, () => doProv(p1, /\.m3u8/).length > 0 && doProv(p1, /\.ts$/).length > 0), "HLS direto: manifesto e segmento pedidos ao provedor");
+    c = await contadores(page);
+    confere(viaProxyDe(p1).length === 0 && c.proxy === 0 && c.direto >= 3, "no fim: zero chamadas ao proxy e contador direto>=3 (" + JSON.stringify(c) + ")");
+  });
+
+  console.log("(g2) provedor SEM CORS: cai no proxy uma vez e lembra 'p'");
+  const p2 = await novoProv({ cors: false });
+  await cenario(p2, null, async (page) => {
+    confere(doProv(p2, /get\.php/).length === 1 && viaProxyDe(p2, /get\.php/).length >= 1, "lista M3U: 1 única tentativa direta (bloqueada pelo CORS) e depois só o proxy (" + viaProxyDe(p2, /get\.php/).length + " pelo proxy)");
+    confere(evWeb(page, "fallback") === 1 && evWeb(page, "direto") === 0 && evWeb(page, "proxy") >= 1, "contadores: fallback=1, direto=0 (fallback " + evWeb(page, "fallback") + ", direto " + evWeb(page, "direto") + ", proxy " + evWeb(page, "proxy") + ")");
+    confere((await memoriaDe(page))[p2.host]?.m === "p", "o host ficou marcado 'p'");
+    confere(await abrirFilmes(page), "o catálogo carregou");
+    confere(doProv(p2, /player_api\.php/).length === 0 && viaProxyDe(p2, /player_api\.php/).length > 0, "com 'p' o player_api.php vai direto ao proxy, sem tentar o direto de novo");
+    await abrirCanal(page);
+    confere(await esperaNode(page, () => viaProxyDe(p2, /\.m3u8/).some((x) => x.k === "hls")), "HLS pelo proxy com k=hls");
+    confere(doProv(p2, /\.m3u8/).length === 0, "sem sondar o manifesto direto (memória 'p')");
+  });
+
+  console.log("(g3) HLS: manifesto com CORS mas segmento sem CORS: recomeça pelo proxy");
+  const p3 = await novoProv({ cors: "sem-segmento" });
+  await cenario(p3, null, async (page) => {
+    await abrirCanal(page);
+    confere(await esperaNode(page, () => viaProxyDe(p3, /\.ts/).some((x) => x.k === "hls")), "o segmento acabou saindo pelo proxy (k=hls)");
+    confere(doProv(p3, /\.ts$/).length >= 1 && viaProxyDe(p3, /\.m3u8/).some((x) => x.k === "hls"), "houve tentativa direta (segmento bloqueado) e o manifesto foi refeito pelo proxy");
+    const c = await contadores(page);
+    confere(c && c.fallback >= 1, "contador fallback>=1 (" + JSON.stringify(c) + ")");
+    confere((await memoriaDe(page))[p3.host]?.m === "p", "o host ficou marcado 'p'");
+  });
+
+  console.log("(g4) memória por host: 'p' vale 6 h, vencida tenta o direto; 'd' é respeitada");
+  const p4 = await novoProv({ cors: true });
+  await cenario(p4, { [p4.host]: { m: "p", t: Date.now() - 3600e3 } }, async (page) => {
+    confere(doProv(p4, /get\.php/).length === 0 && viaProxyDe(p4, /get\.php/).length >= 1, "memória 'p' de 1 h: vai direto ao proxy, sem tentar o direto");
+    confere(evWeb(page, "direto") === 0 && evWeb(page, "fallback") === 0 && evWeb(page, "proxy") >= 1, "contadores: nenhum direto, nenhum fallback (proxy " + evWeb(page, "proxy") + ")");
+  });
+  const p5 = await novoProv({ cors: true });
+  await cenario(p5, { [p5.host]: { m: "p", t: Date.now() - 7 * 3600e3 } }, async (page) => {
+    confere(doProv(p5, /get\.php/).length >= 1 && viaProxyDe(p5).length === 0, "memória 'p' de 7 h (vencida): tenta o direto de novo e funciona");
+    const m = (await memoriaDe(page))[p5.host];
+    confere(m && m.m === "d" && Date.now() - m.t < 60000, "e a memória passa para 'd' (" + JSON.stringify(m) + ")");
+  });
+  const p6 = await novoProv({ cors: false });
+  await cenario(p6, { [p6.host]: { m: "d", t: Date.now() - 3600e3 } }, async (page) => {
+    confere(doProv(p6, /get\.php/).length === 1 && viaProxyDe(p6, /get\.php/).length >= 1, "memória 'd' sem CORS: 1 tentativa direta e o resto pelo proxy (o aprendizado se corrige)");
+    confere((await memoriaDe(page))[p6.host]?.m === "p", "a memória passa para 'p'");
+  });
+
+  console.log("(g5) filme em <video>: direto mesmo sem CORS (o <video> não exige CORS) e memória de mídia separada da de dados");
+  const p7 = await novoProv({ cors: false });
+  await cenario(p7, null, async (page) => {
+    confere((await memoriaDe(page))[p7.host]?.m === "p", "dados: sem CORS, host 'p'");
+    const antes = evWeb(page, "direto");
+    await page.eval(`playStream(${JSON.stringify(p7.base + "/movie/u/p/1.mp4")})`);
+    confere(await esperaNode(page, () => doProv(p7, /^\/movie\//).length > 0), "o <video> pediu o filme direto ao provedor");
+    confere(await esperaNode(page, () => evWeb(page, "direto") === antes + 1, 10000) && viaProxyDe(p7, /\/movie\//).length === 0, "o vídeo tocou: contou 1 direto e nenhuma chamada ao proxy para o filme");
+    confere(!(await memoriaDe(page))["v:" + p7.host], "a mídia direta não suja a memória");
+  });
+
+  console.log("(g6) filme em <video> que o provedor recusa direto (Referer): UMA troca para o proxy e memória 'v:' = p");
+  const p8 = await novoProv({ cors: true, refererRecusa: true });
+  await cenario(p8, null, async (page) => {
+    await page.eval(`playStream(${JSON.stringify(p8.base + "/movie/u/p/1.mp4")})`);
+    confere(await esperaNode(page, () => viaProxyDe(p8, /\/movie\//).length > 0), "depois da recusa direta o filme saiu pelo proxy");
+    confere(doProv(p8, /^\/movie\//).length === 1, "foi 1 tentativa direta só (" + doProv(p8, /^\/movie\//).length + ")");
+    await esperaNode(page, () => false, 1500); // dá tempo do play() do proxy resolver e gravar a memória
+    confere(evWeb(page, "fallback") === 1 && evWeb(page, "proxy") >= 1, "contadores: fallback=1, proxy>=1 (fallback " + evWeb(page, "fallback") + ", proxy " + evWeb(page, "proxy") + ")");
+    confere((await memoriaDe(page))["v:" + p8.host]?.m === "p", "o proxy tocou: a mídia do host ficou 'p'");
+    const diretasAntes = doProv(p8, /^\/movie\//).length;
+    await page.eval(`playStream(${JSON.stringify(p8.base + "/movie/u/p/2.mp4")})`);
+    confere(await esperaNode(page, () => viaProxyDe(p8, /\/movie\/u\/p\/2/).length > 0), "o filme seguinte vai direto ao proxy");
+    confere(doProv(p8, /^\/movie\//).length === diretasAntes, "sem nova tentativa direta");
+  });
+  provs.forEach((p) => p.srv.close());
 } finally {
   servidor.close();
 }

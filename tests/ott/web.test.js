@@ -271,18 +271,47 @@ test("conta e painel apontam para /conta (mesma origem) no app web", () => {
   assert.match(html, /panelLink\.href = isWebApp\(\) \? "\/conta" : _ott\.cfg\.panelUrl;/);
 });
 
-test("todo acesso a provedor passa por webUrl no app web (lista, Xtream, EPG, sondagens, vídeo, HLS e MPEG-TS)", () => {
-  assert.match(html, /fetch\(isWebApp\(\) \? webUrl\(url\) : proxyIfInsecure\(url\), \{ cache: "no-cache" \}\)/);
-  assert.match(html, /fetch\(isWebApp\(\) \? webUrl\(epgUrl\) : proxyIfInsecure\(epgUrl\), \{ cache: "no-store" \}\)/);
-  assert.match(html, /isWebApp\(\) \? webUrl\(EPGSHARE01_URL\) : proxyForCors\(EPGSHARE01_URL\)/);
-  assert.equal((html.match(/fetch\(webUrl\(url\)\)/g) || []).length, 2); // categorias e itens do catálogo
-  assert.match(html, /fetch\(webUrl\(xtreamApiUrl\(creds, "get_series_info"/);
-  assert.match(html, /webUrl\(hlsAlternative, "hls"\)/);
-  assert.match(html, /fetch\(isWebApp\(\) \? webUrl\(url\) : url, \{\s*method: "HEAD"/);
-  assert.match(html, /fetch\(isWebApp\(\) \? webUrl\(url\) : url, \{ method: "HEAD", cache: "no-store", signal: controller\.signal \}\)/);
-  assert.match(html, /video\.src = isWebApp\(\) \? webUrl\(url\) : url;/);
-  assert.match(html, /streamInfo\.type === "hls" \? webUrl\(streamInfo\.url, "hls"\) : streamInfo\.type === "mpegts" \? webUrl\(streamInfo\.url\) : streamInfo\.url/);
-  assert.match(html, /: proxyIfInsecure\(streamInfo\.url\);/); // o nativo continua como era
+test("todo acesso a provedor no app web passa por webFetchRouted/webUrl (lista, Xtream, EPG, sondagens, vídeo, HLS e MPEG-TS)", () => {
+  // dados: direto primeiro, proxy só se falhar (webFetchRouted); o nativo segue com proxyIfInsecure/fetch simples
+  assert.match(html, /isWebApp\(\) \? await webFetchRouted\(url, \{ cache: "no-cache" \}\) : await fetch\(proxyIfInsecure\(url\), \{ cache: "no-cache" \}\)/);
+  assert.match(html, /isWebApp\(\) \? await webFetchRouted\(epgUrl, \{ cache: "no-store" \}\) : await fetch\(proxyIfInsecure\(epgUrl\), \{ cache: "no-store" \}\)/);
+  assert.match(html, /const proxied = web \? EPGSHARE01_URL : proxyForCors\(EPGSHARE01_URL\)/);
+  assert.match(html, /routed \? await webFetchRouted\(url, \{ cache: "no-store" \}\) : await fetch\(url, \{ cache: "no-store" \}\)/);
+  assert.equal((html.match(/await webFetchRouted\(url\);/g) || []).length, 2); // categorias e itens do catálogo
+  assert.match(html, /await webFetchRouted\(xtreamApiUrl\(creds, "get_series_info"/);
+  assert.match(html, /webFetchRouted\(hlsAlternative, probeInit, "hls", \{ directTimeoutMs: 2500 \}\)/);
+  assert.match(html, /webFetchRouted\(url, headInit, undefined, \{ directTimeoutMs: 2500 \}\)/);
+  assert.match(html, /webFetchRouted\(url, probeInit, undefined, \{ directTimeoutMs: 3000 \}\)/);
+  // mídia e streams: o plano de rota decide direto x proxy
+  assert.match(html, /const media = isWebApp\(\) \? webMediaSrc\(url, forceProxy === true\) : \{ src: url, direct: false \};/);
+  assert.match(html, /await webHlsPlan\(streamInfo\.url\)/);
+  assert.match(html, /webStreamPlan\(streamInfo\.url\)/);
+  assert.match(html, /webMediaSrc\(streamInfo\.url, false, "hls"\)/);
+  assert.match(html, /playUrl = proxyIfInsecure\(streamInfo\.url\);/); // o nativo continua como era
+  // nenhum fetch/src de provedor chama webUrl direto fora do módulo de rotas
+  assert.doesNotMatch(html, /fetch\(isWebApp\(\) \? webUrl\(/);
+  assert.doesNotMatch(html, /fetch\(webUrl\(/);
+  assert.doesNotMatch(html, /video\.src = isWebApp\(\) \? webUrl\(/);
+});
+
+test("v16: a memória por host é gravada com lsSet em sint_web_hosts; os contadores ficam em window.__sintWeb", () => {
+  assert.match(html, /const WEB_HOSTS_KEY = "sint_web_hosts";/);
+  assert.match(fnBody("webMemSet"), /lsSet\(WEB_HOSTS_KEY, /);
+  assert.doesNotMatch(html, /localStorage\.setItem\(WEB_HOSTS_KEY/);
+  assert.match(fnBody("webCount"), /window\.__sintWeb \|\| \(window\.__sintWeb = \{ direto: 0, proxy: 0, fallback: 0 \}\)/);
+  assert.match(fnBody("webCount"), /console\.debug\(/);
+});
+
+test("v16: hls.js direto recomeça pelo proxy uma vez (webHlsShouldFallback) e mpegts.js também; fora do modo web nada muda", () => {
+  assert.match(html, /webHlsShouldFallback\(\{ direct: webDirect, started: webStarted, fellBack: webFellBack/);
+  assert.match(html, /webRestartViaProxy\(url, streamInfo\.url\)/);
+  assert.match(html, /manifestLoadingMaxRetry: webDirect \? 2 : 8/);
+  assert.match(html, /if \(webDirect && !webStarted && !webFellBack && errorType === mpegts\.ErrorTypes\.NETWORK_ERROR\)/);
+  // todas as funções novas de rede começam por isWebApp()/proxied === url: o app nativo e a TV não passam por elas
+  assert.match(fnBody("webFetchRouted"), /if \(!isWebApp\(\) \|\| proxied === url\) return fetch\(url, init\);/);
+  assert.match(fnBody("webHlsPlan"), /if \(!isWebApp\(\) \|\| proxied === url\)/);
+  assert.match(fnBody("webStreamPlan"), /if \(!isWebApp\(\) \|\| proxied === url\)/);
+  assert.match(fnBody("webMediaSrc"), /if \(!isWebApp\(\) \|\| proxied === url\)/);
 });
 
 test("webUrl é um ponto único: token do aparelho, só destinos de provedor, URL absoluta", () => {

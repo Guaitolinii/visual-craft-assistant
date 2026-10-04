@@ -31,6 +31,7 @@ const PURE_HELPER_NAMES = [
   "favSyncParse", "favSyncMark", "favTipoDaChave", "histSyncParse", "histSyncMark", "histResumeUrl",
   "edgeSwipeDecision", "homeIsEmptyForProfile",
   "webKeyAction", "webUsesPseudoFullscreen", "lsSet",
+  "webMemParse", "webMemKey", "webRoute", "webMemMark", "webHlsShouldFallback",
 ];
 
 function toHostRealm(value) {

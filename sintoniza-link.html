@@ -5091,7 +5091,7 @@ async function loadPlaylistFromUrl(url) {
   renderCatalog(); // mostra skeleton
 
   try {
-    const res = await fetch(isWebApp() ? webUrl(url) : proxyIfInsecure(url), { cache: "no-cache" });
+    const res = isWebApp() ? await webFetchRouted(url, { cache: "no-cache" }) : await fetch(proxyIfInsecure(url), { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const channels = parseM3U(text);
@@ -5214,8 +5214,8 @@ function proxyForCors(url) {
   return `${proxyBase.replace(/\/$/, "")}/stream?url=${encodeURIComponent(url)}`;
 }
 
-async function fetchGzipXmlText(url) {
-  const res = await fetch(url, { cache: "no-store" });
+async function fetchGzipXmlText(url, routed) {
+  const res = routed ? await webFetchRouted(url, { cache: "no-store" }) : await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (typeof DecompressionStream === "undefined") {
     throw new Error("DecompressionStream não suportado neste navegador");
@@ -5225,10 +5225,11 @@ async function fetchGzipXmlText(url) {
 }
 
 async function fetchSupplementaryEpgIndex(nowMs) {
-  const proxied = isWebApp() ? webUrl(EPGSHARE01_URL) : proxyForCors(EPGSHARE01_URL); // no app web a fonte extra passa pelo proxy do site
+  const web = isWebApp();
+  const proxied = web ? EPGSHARE01_URL : proxyForCors(EPGSHARE01_URL); // no app web: direto e, se falhar, pelo proxy do site
   if (!proxied) return {};
   try {
-    const xmlText = await fetchGzipXmlText(proxied);
+    const xmlText = await fetchGzipXmlText(proxied, web);
     const channels = extractXmltvChannels(xmlText);
     const programmes = extractXmltvProgrammes(xmlText);
     return buildNameToProgrammesIndex(channels, programmes, {
@@ -5254,7 +5255,7 @@ async function refreshEpgIfStale() {
   epgFetchInFlight = true;
 
   try {
-    const res = await fetch(isWebApp() ? webUrl(epgUrl) : proxyIfInsecure(epgUrl), { cache: "no-store" });
+    const res = isWebApp() ? await webFetchRouted(epgUrl, { cache: "no-store" }) : await fetch(proxyIfInsecure(epgUrl), { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const xmlText = await res.text();
     const channels = extractXmltvChannels(xmlText);
@@ -5443,12 +5444,11 @@ async function detectStreamType(url) {
     const hlsAlternative = url.replace(/\.ts($|\?)/i, '.m3u8$1');
     try {
       const controller = new AbortController();
-      const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 3000 : 800); // pelo proxy a ida e volta é maior
-      const probeRes = await fetch(isWebApp() ? webUrl(hlsAlternative, "hls") : hlsAlternative, {
-        method: "HEAD",
-        signal: controller.signal,
-        cache: "no-store"
-      });
+      const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 6000 : 800); // no app web cobre a tentativa direta (2,5 s) e a do proxy
+      const probeInit = { method: "HEAD", signal: controller.signal, cache: "no-store" };
+      const probeRes = isWebApp()
+        ? await webFetchRouted(hlsAlternative, probeInit, "hls", { directTimeoutMs: 2500 })
+        : await fetch(hlsAlternative, probeInit);
       clearTimeout(probeTimer);
       if (probeRes.ok) {
         console.log(`[StreamProbe] Canal .ts possui espelho HLS ativo! Promovendo para HLS com buffer inesgotável.`);
@@ -5463,12 +5463,11 @@ async function detectStreamType(url) {
   // Checagem rápida de cabeçalho para URLs sem extensão
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), isWebApp() ? 3000 : 600);
-    const res = await fetch(isWebApp() ? webUrl(url) : url, {
-      method: "HEAD",
-      signal: controller.signal,
-      cache: "no-store"
-    });
+    const timer = setTimeout(() => controller.abort(), isWebApp() ? 6000 : 600); // no app web cobre a tentativa direta (2,5 s) e a do proxy
+    const headInit = { method: "HEAD", signal: controller.signal, cache: "no-store" };
+    const res = isWebApp()
+      ? await webFetchRouted(url, headInit, undefined, { directTimeoutMs: 2500 })
+      : await fetch(url, headInit);
     clearTimeout(timer);
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     if (ct.includes("mpegurl") || ct.includes("apple.mpegurl")) return { type: "hls", url };
@@ -5842,10 +5841,32 @@ async function playStream(url) {
   const streamInfo = await detectStreamType(url);
   if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
   currentStreamType = streamInfo.type;
-  // App web: HLS pelo proxy com reescrita do manifesto; MPEG-TS cru; arquivo direto fica original (o tryDirectPlay aplica o proxy no src)
-  const playUrl = isWebApp()
-    ? (streamInfo.type === "hls" ? webUrl(streamInfo.url, "hls") : streamInfo.type === "mpegts" ? webUrl(streamInfo.url) : streamInfo.url)
-    : proxyIfInsecure(streamInfo.url);
+  // App web (v16): tenta o provedor DIRETO e só usa o proxy se precisar (http, memória do host ou falha). HLS pelo proxy usa k=hls
+  // (reescreve o manifesto); MPEG-TS cru; arquivo direto fica original (o tryDirectPlay decide a rota do src); Safari nativo toca o HLS em <video src>
+  let playUrl;
+  let webDirect = false; // hls.js/mpegts.js tocando direto: se falhar antes de tocar, recomeça pelo proxy
+  let webStarted = false; // já chegou dado do provedor direto (o CORS funciona)
+  let webFellBack = false; // o recomeço pelo proxy só acontece uma vez
+  let webNative = null; // Safari nativo (<video src> com HLS): { src, direct, forced }
+  if (!isWebApp()) {
+    playUrl = proxyIfInsecure(streamInfo.url);
+  } else if (streamInfo.type === "hls") {
+    if (!Hls.isSupported() && video.canPlayType('application/vnd.apple.mpegurl')) {
+      webNative = webMediaSrc(streamInfo.url, false, "hls"); // <video src> não exige CORS: direto, sem sondar
+      playUrl = webNative.src;
+    } else {
+      const plan = await webHlsPlan(streamInfo.url);
+      if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
+      playUrl = plan.src;
+      webDirect = plan.direct;
+    }
+  } else if (streamInfo.type === "mpegts") {
+    const plan = webStreamPlan(streamInfo.url);
+    playUrl = plan.src;
+    webDirect = plan.direct;
+  } else {
+    playUrl = streamInfo.url;
+  }
   updateDebugOverlay();
 
   // Timeout de abertura: para HLS espera 15s; para MPEG-TS o ciclo de prebuffering gerencia seu próprio timeout
@@ -5874,8 +5895,8 @@ async function playStream(url) {
         maxBufferLength: stage.hlsMax,
         maxMaxBufferLength: stage.hlsMaxMax,
         backBufferLength: 30,
-        manifestLoadingMaxRetry: 8,
-        fragLoadingMaxRetry: 8,
+        manifestLoadingMaxRetry: webDirect ? 2 : 8, // direto: se for CORS, o erro precisa aparecer logo para cair no proxy
+        fragLoadingMaxRetry: webDirect ? 3 : 8,
         manifestLoadingTimeOut: 15000,
         levelLoadingTimeOut: 15000,
         fragLoadingTimeOut: 15000,
@@ -5891,8 +5912,20 @@ async function playStream(url) {
         startWatchdog(url);
       });
 
+      // Direto: o 1º trecho carregado prova que o CORS do provedor funciona (daí em diante, falha é rede de verdade)
+      hlsInstance.on(Hls.Events.FRAG_LOADED, () => {
+        if (webStarted) return;
+        webStarted = true;
+        if (webDirect) webCount("direto", webHost(streamInfo.url));
+      });
+
       hlsInstance.on(Hls.Events.ERROR, (_, data) => {
         console.warn("[HLS Event Error]", data);
+        if (webHlsShouldFallback({ direct: webDirect, started: webStarted, fellBack: webFellBack, fatal: !!data.fatal, type: data.type, details: data.details, code: data.response && data.response.code })) {
+          webFellBack = true;
+          webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto: recomeça uma vez pelo proxy e lembra o host
+          return;
+        }
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR: {
@@ -5929,12 +5962,33 @@ async function playStream(url) {
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = playUrl;
+      // App web, Safari nativo: se o direto falhar antes de tocar (erro do vídeo, recusa ou 8 s sem começar), recomeça pelo proxy
+      let nativeDone = false;
+      let nativeTimer = null;
+      const nativeLeave = () => { nativeDone = true; clearTimeout(nativeTimer); video.removeEventListener("error", nativeFail); };
+      const nativeFail = () => {
+        if (nativeDone || gen !== playbackGeneration) return;
+        nativeLeave();
+        _webForceProxyUrl = streamInfo.url;
+        webCount("fallback", webHost(streamInfo.url));
+        playStream(url);
+      };
+      if (webNative && webNative.direct) {
+        video.addEventListener("error", nativeFail);
+        nativeTimer = setTimeout(nativeFail, 8000);
+      }
       video.play().then(() => {
+        if (webNative && webNative.direct) { nativeLeave(); webCount("direto", webHost(streamInfo.url)); }
+        else if (webNative && webNative.forced) webMemSet(streamInfo.url, "media", "p"); // o proxy tocou onde o direto falhou
         hidePlayerLoader();
         showPlayerVideo();
         setState({ playing: true });
         startWatchdog(url);
-      }).catch(err => showPlayerError(err.message));
+      }).catch(err => {
+        if (gen !== playbackGeneration) return; // a reprodução foi trocada (ex.: recomeço pelo proxy)
+        if (webNative && webNative.direct && err && err.name !== "NotAllowedError") { nativeFail(); return; }
+        showPlayerError(err.message);
+      });
     } else {
       tryDirectPlay(playUrl, video);
     }
@@ -6065,9 +6119,21 @@ async function playStream(url) {
           }
         }, maxPrebufMs);
 
+        // Direto: a 1ª informação de mídia prova que o CORS do provedor funciona
+        mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, () => {
+          if (webStarted) return;
+          webStarted = true;
+          if (webDirect) webCount("direto", webHost(streamInfo.url));
+        });
+
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
           if (isReloadingStream) return;
+          if (webDirect && !webStarted && !webFellBack && errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
+            webFellBack = true;
+            webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto antes de chegar dado: recomeça uma vez pelo proxy
+            return;
+          }
 
           // MEDIA_ERROR (formato/codec/demux, ex: o bug conhecido de sync_byte
           // corrompido travando o demuxer) recebe a mesma recuperação suave que
@@ -6278,7 +6344,7 @@ function applyPendingResume(video) {
   else run(local, false);
 }
 
-function tryDirectPlay(url, video, attempt, generation) {
+function tryDirectPlay(url, video, attempt, generation, forceProxy) {
   attempt = attempt || 1;
   const gen = generation != null ? generation : playbackGeneration;
   if (gen !== playbackGeneration) return; // uma reprodução mais nova assumiu
@@ -6291,15 +6357,21 @@ function tryDirectPlay(url, video, attempt, generation) {
   }
 
   if (attempt > 1) releaseVideoElement(video);
-  video.src = isWebApp() ? webUrl(url) : url; // app web: pelo proxy (a URL original segue nas regras de extensão e diagnóstico)
+  // App web (v16): <video src> não exige CORS, então tenta o provedor direto (https) e só usa o proxy se for http, se a memória do
+  // host disser "p" ou se o direto falhar (a URL original segue nas regras de extensão e diagnóstico)
+  const media = isWebApp() ? webMediaSrc(url, forceProxy === true) : { src: url, direct: false };
+  video.src = media.src;
 
   let settled = false;
   const attemptTimer = setTimeout(() => fail({ name: "timeout" }), DIRECT_PLAY_ATTEMPT_TIMEOUT_MS);
+  const onVideoError = () => fail({ name: "NotSupportedError" });
+  if (media.direct) video.addEventListener("error", onVideoError);
 
   function fail(err) {
     if (settled) return;
     settled = true;
     clearTimeout(attemptTimer);
+    video.removeEventListener("error", onVideoError);
     if (gen !== playbackGeneration) return;
     const errorName = (err && err.name) || "Error";
     const mediaErrorCode = video.error ? video.error.code : null;
@@ -6312,8 +6384,15 @@ function tryDirectPlay(url, video, attempt, generation) {
       showToast("Toque em ▶ para começar.");
       return;
     }
+    if (media.direct) {
+      // O direto falhou antes de tocar: UMA troca para o proxy, logo, na mesma tentativa ("p" só é gravado se o proxy tocar)
+      webCount("fallback", webHost(url));
+      releaseVideoElement(video);
+      tryDirectPlay(url, video, attempt, gen, true);
+      return;
+    }
     if (shouldRetryDirectPlay({ errorName, attempt, maxAttempts: DIRECT_PLAY_MAX_ATTEMPTS, url, isIOS: ios })) {
-      setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen), computeDirectPlayRetryDelayMs(attempt));
+      setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen, forceProxy), computeDirectPlayRetryDelayMs(attempt));
       return;
     }
     // Guarda o detalhe interno antes de soltar o vídeo (release() limpa o erro)
@@ -6332,7 +6411,10 @@ function tryDirectPlay(url, video, attempt, generation) {
     if (settled) return;
     settled = true;
     clearTimeout(attemptTimer);
+    video.removeEventListener("error", onVideoError);
     if (gen !== playbackGeneration) return;
+    if (media.direct) webCount("direto", webHost(url));
+    else if (media.forced) webMemSet(url, "media", "p"); // o proxy tocou onde o direto falhou: lembra o host
     hidePlayerLoader();
     showPlayerVideo();
     setState({ playing: true });
@@ -6378,7 +6460,8 @@ async function probeVodUrl(url) {
       resolve({ httpStatus: 0, probeError: "tempo esgotado" });
     }, 8000);
   });
-  const request = fetch(isWebApp() ? webUrl(url) : url, { method: "HEAD", cache: "no-store", signal: controller.signal })
+  const probeInit = { method: "HEAD", cache: "no-store", signal: controller.signal };
+  const request = (isWebApp() ? webFetchRouted(url, probeInit, undefined, { directTimeoutMs: 3000 }) : fetch(url, probeInit))
     .then(res => {
       clearTimeout(timer);
       if (_pendingProbeController === controller) _pendingProbeController = null;
@@ -6635,6 +6718,229 @@ function webUrl(url, kind) {
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   if (!token || !ottWebShouldProxy(url, webOwnOrigins())) return url;
   return location.origin + ottWebProxy(url, token, kind); // absoluta: mpegts.js/hls.js/fetch resolvem igual em qualquer contexto
+}
+
+// ─── App web: tenta o provedor DIRETO primeiro e só usa o proxy se precisar (v16) ───
+// A cota grátis do proxy do site (Cloudflare) é de 100 mil requisições por dia, e o HLS ao vivo gasta uma por trecho de vídeo.
+// Por isso, no modo web, cada host de provedor é testado direto e o resultado fica lembrado em localStorage "sint_web_hosts"
+// ({ "<host>": { m: "d" | "p", t: <ms> } }, no máximo 200 hosts): "d" = o direto funcionou (vale 24 h) e "p" = precisa de proxy
+// (vale 6 h; depois tenta o direto de novo). Dados e mídia têm memórias separadas, porque exigem coisas diferentes:
+//   - dados (fetch de lista/player_api/EPG, hls.js, mpegts.js) exigem CORS do provedor -> chave "host";
+//   - mídia (<video src>: filmes e HLS nativo do Safari) NÃO exige CORS -> chave "v:host".
+// http:// numa página https:// é conteúdo misto (o navegador bloqueia): sempre proxy. Tudo fica atrás de isWebApp():
+// o app nativo (Capacitor) e a TV não passam por aqui. O contador window.__sintWeb mede a economia.
+const WEB_HOSTS_KEY = "sint_web_hosts";
+const WEB_DIRECT_OK_MS = 24 * 3600 * 1000;
+const WEB_PROXY_OK_MS = 6 * 3600 * 1000;
+const WEB_HOSTS_MAX = 200;
+const WEB_DIRECT_TIMEOUT_MS = 6000;
+const WEB_FALLBACK_STATUS = [403, 406, 451]; // o provedor recusou o navegador: o proxy pode ter mais sorte
+
+// Lê a memória guardada (texto JSON) tolerando lixo; mantém só entradas válidas e, no máximo, as 200 mais recentes
+function webMemParse(raw) {
+  let obj;
+  try { obj = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { return {}; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+  const lista = [];
+  Object.keys(obj).forEach((k) => {
+    const e = obj[k];
+    if (k !== "__proto__" && e && (e.m === "d" || e.m === "p") && typeof e.t === "number" && isFinite(e.t) && e.t > 0) lista.push([k, { m: e.m, t: e.t }]);
+  });
+  lista.sort((a, b) => b[1].t - a[1].t);
+  const out = {};
+  lista.slice(0, WEB_HOSTS_MAX).forEach((par) => { out[par[0]] = par[1]; });
+  return out;
+}
+
+// Chave da memória: host (com porta) em minúsculas; "v:" na frente para mídia (<video src>). "" se a URL não é http(s)
+function webMemKey(url, kind) {
+  let u;
+  try { u = new URL(String(url == null ? "" : url)); } catch (e) { return ""; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+  return (kind === "media" ? "v:" : "") + u.host.toLowerCase();
+}
+
+// Decide a rota: "proxy" | "direct" | "probe" (sem memória: dados tentam o direto e caem no proxy; mídia vai direto)
+function webRoute(url, memory, nowMs, pageIsHttps, kind) {
+  let u;
+  try { u = new URL(String(url == null ? "" : url)); } catch (e) { return "direct"; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "direct"; // nada para proxiar
+  if (u.protocol === "http:" && pageIsHttps) return "proxy"; // conteúdo misto: impossível direto
+  const e = memory && typeof memory === "object" ? memory[webMemKey(url, kind)] : null;
+  if (e && typeof e.t === "number" && e.t <= nowMs + 60000) { // relógio adiantado na memória: ignora
+    const idade = nowMs - e.t;
+    if (e.m === "p" && idade < WEB_PROXY_OK_MS) return "proxy";
+    if (e.m === "d" && idade < WEB_DIRECT_OK_MS) return "direct";
+  }
+  return kind === "media" ? "direct" : "probe";
+}
+
+// Devolve uma cópia da memória com o host marcado (não altera a original); passando de 200 hosts descarta os mais antigos
+function webMemMark(memory, key, mode, nowMs) {
+  const out = {};
+  if (memory && typeof memory === "object") Object.keys(memory).forEach((k) => { if (k !== "__proto__") out[k] = memory[k]; });
+  if (!key || key === "__proto__" || (mode !== "d" && mode !== "p")) return out;
+  out[key] = { m: mode, t: nowMs };
+  const chaves = Object.keys(out);
+  if (chaves.length > WEB_HOSTS_MAX) {
+    chaves.sort((a, b) => ((out[a] && out[a].t) || 0) - ((out[b] && out[b].t) || 0));
+    chaves.slice(0, chaves.length - WEB_HOSTS_MAX).forEach((k) => { delete out[k]; });
+  }
+  return out;
+}
+
+// hls.js tocando DIRETO: quando cair para o proxy? Só antes do primeiro trecho carregado (depois disso a falha é de rede de
+// verdade, não de CORS), só uma vez e só em erro de rede: fatal, ou erro de carga com status 0 (o que o CORS bloqueado dá)
+function webHlsShouldFallback(info) {
+  if (!info || !info.direct || info.started || info.fellBack) return false;
+  if (info.type !== "networkError") return false;
+  if (info.fatal) return true;
+  return info.code === 0 && (info.details === "manifestLoadError" || info.details === "levelLoadError" || info.details === "fragLoadError");
+}
+
+// Espelho em memória: o aprendizado vale na sessão mesmo se o localStorage estiver bloqueado ou cheio
+let _webMemSession = {};
+let _webForceProxyUrl = null; // reprodução reiniciada por falha no direto: a próxima decisão desta URL é proxy (uma vez)
+
+function webMemLoad() {
+  let mem = {};
+  try { mem = webMemParse(localStorage.getItem(WEB_HOSTS_KEY)); } catch (e) { mem = {}; }
+  Object.keys(_webMemSession).forEach((k) => {
+    const s = _webMemSession[k];
+    if (!mem[k] || mem[k].t < s.t) mem[k] = s;
+  });
+  return mem;
+}
+
+// Grava "d" ou "p" para o host da URL (kind: "data" | "media"); não regrava a cada pedido se já está marcado há pouco
+function webMemSet(url, kind, mode) {
+  const key = webMemKey(url, kind);
+  if (!key) return;
+  const agora = Date.now();
+  const atual = webMemLoad()[key];
+  if (atual && atual.m === mode && agora - atual.t < 600000) return;
+  _webMemSession = webMemMark(_webMemSession, key, mode, agora);
+  lsSet(WEB_HOSTS_KEY, JSON.stringify(webMemMark(webMemLoad(), key, mode, agora)));
+}
+
+// Só o host vai para o console: as URLs do Xtream levam usuário e senha
+function webHost(url) {
+  try { return new URL(String(url)).host; } catch (e) { return ""; }
+}
+
+// Contadores da economia: direto = ficou no direto e funcionou; proxy = passou pelo proxy (inclui os que caíram no fallback);
+// fallback = tentativas diretas que falharam e foram refeitas pelo proxy
+function webCount(nome, host) {
+  try {
+    const c = window.__sintWeb || (window.__sintWeb = { direto: 0, proxy: 0, fallback: 0 });
+    c[nome] = (c[nome] || 0) + 1;
+    console.debug("[web] " + nome + (host ? " " + host : "") + " " + JSON.stringify(c));
+  } catch (e) { /* contador é só medição */ }
+}
+
+function webPageIsHttps() {
+  return location.protocol === "https:";
+}
+
+// Único fetch de DADOS do provedor no modo web (lista M3U, player_api.php, EPG, sondagens): direto com limite de tempo e,
+// se falhar por rede/CORS/tempo ou o provedor recusar (403/406/451), UMA nova tentativa pelo proxy (webUrl). Nunca repete pedido
+// que já foi pelo proxy. kind = tipo do proxy ("hls" reescreve manifesto; vazio = repasse cru). opts.directTimeoutMs = limite do
+// direto (só até chegarem os cabeçalhos: o corpo, mesmo de dezenas de MB, baixa sem limite). Fora do modo web é o fetch normal.
+async function webFetchRouted(url, init, kind, opts) {
+  init = init || {};
+  const proxied = webUrl(url, kind);
+  if (!isWebApp() || proxied === url) return fetch(url, init); // destino próprio (Supabase, este site...) ou aparelho sem token
+  const host = webHost(url);
+  if (webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "data") === "proxy") {
+    webCount("proxy", host);
+    return fetch(proxied, init);
+  }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), (opts && opts.directTimeoutMs) || WEB_DIRECT_TIMEOUT_MS);
+  if (init.signal) {
+    if (init.signal.aborted) ctl.abort();
+    else init.signal.addEventListener("abort", () => ctl.abort(), { once: true });
+  }
+  try {
+    const res = await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
+    clearTimeout(timer);
+    if (WEB_FALLBACK_STATUS.indexOf(res.status) >= 0) throw new Error("HTTP " + res.status);
+    webMemSet(url, "data", "d");
+    webCount("direto", host);
+    return res;
+  } catch (e) {
+    clearTimeout(timer);
+    if (init.signal && init.signal.aborted) throw e; // quem pediu cancelou: não refaz
+    webCount("fallback", host);
+    webCount("proxy", host);
+    const res = await fetch(proxied, init);
+    if (res.ok) webMemSet(url, "data", "p");
+    return res;
+  }
+}
+
+// Sonda o manifesto HLS direto (GET simples): sucesso = resposta ok cujo texto começa com #EXTM3U
+async function webHlsProbe(url) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), WEB_DIRECT_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
+    if (!res.ok) return false;
+    const texto = await res.text();
+    return texto.trim().indexOf("#EXTM3U") === 0;
+  } catch (e) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// HLS com hls.js: devolve { src, direct }. https: sonda o manifesto direto (sem memória) e só vai pelo proxy (k=hls) se falhar
+async function webHlsPlan(url) {
+  const proxied = webUrl(url, "hls");
+  if (!isWebApp() || proxied === url) return { src: url, direct: false };
+  const host = webHost(url);
+  const rota = webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "data");
+  if (rota === "direct") return { src: url, direct: true };
+  if (rota === "probe") {
+    if (await webHlsProbe(url)) { webMemSet(url, "data", "d"); return { src: url, direct: true }; }
+    webCount("fallback", host);
+    webMemSet(url, "data", "p");
+  }
+  webCount("proxy", host);
+  return { src: proxied, direct: false };
+}
+
+// MPEG-TS (mpegts.js também exige CORS): sem sondagem (abriria uma conexão de TV ao vivo à toa); o erro de rede cai no proxy
+function webStreamPlan(url) {
+  const proxied = webUrl(url);
+  if (!isWebApp() || proxied === url) return { src: url, direct: false };
+  if (webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "data") === "proxy") {
+    webCount("proxy", webHost(url));
+    return { src: proxied, direct: false };
+  }
+  return { src: url, direct: true };
+}
+
+// Mídia em <video src> (filme/episódio; HLS nativo do Safari com kind "hls"): direto, a menos que a memória ou o http mandem proxy.
+// forceProxy (ou _webForceProxyUrl, uma vez) = o direto já falhou nesta reprodução
+function webMediaSrc(url, forceProxy, kind) {
+  const proxied = webUrl(url, kind);
+  if (!isWebApp() || proxied === url) return { src: url, direct: false };
+  const forcar = forceProxy === true || _webForceProxyUrl === url;
+  if (_webForceProxyUrl === url) _webForceProxyUrl = null;
+  if (forcar || webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "media") === "proxy") {
+    webCount("proxy", webHost(url));
+    return { src: proxied, direct: false, forced: forcar }; // forced: o direto falhou antes; marcar "p" só se o proxy tocar
+  }
+  return { src: url, direct: true };
+}
+
+// O direto falhou antes de tocar (CORS no hls.js/mpegts.js): lembra o host como "p" e recomeça a reprodução, que agora vai pelo proxy
+function webRestartViaProxy(channelUrl, hostUrl) {
+  webMemSet(hostUrl, "data", "p");
+  webCount("fallback", webHost(hostUrl));
+  playStream(channelUrl);
 }
 
 // Atalho de teclado do app web: devolve o nome da ação ou null (função pura; evento = KeyboardEvent ou objeto parecido).
@@ -7593,7 +7899,7 @@ function vodMemo(url, make) {
 function vodFetchCategories(creds, isSeries) {
   const url = xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories");
   return vodMemo(url, async () => {
-    const res = await fetch(webUrl(url));
+    const res = await webFetchRouted(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
     return Array.isArray(raw) ? raw.map(sanitizeVodItem) : raw;
@@ -7604,7 +7910,7 @@ function vodFetchCategories(creds, isSeries) {
 function vodFetchCategoryItems(creds, isSeries, categoryId) {
   const url = xtreamApiUrl(creds, isSeries ? "get_series" : "get_vod_streams", { category_id: categoryId });
   return vodMemo(url, async () => {
-    const res = await fetch(webUrl(url));
+    const res = await webFetchRouted(url);
     const streams = await res.json();
     if (!Array.isArray(streams) || streams.length === 0) return [];
     return dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
@@ -8866,7 +9172,7 @@ async function openVodModal(item, vodType, creds) {
   epsContainer.innerHTML = `<div class="spinner" style="margin:1rem"></div>`;
 
   try {
-    const res = await fetch(webUrl(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id })));
+    const res = await webFetchRouted(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const episodes = Object.values(data.episodes || {}).flat().map(sanitizeVodItem);
