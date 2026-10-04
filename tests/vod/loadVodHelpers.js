@@ -32,6 +32,7 @@ const PURE_HELPER_NAMES = [
   "edgeSwipeDecision", "homeIsEmptyForProfile",
   "webKeyAction", "webUsesPseudoFullscreen", "lsSet",
   "webMemParse", "webMemKey", "webRoute", "webMemMark", "webHlsShouldFallback",
+  "isRealFullscreen", "isFullscreenNow",
 ];
 
 function toHostRealm(value) {

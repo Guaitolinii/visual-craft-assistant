@@ -464,6 +464,97 @@ try {
     confere(doProv(p8, /^\/movie\//).length === diretasAntes, "sem nova tentativa direta");
   });
   provs.forEach((p) => p.srv.close());
+
+  // ── (h) tela cheia REAL (Fullscreen API) no computador: não vira mini-player e volta ao sair ──
+  console.log("(h) tela cheia real no computador (duplo clique, f, Esc/exitFullscreen)");
+  await withPage(URL_APP, { width: 1440, height: 900, desktop: true, blockExternal: true, preScript: preScript({ sessao: sessaoOk() }) }, async (page) => {
+    confere(await espera(page, PRONTO, 25000), "a lista de canais carregou");
+    await page.eval(`document.querySelector('.sidebar-nav .nav-item[data-section="Todos os canais"]').click()`);
+    await page.sleep(600);
+    await page.eval(`document.querySelector(".channel-card .card-main").click()`);
+    await espera(page, `!!_state.selected`, 6000);
+    await page.sleep(1500);
+    await page.eval(`window.scrollTo(0, 0)`);
+    await page.sleep(400);
+    const estado = () => page.eval(`(() => {
+      const el = document.getElementById("player-screen");
+      const ctr = el.querySelector(".player-controls");
+      const r = ctr.getBoundingClientRect();
+      const pr = el.getBoundingClientRect();
+      return {
+        fs: document.fullscreenElement ? document.fullscreenElement.id : null,
+        mini: el.classList.contains("mini-player"), oculto: el.classList.contains("player-hidden"),
+        ancora: document.getElementById("player-anchor").style.height,
+        ctrl: getComputedStyle(ctr).display !== "none" && r.height > 0 && r.bottom <= innerHeight + 1,
+        pos: getComputedStyle(el).position, w: Math.round(pr.width), h: Math.round(pr.height), top: Math.round(pr.top),
+        icone: document.getElementById("fullscreen-btn").getAttribute("aria-label"),
+        tocando: !document.getElementById("player-video").paused,
+      };
+    })()`);
+    const duploClique = async () => {
+      const pt = await page.eval(`(() => { const r = document.querySelector("#player-screen .player-media").getBoundingClientRect(); return { x: Math.round(r.left + r.width * 0.2), y: Math.round(r.top + r.height * 0.3) }; })()`);
+      for (const n of [1, 2]) {
+        await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pt.x, y: pt.y, button: "left", clickCount: n });
+        await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pt.x, y: pt.y, button: "left", clickCount: n });
+      }
+    };
+    let e = await estado();
+    confere(!e.fs && !e.mini && e.pos !== "fixed", "antes: player grande no fluxo, sem tela cheia (" + JSON.stringify(e) + ")");
+    for (let i = 1; i <= 3; i++) {
+      await duploClique();
+      await espera(page, `document.fullscreenElement && document.fullscreenElement.id === "player-screen"`, 4000);
+      await page.sleep(700); // dá tempo do scroll/resize disparar o updateDocking
+      e = await estado();
+      confere(e.fs === "player-screen", "ciclo " + i + ": o duplo clique entra em tela cheia real (#player-screen)");
+      confere(!e.mini && !e.oculto, "ciclo " + i + ": em tela cheia o player não vira mini-player (" + JSON.stringify(e) + ")");
+      confere(e.ctrl, "ciclo " + i + ": os controles do player continuam visíveis na tela cheia");
+      confere(e.w >= 1400 && e.h >= 850 && e.top === 0, "ciclo " + i + ": ocupa a janela inteira (" + e.w + "x" + e.h + ")");
+      if (i === 1) await captura(page, "desktop-1440-tela-cheia-real.png");
+      // sai: 1º ciclo pela API (como o Esc), 2º pelo duplo clique de novo, 3º pela tecla f
+      if (i === 1) await page.eval(`document.exitFullscreen()`);
+      else if (i === 2) await duploClique();
+      else { await page.eval(`document.body.focus()`); await tecla(page, "f", "KeyF", 70); }
+      await espera(page, `!document.fullscreenElement`, 4000);
+      await page.sleep(900);
+      e = await estado();
+      confere(!e.fs && !e.mini && !e.oculto && e.ancora === "", "ciclo " + i + ": ao sair o player grande volta ao lugar, sem mini-player e com a âncora solta (" + JSON.stringify(e) + ")");
+      // o stream de teste tem bytes falsos e o app o recarrega de vez em quando: espera um instante de "tocando" em vez de olhar um único quadro
+      const tocou = await espera(page, `!document.getElementById("player-video").paused`, 6000);
+      confere(e.top >= 0 && e.top < 400 && e.pos !== "fixed" && tocou, "ciclo " + i + ": no fluxo da página e o vídeo continua tocando (top " + e.top + ")");
+      confere(e.icone === "Tela cheia", "ciclo " + i + ": o ícone do botão volta a 'Tela cheia'");
+    }
+    await captura(page, "desktop-1440-depois-da-tela-cheia.png");
+    // o mini-player legítimo da rolagem segue funcionando fora da tela cheia
+    const rolavel = await page.eval(`document.documentElement.scrollHeight > innerHeight + 700`);
+    if (rolavel) {
+      await page.eval(`window.scrollTo(0, document.documentElement.scrollHeight)`);
+      await page.sleep(700);
+      e = await estado();
+      confere(e.mini, "rolando a página com o player tocando, ele vira mini-player (fora da tela cheia)");
+      await page.eval(`window.scrollTo(0, 0)`);
+      await page.sleep(700);
+      e = await estado();
+      confere(!e.mini && e.ancora === "", "voltando ao topo o player grande reaparece");
+      // rola, entra e sai da tela cheia com o player grande parcialmente visível: nada fica preso
+      await page.eval(`window.scrollTo(0, 250)`);
+      await page.sleep(500);
+      await page.eval(`document.body.focus()`);
+      await tecla(page, "f", "KeyF", 70);
+      await espera(page, `document.fullscreenElement && document.fullscreenElement.id === "player-screen"`, 4000);
+      await page.sleep(700);
+      e = await estado();
+      confere(e.fs === "player-screen" && !e.mini, "rolado 250 px: a tela cheia (tecla f) também não vira mini-player");
+      await page.eval(`document.exitFullscreen()`);
+      await espera(page, `!document.fullscreenElement`, 4000);
+      await page.sleep(900);
+      e = await estado();
+      confere(!e.fs && !e.mini && e.ancora === "", "e ao sair o player grande segue no lugar (" + JSON.stringify(e) + ")");
+      await page.eval(`window.scrollTo(0, document.documentElement.scrollHeight)`);
+      await page.sleep(700);
+      confere((await estado()).mini, "depois do ciclo, rolar de novo ainda gera o mini-player");
+    } else console.log("  (a página não rola o bastante neste tamanho: parte do mini-player por rolagem não conferida)");
+    confere(page.blocked.length === 0, "nenhuma requisição externa (" + page.blocked.length + ")");
+  });
 } finally {
   servidor.close();
 }

@@ -404,6 +404,21 @@
        play central do card grande ficariam por baixo dos controles. */
     #player-screen.pseudo-fullscreen .player-copy,
     #player-screen.pseudo-fullscreen .play-center { display: none !important; }
+    /* Tela cheia REAL (Fullscreen API, navegador do computador): o card vira a janela inteira, sem moldura nem largura máxima,
+       e mantém a barra de controles de sempre (a #fs-ui é só da tela cheia por CSS). Duas regras: um seletor desconhecido
+       invalidaria a lista inteira em quem não conhece o outro prefixo. */
+    html #player-screen:fullscreen {
+      position: fixed; inset: 0; z-index: 9999; background: #000;
+      width: 100vw !important; height: 100vh !important; max-width: none !important;
+      margin: 0 !important; border-radius: 0; box-shadow: none;
+    }
+    html #player-screen:fullscreen .player-media { flex: 1 1 auto; min-height: 0; max-height: none; background: #000; }
+    html #player-screen:-webkit-full-screen {
+      position: fixed; inset: 0; z-index: 9999; background: #000;
+      width: 100vw !important; height: 100vh !important; max-width: none !important;
+      margin: 0 !important; border-radius: 0; box-shadow: none;
+    }
+    html #player-screen:-webkit-full-screen .player-media { flex: 1 1 auto; min-height: 0; max-height: none; background: #000; }
     #player-screen.pseudo-fullscreen.rotated {
       inset: auto; top: 50%; left: 50%;
       width: 100vh; height: 100vw;
@@ -7220,6 +7235,13 @@ function isDoubleTap(prev, now, windowMs = 350, maxDistPx = 40) {
 
 function toggleFullscreen() {
   const el = document.getElementById("player-screen");
+  // Já está em tela cheia REAL: sai. Tem que vir antes de tudo: com a Fullscreen API ativa o navegador responde
+  // "(display-mode: fullscreen)" e isStandaloneDisplay() viraria true, mandando o clique para a tela cheia por CSS por cima da real.
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    return;
+  }
   // App web no iPhone/iPad ou instalado como atalho: sem Fullscreen API confiável, usa a tela cheia por CSS (a mesma do app nativo)
   if (isNativeApp() || (isWebApp() && webUsesPseudoFullscreen(isIOSDevice(), isStandaloneDisplay()))) {
     if (el.classList.contains("pseudo-fullscreen")) exitPseudoFullscreen();
@@ -7227,8 +7249,14 @@ function toggleFullscreen() {
     updateFullscreenBtnIcon();
     return;
   }
-  if (document.fullscreenElement) { document.exitFullscreen(); }
-  else if (el.requestFullscreen) { el.requestFullscreen(); }
+  // Trava a âncora ANTES: depois que o player vira tela cheia ele sai do fluxo e a âncora mediria 0 px (a página pularia)
+  if (_state.section !== "settings" && !el.classList.contains("mini-player")) lockPlayerAnchor();
+  if (el.requestFullscreen) {
+    const pedido = el.requestFullscreen();
+    if (pedido && pedido.catch) pedido.catch(() => { unlockPlayerAnchor(); setPlayerMode(); }); // o navegador recusou: nada fica travado
+  } else if (el.webkitRequestFullscreen) {
+    el.webkitRequestFullscreen();
+  }
 }
 
 // ─── Seek bar do VOD (filmes/séries) ───
@@ -7638,13 +7666,26 @@ function computePlayerMode({ section, hasSelection, hasActiveMedia, playerScroll
   return hasActiveMedia && playerScrolledAway ? "mini" : "full";
 }
 
+// Tela cheia REAL (Fullscreen API, navegador do computador): o próprio #player-screen é o elemento em tela cheia
+// (doc.webkitFullscreenElement: Safari/iPad). Não confundir com a tela cheia por CSS (classe pseudo-fullscreen).
+function isRealFullscreen(el, doc) {
+  if (!el || !doc) return false;
+  return doc.fullscreenElement === el || doc.webkitFullscreenElement === el;
+}
+
+// Tela cheia de qualquer tipo: por CSS (app nativo, iPhone, atalho) ou real (computador)
+function isFullscreenNow(el, doc) {
+  return !!(el && el.classList && el.classList.contains("pseudo-fullscreen")) || isRealFullscreen(el, doc);
+}
+
 // Medida "o player grande saiu da tela" usada para virar mini-player.
 // - sem seleção não há o que minimizar (a âncora vazia mediria sempre "fora da tela");
 // - dentro da janela flutuante (PiP) o player fica fixo na janelinha e o layout é outro:
-//   mantém o valor anterior em vez de medir.
-function computeScrolledAway({ hasSelection, pipActive, anchorBottom, topbarBottom, previous }) {
+//   mantém o valor anterior em vez de medir;
+// - em tela cheia real o player está fora do fluxo (a âncora mede 0 e pareceria "fora da tela"): idem.
+function computeScrolledAway({ hasSelection, pipActive, fullscreen, anchorBottom, topbarBottom, previous }) {
   if (!hasSelection) return false;
-  if (pipActive) return previous;
+  if (pipActive || fullscreen) return previous;
   return isPlayerScrolledAway(anchorBottom, topbarBottom);
 }
 
@@ -7691,7 +7732,7 @@ function setPlayerMode() {
   if (!el) return;
   _playerScrolledAway = resolvePlayerScrolledAway({ prevSection: _lastPlayerSection, section: _state.section, scrolledAway: _playerScrolledAway });
   _lastPlayerSection = _state.section;
-  const isFullscreen = el.classList.contains("pseudo-fullscreen");
+  const isFullscreen = isFullscreenNow(el, document); // por CSS (nativo/iPhone) ou real (computador)
   const wasOutOfFlow = isFullscreen || el.classList.contains("mini-player");
   const hasSelection = !!_state.selected;
   const hasActiveMedia = !!(_state.selected && (_state.playing || _state.selected.isVod));
@@ -7708,10 +7749,29 @@ function setPlayerMode() {
 // tela" foi feita com o player fixo dentro da janelinha e não vale mais. Zera, solta a âncora e mede
 // de novo depois que o layout assentar (nenhum evento de rolagem/redimensionamento chega depois).
 function restorePlayerAfterPip() {
+  restorePlayerLayout();
+}
+
+// Zera a medida de rolagem, solta a âncora, recalcula o modo e mede de novo depois que o layout assentar.
+// Usada ao sair da janela flutuante e ao sair da tela cheia real (Esc, botão, duplo clique).
+function restorePlayerLayout() {
   _playerScrolledAway = false;
   unlockPlayerAnchor();
   setPlayerMode();
   [60, 300, 800].forEach(ms => setTimeout(scheduleDockingUpdate, ms));
+}
+
+// Entrou ou saiu da tela cheia real. Ao entrar a âncora segue travada (foi travada antes de pedir a tela cheia) e o modo é
+// "full"; ao sair o player grande volta ao lugar. Sem isso a medida feita com o player fora do fluxo o deixava preso como mini-player.
+function onPlayerFullscreenChange() {
+  updateFullscreenBtnIcon();
+  const el = document.getElementById("player-screen");
+  if (isRealFullscreen(el, document)) {
+    _playerScrolledAway = false;
+    setPlayerMode();
+    return;
+  }
+  restorePlayerLayout();
 }
 
 // Rolagem: decide o mini-player (e o encaixe da busca na topbar). Roda no
@@ -7733,6 +7793,7 @@ function updateDocking() {
   _playerScrolledAway = computeScrolledAway({
     hasSelection: !!_state.selected,
     pipActive: document.body.classList.contains("pip-active"),
+    fullscreen: isRealFullscreen(document.getElementById("player-screen"), document),
     anchorBottom: anchor.getBoundingClientRect().bottom,
     topbarBottom,
     previous: _playerScrolledAway,
@@ -10782,7 +10843,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Navegador comum (Fullscreen API real): mantém o ícone do botão único
   // sincronizado mesmo quando a saída da tela cheia é disparada fora do app
   // (ex.: tecla Esc), já que nesse caminho não passamos por toggleFullscreen.
-  document.addEventListener("fullscreenchange", updateFullscreenBtnIcon);
+  document.addEventListener("fullscreenchange", onPlayerFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onPlayerFullscreenChange);
 
   // Tocar no mini-player volta ao player grande: nas abas principais ele
   // fica no topo da própria página (basta rolar). Em Configurações, que não
