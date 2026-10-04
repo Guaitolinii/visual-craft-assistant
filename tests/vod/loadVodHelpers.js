@@ -30,7 +30,7 @@ const PURE_HELPER_NAMES = [
   "profKey", "profKeyFor", "activeProfileId", "activeProfileIsMain", "profileAdoptLegacy",
   "favSyncParse", "favSyncMark", "favTipoDaChave", "histSyncParse", "histSyncMark", "histResumeUrl",
   "edgeSwipeDecision", "homeIsEmptyForProfile",
-  "webKeyAction", "webUsesPseudoFullscreen", "lsSet",
+  "webKeyAction", "webUsesPseudoFullscreen", "lsSet", "quickAccessInfo", "carouselKeyTarget",
   "webMemParse", "webMemKey", "webRoute", "webMemMark", "webHlsShouldFallback",
   "isRealFullscreen", "isFullscreenNow",
 ];

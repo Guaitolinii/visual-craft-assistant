@@ -1505,6 +1505,93 @@
       html[data-web-app] #player-screen:not(.mini-player):not(.pseudo-fullscreen) { width: min(calc(100% - 4rem), 106rem); margin-inline: auto; }
     }
 
+    /* ACESSO RÁPIDO (início) */
+    /* Aba Canais no computador: o painel "Acesso rápido" deixa de ser uma coluna fixa de 20 rem à direita (que
+       deixava um vazio enorme à esquerda) e vira uma seção de largura total com uma fileira horizontal de cartões,
+       no mesmo ritmo das categorias de Filmes (.vod-carousel/.vod-card: setas redondas, roda do mouse, arrastar,
+       ←/→). Só atrás de html[data-web-app] e a partir de 1101 px; entre 769 e 1100 px segue sem o painel lateral
+       (a regra de max-width: 1100px lá em cima continua escondendo o .on-now). */
+    @media (min-width: 1101px) {
+      html[data-web-app] .feature-layout { grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 1.75rem; }
+      html[data-web-app] .feature-layout .player-stage { display: none; }
+      html[data-web-app] .on-now {
+        position: relative; display: block; max-height: none; overflow: visible;
+        border: 0; border-radius: 0; background: none; padding: 0; margin: 0;
+      }
+      html[data-web-app] .on-now-header { justify-content: flex-start; gap: .9rem; }
+      html[data-web-app] .on-now-header h2 { margin: .1rem 0 0; font-size: 1.45rem; letter-spacing: -.005em; }
+      html[data-web-app] .on-now-icon {
+        order: -1; box-sizing: border-box; width: 2.9rem !important; height: 2.9rem !important; padding: .72rem;
+        border-radius: .8rem; background: var(--foreground); color: var(--primary);
+        box-shadow: 0 6px 16px -8px oklch(0.14 0.018 65 / 45%);
+      }
+      /* a fileira: mesma mecânica do .vod-carousel; folga em cima/laterais para a elevação e a sombra dos cartões não serem cortadas */
+      html[data-web-app] .on-now .now-list.vod-carousel {
+        flex: none; gap: 1.15rem; margin: .35rem -.6rem 0; padding: 1rem .6rem 1rem;
+        overflow-x: auto; overflow-y: hidden; scroll-padding-inline: .6rem;
+      }
+      html[data-web-app] .on-now .now-list:not(.vod-carousel) { margin-top: .9rem; padding-right: 0; overflow: visible; }
+      html[data-web-app] .on-now .empty-state.is-compact { min-height: 7rem; background: color-mix(in oklab, var(--card) 70%, transparent); }
+      html[data-web-app] .on-now .empty-state.is-compact svg { color: var(--primary); }
+
+      /* cartão de canal (<article class="vod-card qa-card">): logo no formato 2:3 dos pôsteres, nome em até 2 linhas, selo HLS e categoria */
+      html[data-web-app] .qa-main {
+        display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit;
+        text-align: left; border-radius: .5rem;
+      }
+      html[data-web-app] .qa-card .vod-card-logo { position: relative; transition: box-shadow 220ms; }
+      html[data-web-app] .qa-card .vod-card-logo::after {
+        content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+        background: radial-gradient(130% 70% at 12% 0%, oklch(1 0 0 / 20%), transparent 58%),
+                    linear-gradient(to top, oklch(0.1 0.01 65 / 28%), transparent 45%);
+      }
+      html[data-web-app] .qa-card .vod-card-logo > span:not(.qa-play) { font-size: 2rem; letter-spacing: .02em; }
+      html[data-web-app] .qa-card.is-current .vod-card-logo { box-shadow: 0 0 0 3px var(--primary), 0 14px 26px oklch(0.45 0.08 75 / 32%); }
+      html[data-web-app] .qa-name {
+        margin-top: .1rem; min-height: 2.5em; font-size: .9rem; font-weight: 600; line-height: 1.25;
+        white-space: normal; overflow: hidden; text-overflow: clip;
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+      }
+      html[data-web-app] .qa-meta { display: flex; align-items: center; gap: .4rem; min-width: 0; margin-top: .3rem; font-size: .72rem; font-weight: 500; color: var(--muted-fg); }
+      html[data-web-app] .qa-cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      html[data-web-app] .qa-card.is-current .qa-name,
+      html[data-web-app] .qa-card.is-current .qa-cat { color: color-mix(in oklab, var(--primary) 72%, black); font-weight: 700; }
+      /* botão de play no centro: aparece ao passar o mouse / focar; no canal em reprodução fica sempre aceso (volume) */
+      html[data-web-app] .qa-play {
+        position: absolute; z-index: 1; left: 50%; top: 50%; width: 3.1rem; height: 3.1rem; margin: -1.55rem 0 0 -1.55rem;
+        display: grid; place-items: center; border-radius: 999px; pointer-events: none;
+        background: oklch(1 0 0 / 94%); color: var(--foreground); box-shadow: 0 8px 22px oklch(0.1 0.01 65 / 35%);
+        opacity: 0; transform: scale(.82);
+        transition: opacity 160ms, transform 220ms cubic-bezier(.22,1,.36,1);
+      }
+      html[data-web-app] .qa-play [class*="lucide-play"] { fill: currentColor; margin-left: 2px; }
+      html[data-web-app] .qa-card.is-current .qa-play { opacity: 1; transform: none; background: var(--primary); color: var(--primary-fg); }
+      /* TV e coração: sobre o logo, no canto; ficam discretos até o mouse chegar (o favorito ativo fica sempre à vista) */
+      html[data-web-app] .qa-card .tv-btn {
+        position: absolute; top: .6rem; right: 3.2rem; z-index: 2; padding: .35rem;
+        background: oklch(0.1 0.01 65 / 70%); color: oklch(0.98 0 0); backdrop-filter: blur(8px);
+      }
+      html[data-web-app] .qa-card .fav-btn { z-index: 2; }
+      html[data-web-app] .qa-card .tv-btn:hover { transform: scale(1.15); }
+    }
+    @media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
+      html[data-web-app] .qa-card:hover .qa-play,
+      html[data-web-app] .qa-main:focus-visible .qa-play { opacity: 1; transform: none; }
+      html[data-web-app] .qa-card .tv-btn,
+      html[data-web-app] .qa-card .fav-btn:not(.fav-active) { opacity: 0; transition: opacity 160ms, transform 160ms; }
+      html[data-web-app] .qa-card:hover .tv-btn,
+      html[data-web-app] .qa-card:focus-within .tv-btn,
+      html[data-web-app] .qa-card:hover .fav-btn,
+      html[data-web-app] .qa-card:focus-within .fav-btn { opacity: 1; }
+    }
+    /* arrastar com o mouse (qualquer fileira do app web): sem encaixe enquanto arrasta; a mãozinha avisa que dá para agarrar */
+    html[data-web-app] .vod-carousel.is-dragging { scroll-snap-type: none; cursor: grabbing; }
+    html[data-web-app] .vod-carousel.is-dragging * { pointer-events: none; cursor: grabbing; }
+    @media (prefers-reduced-motion: reduce) {
+      html[data-web-app] .qa-play { transition: opacity 1ms linear; transform: none; }
+    }
+    /* ACESSO RÁPIDO (fim) */
+
     /* Entre 769 e 1100 px a barra lateral fica recolhida e abre como gaveta (botão de menu), liberando a largura para o conteúdo */
     @media (min-width: 769px) and (max-width: 1100px) {
       html[data-web-app] .sidebar { transform: translateX(-100%); width: min(86vw, 20rem); }
@@ -7338,6 +7425,53 @@ function renderPlayerInfo() {
 // ═══════════════════════════════════════════════════════════════
 // RENDER — ON NOW (Acesso rápido / Favoritos)
 // ═══════════════════════════════════════════════════════════════
+// O que o painel mostra: os favoritos; sem favoritos, os 10 primeiros canais como sugestão.
+// Pura (testada em tests/web/quick-access.test.js): isFavFn decide quem é favorito.
+function quickAccessInfo(all, isFavFn) {
+  const favs = (all || []).filter(ch => isFavFn(ch));
+  if (favs.length) {
+    return { hasFavorites: true, eyebrow: `ACESSO RÁPIDO (${favs.length})`, title: "Canais favoritos", channels: favs };
+  }
+  return { hasFavorites: false, eyebrow: "SUGESTÕES", title: "Outros canais", channels: (all || []).slice(0, 10) };
+}
+
+// Setas ←/→ dentro de uma fileira: índice do cartão que recebe o foco (sem dar a volta nas pontas).
+// Home/End vão ao primeiro/último. -1 = a tecla não é da fileira. Pura.
+function carouselKeyTarget(key, index, count) {
+  if (!count) return -1;
+  const atual = index < 0 ? 0 : index;
+  if (key === "ArrowRight") return index < 0 ? 0 : Math.min(count - 1, atual + 1);
+  if (key === "ArrowLeft") return Math.max(0, atual - 1);
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return -1;
+}
+
+// Cartão de canal da fileira "Acesso rápido" do app web (computador). Mesma silhueta do .vod-card dos filmes
+// (logo no formato 2:3, nome embaixo), mas <article> com botões irmãos: um <button> dentro de outro <button> é inválido.
+// Botão principal = reproduz; coração = favoritar; TV = "Assistir na TV" (só com conta ativa, ver .tv-only).
+function quickAccessCardHtml(ch, isCur, isFavCh) {
+  const nome = escapeHtmlText(ch.name);
+  const logoUrl = sanitizeImageUrl(ch.logo);
+  const logo = logoUrl
+    ? `<img src="${escapeHtmlText(logoUrl)}" alt="" loading="lazy" onerror="this.remove()">`
+    : `<span>${escapeHtmlText(ch.initials || "")}</span>`;
+  return `
+    <article class="vod-card qa-card${isCur ? " is-current" : ""}" title="${nome} — ${escapeHtmlText(ch.category || "")}">
+      <button type="button" class="qa-main" data-channel-id="${ch.id}" aria-label="Assistir ${nome}"${isCur ? ' aria-current="true"' : ""}>
+        <div class="vod-card-logo ${ch.color}">${logo}
+          <span class="qa-play" aria-hidden="true"><i data-lucide="${isCur ? "volume-2" : "play"}" style="width:22px;height:22px"></i></span>
+        </div>
+        <p class="qa-name">${nome}</p>
+        <p class="qa-meta">${isChannelHls(ch) ? `<span class="tag-hls">HLS</span>` : ""}<span class="qa-cat">${isCur ? "● Em reprodução" : escapeHtmlText(ch.category || "")}</span></p>
+      </button>
+      <button type="button" class="tv-btn tv-only" data-tv-channel-id="${ch.id}" aria-label="Assistir ${nome} na TV"><i data-lucide="tv" style="width:16px;height:16px"></i></button>
+      <button type="button" class="fav-btn ${isFavCh ? "fav-active" : ""}" data-fav-id="${ch.id}" aria-label="${isFavCh ? "Remover" : "Adicionar"} favorito de ${nome}">
+        <i data-lucide="heart" style="width:18px;height:18px${isFavCh ? ";fill:currentColor" : ""}"></i>
+      </button>
+    </article>`;
+}
+
 function renderOnNow() {
   const list = document.getElementById("now-list");
   const all = getChannels();
@@ -7348,21 +7482,60 @@ function renderOnNow() {
   const eyebrowEl = document.getElementById("on-now-eyebrow");
   const titleEl = document.getElementById("on-now-title");
 
-  const favChannels = all.filter(isFav);
-  let channelsToShow = [];
-  const hasFavorites = favChannels.length > 0;
+  const info = quickAccessInfo(all, isFav);
+  if (eyebrowEl) eyebrowEl.textContent = info.eyebrow;
+  if (titleEl) titleEl.textContent = info.title;
+  const channelsToShow = info.channels;
 
-  if (hasFavorites) {
-    if (eyebrowEl) eyebrowEl.textContent = `ACESSO RÁPIDO (${favChannels.length})`;
-    if (titleEl) titleEl.textContent = "Canais favoritos";
-    channelsToShow = favChannels;
-  } else {
-    if (eyebrowEl) eyebrowEl.textContent = "SUGESTÕES";
-    if (titleEl) titleEl.textContent = "Outros canais";
-    // Quando não tem favoritos, exibe os primeiros como sugestão
-    channelsToShow = all.slice(0, 10);
+  // App web no computador: o painel vira uma seção de largura total com uma fileira horizontal de cartões
+  // (o CSS esconde a coluna lateral só atrás de html[data-web-app], a partir de 1101 px). Fora do app web
+  // (app nativo, celular, TV) nada disso liga e as linhas antigas continuam como eram.
+  const webRow = isWebApp() && document.documentElement.hasAttribute("data-web-app");
+  const aside = list.closest(".on-now");
+  if (aside) aside.classList.toggle("vod-row", webRow); // .vod-row = setas, roda do mouse e arrastar das fileiras de filmes
+
+  if (webRow) {
+    // o redesenho troca os cartões: guarda a rolagem e o foco para o usuário não voltar ao começo a cada clique
+    const rolou = list.scrollLeft;
+    const foco = document.activeElement && list.contains(document.activeElement) ? document.activeElement : null;
+    const focoSel = foco ? ["data-channel-id", "data-fav-id", "data-tv-channel-id"]
+      .filter(a => foco.hasAttribute(a)).map(a => `[${a}="${foco.getAttribute(a)}"]`)[0] : "";
+    list.className = channelsToShow.length ? "now-list vod-carousel" : "now-list";
+    if (!channelsToShow.length) {
+      aside.querySelectorAll(".web-arrow").forEach(el => el.remove());
+      list.innerHTML = `
+        <div class="empty-state is-compact">
+          <i data-lucide="heart" style="width:1.6rem;height:1.6rem"></i>
+          <h3>Nenhum canal favorito ainda</h3>
+          <p>Clique no coração de qualquer canal para fixar aqui.</p>
+        </div>`;
+      lucide.createIcons();
+      return;
+    }
+    list.innerHTML = channelsToShow.map(ch => quickAccessCardHtml(ch, !!(selected && selected.id === ch.id), isFav(ch.id))).join("");
+    list.querySelectorAll("[data-channel-id]").forEach(el => {
+      el.addEventListener("click", () => {
+        const alvo = getChannels().find(c => c.id === +el.dataset.channelId);
+        if (alvo) selectChannel(alvo);
+      });
+    });
+    list.querySelectorAll("[data-fav-id]").forEach(el => {
+      el.addEventListener("click", e => { e.stopPropagation(); toggleFav(+el.dataset.favId); });
+    });
+    list.querySelectorAll("[data-tv-channel-id]").forEach(el => {
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        const alvo = getChannels().find(c => c.id === +el.dataset.tvChannelId);
+        if (alvo) castToTv("channel", alvo);
+      });
+    });
+    lucide.createIcons();
+    list.scrollLeft = rolou;
+    if (focoSel) { const novo = list.querySelector(focoSel); if (novo) novo.focus({ preventScroll: true }); }
+    return;
   }
 
+  list.className = "now-list";
   if (!channelsToShow.length) {
     list.innerHTML = `
       <div style="padding: 2rem 0.5rem; text-align: center; color: var(--muted-fg); font-size: .85rem;">
@@ -10013,12 +10186,62 @@ function webCarouselWheel(ev) {
   car.scrollLeft += ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY;
 }
 
+// ←/→ (e Home/End) com o foco num cartão de uma fileira: o foco anda de cartão em cartão e a fileira acompanha.
+// Devolve true se tratou a tecla (aí ela não vira "pular 10 s" do player).
+function webCarouselKey(ev) {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return false;
+  const car = ev.target && ev.target.closest ? ev.target.closest(".vod-carousel") : null;
+  if (!car) return false;
+  const cards = Array.from(car.children).filter(el => el.nodeType === 1);
+  const atual = cards.findIndex(el => el.contains(ev.target));
+  const alvo = carouselKeyTarget(ev.key, atual, cards.length);
+  if (alvo < 0) return false;
+  ev.preventDefault();
+  const card = cards[alvo];
+  const foco = card.matches("button, a") ? card : (card.querySelector(".qa-main, button, a") || card);
+  foco.focus({ preventScroll: true });
+  card.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+  return true;
+}
+
+// Arrastar a fileira com o mouse (como o dedo no celular): passou de 6 px, rola junto e o clique que o soltar geraria é engolido
+const _webDrag = { on: null, until: 0 };
+function webCarouselDragStart(ev) {
+  if (ev.pointerType !== "mouse" || ev.button !== 0) return;
+  const car = ev.target && ev.target.closest ? ev.target.closest(".vod-carousel") : null;
+  if (!car || car.scrollWidth <= car.clientWidth + 2 || ev.target.closest(".web-arrow")) return;
+  _webDrag.on = { car, x: ev.clientX, left: car.scrollLeft, moved: false };
+}
+function webCarouselDragMove(ev) {
+  const d = _webDrag.on;
+  if (!d) return;
+  if (ev.buttons === 0) { webCarouselDragEnd(); return; } // soltou fora da janela
+  const dx = ev.clientX - d.x;
+  if (!d.moved) {
+    if (Math.abs(dx) < 6) return;
+    d.moved = true;
+    d.car.classList.add("is-dragging"); // sem encaixe (scroll-snap) enquanto arrasta
+  }
+  d.car.scrollLeft = d.left - dx;
+}
+function webCarouselDragEnd() {
+  const d = _webDrag.on;
+  _webDrag.on = null;
+  if (!d || !d.moved) return;
+  d.car.classList.remove("is-dragging");
+  _webDrag.until = Date.now() + 80; // o click que vem logo após o soltar não pode abrir/reproduzir nada
+}
+function webCarouselDragClick(ev) {
+  if (Date.now() < _webDrag.until) { ev.preventDefault(); ev.stopPropagation(); _webDrag.until = 0; }
+}
+
 // Atalhos de teclado do app web (nunca com a tela de conta/perfil por cima; só agem se houver o que controlar)
 function webOnKey(ev, h) {
-  const action = webKeyAction(ev);
-  if (!action) return;
   const root = document.documentElement.classList;
   if (root.contains("ott-open") || root.contains("profile-open")) return;
+  if (webCarouselKey(ev)) return; // foco numa fileira: a seta anda entre os cartões, não pula no player
+  const action = webKeyAction(ev);
+  if (!action) return;
   const sel = _state.selected;
   const screenEl = document.getElementById("player-screen");
   const done = () => ev.preventDefault();
@@ -10062,6 +10285,13 @@ function webWire(h) {
   document.addEventListener("mouseover", webCarouselHover);
   document.addEventListener("click", webCarouselClick, true);
   document.addEventListener("wheel", webCarouselWheel, { passive: false });
+  document.addEventListener("pointerdown", webCarouselDragStart);
+  document.addEventListener("pointermove", webCarouselDragMove);
+  document.addEventListener("pointerup", webCarouselDragEnd);
+  document.addEventListener("pointercancel", webCarouselDragEnd);
+  document.addEventListener("click", webCarouselDragClick, true);
+  // sem isso o navegador "agarra" a imagem do cartão em vez de rolar a fileira
+  document.addEventListener("dragstart", ev => { if (ev.target && ev.target.closest && ev.target.closest(".vod-carousel")) ev.preventDefault(); });
 }
 
 function ottWire() {

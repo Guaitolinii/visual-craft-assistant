@@ -263,15 +263,15 @@ try {
     confere(await page.eval(`document.getElementById("player-video").muted === ${antes}`), "digitar num campo não aciona atalhos");
     await page.eval(`document.activeElement.blur()`);
 
-    // carrosséis: setas e roda do mouse (Filmes)
+    // carrosséis: setas e roda do mouse (Filmes; #vod-view porque o Acesso rápido da aba Canais também é um .vod-carousel, só que oculto aqui)
     await page.eval(`document.getElementById("nav-vod-movies").click()`);
     const rows = await espera(page, `document.querySelectorAll(".vod-row .vod-card").length > 6`, 15000);
     confere(rows, "o catálogo de filmes carregou pelo proxy");
     await page.sleep(500);
-    const pos = await page.eval(`(() => { const c = document.querySelector(".vod-carousel"); c.scrollIntoView({ block: "center" }); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), right: Math.round(r.right) }; })()`);
+    const pos = await page.eval(`(() => { const c = document.querySelector("#vod-view .vod-carousel"); c.scrollIntoView({ block: "center" }); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), right: Math.round(r.right) }; })()`);
     await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos.x, y: pos.y });
     await page.sleep(500);
-    const arrow = await page.eval(`(() => { const a = document.querySelector(".web-arrow-next"); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), op: getComputedStyle(a).opacity }; })()`);
+    const arrow = await page.eval(`(() => { const a = document.querySelector("#vod-view .web-arrow-next"); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), op: getComputedStyle(a).opacity }; })()`);
     confere(arrow && arrow.op === "1", "seta 'avançar' aparece ao passar o mouse na fileira");
     await captura(page, "desktop-1440-filmes.png");
     if (arrow) {
@@ -279,14 +279,14 @@ try {
       await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: arrow.x, y: arrow.y, button: "left", clickCount: 1 });
       await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: arrow.x, y: arrow.y, button: "left", clickCount: 1 });
       await page.sleep(900);
-      const s1 = await page.eval(`document.querySelector(".vod-carousel").scrollLeft`);
+      const s1 = await page.eval(`document.querySelector("#vod-view .vod-carousel").scrollLeft`);
       confere(s1 > 100, "clicar na seta rola a fileira (scrollLeft " + s1 + ")");
       await page.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: pos.x, y: pos.y, deltaX: 0, deltaY: 100 });
       await page.sleep(500);
-      const s2 = await page.eval(`document.querySelector(".vod-carousel").scrollLeft`);
+      const s2 = await page.eval(`document.querySelector("#vod-view .vod-carousel").scrollLeft`);
       confere(s2 > s1, "a roda do mouse rola a fileira na horizontal (" + s1 + " -> " + s2 + ")");
     }
-    const prevOff = await page.eval(`!!document.querySelector(".web-arrow-prev:not(.is-off)")`);
+    const prevOff = await page.eval(`!!document.querySelector("#vod-view .web-arrow-prev:not(.is-off)")`);
     confere(prevOff, "depois de rolar, a seta 'voltar' passa a aparecer");
     confere(page.blocked.length === 0, "continua sem requisição externa (" + page.blocked.length + ")");
   });
