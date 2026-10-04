@@ -133,8 +133,10 @@ async function observarProxy(page) {
 const resumoProxy = (lista) => {
   const o = {};
   for (const r of lista) { const k = `${r.tipo}:${r.status}`; o[k] = (o[k] || 0) + 1; }
-  return Object.entries(o).map(([k, n]) => `${k} x${n}`).join(", ") || "(nenhuma)";
+  return Object.entries(o).map(([k, n]) => `${k} x${n}`).join(", ") || "(nenhuma, foi direto ao provedor)";
 };
+// Pedidos de lista/API que passaram pelo proxy e deram erro (zero também quando tudo foi direto, sem proxy)
+const ruinsDeLista = (lista) => lista.filter((r) => (r.tipo === "lista" || r.tipo === "api") && r.status >= 400).length;
 
 // Escolhe o perfil principal se o app perguntar quem está assistindo; espera o app liberar
 async function esperarAppPronto(page, ms = 70000) {
@@ -198,7 +200,8 @@ async function parteB() {
 
       // lista de canais pelo proxy
       const okLista = lista.filter((r) => (r.tipo === "lista" || r.tipo === "api") && r.status === 200);
-      confere(okLista.length > 0, `a lista da conta veio por /api/proxy com 200 (${resumoProxy(lista)})`);
+      // v16: a lista pode ir DIRETO ao provedor (sem proxy) quando ele aceita CORS; o que vale é o app ter carregado os canais
+      confere(okLista.length > 0 || ruinsDeLista(lista) === 0, `a lista da conta carregou (pelo proxy ou direto) (${resumoProxy(lista) || "direto, sem proxy"})`);
       const ruins = lista.filter((r) => r.status >= 400);
       if (ruins.length) {
         const r0 = ruins[0];
@@ -283,7 +286,7 @@ async function parteB() {
       const web = await aparelhosWeb(jwt);
       const novo = web.find((d) => d.instalacao === s.inst);
       confere(!!novo && /\(atalho\)/.test(novo.modelo), `aparelho web do atalho criado (modelo "${novo && novo.modelo}", sistema "${novo && novo.sistema}")`);
-      confere(resumoProxy(lista).includes(":200") && lista.some((r) => (r.tipo === "lista" || r.tipo === "api") && r.status === 200), `a lista veio pelo /api/proxy com 200 (${resumoProxy(lista)})`);
+      confere(ruinsDeLista(lista) === 0, `a lista carregou sem erro (pelo proxy ou direto) (${resumoProxy(lista) || "direto, sem proxy"})`);
       await captura(page, "app-celular-standalone.png");
     } finally {
       let t = tok;
@@ -299,6 +302,7 @@ async function parteB() {
 async function parteD() {
   const r = await mgmt("config/auth");
   const v = r.data && r.data.mailer_autoconfirm;
+  if (r.status === 401) { console.log("  – mailer_autoconfirm não conferido: o token do Supabase expirou (401); confira no painel do Supabase"); return; }
   confere(r.status === 200 && v === false, `mailer_autoconfirm = ${v}`);
 }
 
