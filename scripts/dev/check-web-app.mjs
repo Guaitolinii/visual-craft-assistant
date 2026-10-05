@@ -213,6 +213,9 @@ try {
     const ruins = proxyLog.filter((p) => p.t !== TOKEN);
     confere(proxyLog.length > 0 && ruins.length === 0, "todas as " + proxyLog.length + " requisições ao proxy levam t=<token do aparelho>");
     confere(proxyLog.some((p) => /\/get\.php/.test(p.u || "")), "a lista M3U saiu por /api/proxy");
+    // sem pré-carregamento, o catálogo Xtream só é pedido quando se abre Filmes
+    await page.eval(`document.getElementById("nav-vod-movies").click()`);
+    for (let i = 0; i < 40 && !proxyLog.some((p) => /player_api\.php/.test(p.u || "")); i++) await page.sleep(500);
     confere(proxyLog.some((p) => /player_api\.php/.test(p.u || "")), "o player_api.php (Xtream) saiu por /api/proxy");
     confere(page.blocked.length === 0, "nenhuma requisição direta a provedor/CDN (bloqueadas: " + page.blocked.join(", ") + ")");
 

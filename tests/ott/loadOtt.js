@@ -23,7 +23,7 @@ export function loadOtt() {
         ottPerfilIdOk, ottPerfilNormalize, ottPerfilPickActive, ottPerfilDecide, ottGreeting, ottPerfilValidName,
         ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
         ottNormName, ottFavKeyChannel, ottFavKeyVod, ottFavKeySeries, ottFavItemsFromChannels, ottFavItemsFromMyList,
-        ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge, createWarmer,
+        ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge,
         ottHistKeyMovie, ottHistKeyEpisode, ottHistKeyChannel, ottHistKeyFromContinueId, ottHistFinished, ottHistItemsFromContinue,
         ottHistItemsFromChannels, ottHistLocalFromItems, ottHistPlan, ottHistApplyContinue, ottHistApplyChannels, ottHistList, ottHistPut, ottHistRemove,
         OTT_WEB_KEYS, ottIsWebPath, ottWebInstallId, ottWebParseSession, ottWebNeedsRefresh, ottWebRefresh, ottWebRegister, ottWebLogout,

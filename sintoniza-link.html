@@ -1116,28 +1116,6 @@
     }
     .toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-    /* ════════════ PRÉ-CARREGAMENTO (indicador discreto) ════════════ */
-    .warm-chip {
-      position: fixed; top: calc(4.3rem + env(safe-area-inset-top) + .35rem); left: 50%; z-index: 31;
-      transform: translateX(-50%) translateY(-.4rem); opacity: 0; pointer-events: none;
-      transition: transform 300ms, opacity 300ms;
-      display: flex; align-items: center; gap: .4rem;
-      padding: .25rem .7rem; border-radius: 999px; font-size: .7rem; font-weight: 500; letter-spacing: .01em;
-      color: var(--muted-fg); background: color-mix(in oklab, var(--background) 88%, transparent); border: 1px solid var(--border);
-    }
-    .warm-chip.visible { transform: translateX(-50%) translateY(0); opacity: .9; }
-    .warm-dots { display: inline-flex; gap: .15rem; }
-    .warm-dot { width: .28rem; height: .28rem; border-radius: 50%; background: var(--primary); opacity: .25; animation: warm-pulse 1.2s infinite; }
-    .warm-dot:nth-child(2) { animation-delay: .2s; }
-    .warm-dot:nth-child(3) { animation-delay: .4s; }
-    @keyframes warm-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
-    @media (min-width: 769px) { .warm-chip { top: calc(5rem + .35rem); } }
-    @media (prefers-reduced-motion: reduce) {
-      .warm-chip { transition: opacity 1ms linear; }
-      .warm-dot { animation: none; opacity: .6; }
-    }
-    body.pip-active .warm-chip { display: none; }
-
     /* ════════════ MOBILE TABS ════════════ */
     .mobile-tabs { display: none; }
     .sidebar-scrim {
@@ -2250,7 +2228,6 @@
 <div class="toast" id="toast" role="alert" aria-live="polite"></div>
 
 <!-- Pré-carregamento de Filmes e Séries (indicador discreto; só opacity/transform) -->
-<div class="warm-chip" id="warm-chip" aria-hidden="true">Preparando filmes e séries<span class="warm-dots"><span class="warm-dot"></span><span class="warm-dot"></span><span class="warm-dot"></span></span></div>
 
 <!-- EPG: popover flutuante compartilhado (posicionado via JS ao clicar em .epg-btn) -->
 <div class="epg-popover" id="epg-popover" role="dialog" aria-hidden="true">
@@ -4117,37 +4094,6 @@ async function ottHistPut(cfg, token, perfil, it, fetchImpl) {
 async function ottHistRemove(cfg, token, perfil, chave, fetchImpl) {
   const data = await ottCallRpc(cfg, "hist_remove", { p_token: token, p_perfil: perfil, p_chave: chave }, fetchImpl);
   if (!data || data.status !== "ok") throw new Error("Não foi possível remover o item do histórico da conta.");
-}
-
-// ── Pré-carregamento em fatias (mesmo comportamento do createWarmer da TV) ──
-// Roda as etapas uma por fatia agendada (idle/setTimeout), nunca tudo de uma vez: não pesa na navegação.
-// Falha numa etapa não derruba as outras; cancelar para antes da próxima etapa; iniciar duas vezes não repete o trabalho.
-function createWarmer(o) {
-  const agendar = o.agendar || function (fn) { setTimeout(fn, 50); };
-  let estado = "parado"; // parado | rodando | pronto | cancelado
-  let promessa = null;
-  return {
-    estado: () => estado,
-    cancelar() { if (estado === "rodando") estado = "cancelado"; },
-    iniciar() {
-      if (promessa) return promessa;
-      estado = "rodando";
-      promessa = new Promise((resolve) => {
-        let i = 0;
-        const proxima = () => {
-          if (estado === "cancelado") { resolve(); return; }
-          if (i >= o.etapas.length) { estado = "pronto"; resolve(); return; }
-          Promise.resolve().then(() => o.etapas[i].run()).then(() => {}, () => { /* falha: segue para a próxima, o app funciona sem o aquecimento */ }).then(() => {
-            i++;
-            if (o.onProgresso) o.onProgresso(i, o.etapas.length);
-            agendar(proxima);
-          });
-        };
-        agendar(proxima);
-      });
-      return promessa;
-    },
-  };
 }
 
 // TVs ativas da mesma conta
@@ -6335,7 +6281,7 @@ function shouldApplyResume(target, duration) {
 // do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
 // que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
 // carregam usuário e senha.
-const APP_VERSION = "v17";
+const APP_VERSION = "v19";
 
 function sanitizeDiagnosticText(text) {
   return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();
@@ -7656,6 +7602,69 @@ function renderFavoritesVod(container) {
   container.innerHTML = `<div class="vod-carousel-grid">${items.map(myListCardHtml).join("")}</div>`;
 }
 
+// ─── Lista de canais em pedaços (busca leve) ───
+const SEARCH_DEBOUNCE_MS = 140;
+const CATALOG_CHUNK = 72;   // cartões montados de cada vez
+
+// Quantos cartões já montados e quantos faltam: { de, ate } do próximo pedaço (de === ate quando acabou)
+function nextCatalogChunk(total, shown, size) {
+  const de = Math.max(0, Math.min(total, shown | 0));
+  const ate = Math.min(total, de + Math.max(1, size | 0));
+  return { de, ate };
+}
+
+let _catalogRender = { vis: [], shown: 0, cardFn: null };
+let _catalogObserver = null;
+
+// Acrescenta o próximo pedaço de cartões no fim da grade/lista
+function appendMoreChannels() {
+  const r = _catalogRender;
+  const alvo = document.querySelector("#channel-container .channel-grid, #channel-container .channel-list");
+  if (!alvo || !r.cardFn) return false;
+  const { de, ate } = nextCatalogChunk(r.vis.length, r.shown, CATALOG_CHUNK);
+  if (de >= ate) return false;
+  alvo.insertAdjacentHTML("beforeend", r.vis.slice(de, ate).map(r.cardFn).join(""));
+  r.shown = ate;
+  lucide.createIcons();
+  return ate < r.vis.length;
+}
+
+// Observa o marcador no fim da lista: quando chega perto da tela, monta o próximo pedaço
+function watchCatalogSentinel(container) {
+  if (_catalogObserver) { _catalogObserver.disconnect(); _catalogObserver = null; }
+  const sentinela = container.querySelector("#catalog-sentinel");
+  if (!sentinela) return;
+  if (typeof IntersectionObserver === "undefined") { while (appendMoreChannels()) { /* sem observador: monta tudo */ } sentinela.remove(); return; }
+  _catalogObserver = new IntersectionObserver((entradas) => {
+    if (!entradas.some(e => e.isIntersecting)) return;
+    const maisTem = appendMoreChannels();
+    if (!maisTem) { _catalogObserver.disconnect(); _catalogObserver = null; sentinela.remove(); }
+  }, { rootMargin: "900px 0px" });
+  _catalogObserver.observe(sentinela);
+}
+
+// Um único ouvinte de clique para todos os cartões (antes: 4 por cartão, refeitos a cada busca)
+function onChannelAreaClick(e) {
+  const t = e.target.closest ? e.target.closest("[data-fav-id], [data-tv-channel-id], [data-epg-id], [data-channel-id]") : null;
+  if (!t || !e.currentTarget.contains(t)) return;
+  if (t.hasAttribute("data-fav-id")) { e.stopPropagation(); toggleFav(+t.dataset.favId); return; }
+  if (t.hasAttribute("data-tv-channel-id")) {
+    e.stopPropagation();
+    const ch = getChannels().find(c => c.id === +t.dataset.tvChannelId);
+    if (ch) castToTv("channel", ch);
+    return;
+  }
+  if (t.hasAttribute("data-epg-id")) {
+    e.stopPropagation();
+    const ch = getChannels().find(c => c.id === +t.dataset.epgId);
+    const popover = document.getElementById("epg-popover");
+    if (popover._anchor === t) { hideEpgPopover(); return; }
+    showEpgPopoverFor(t, ch);
+    return;
+  }
+  selectChannel(getChannels().find(c => c.id === +t.dataset.channelId));
+}
+
 function renderCatalog() {
   const { active, query, viewMode, loadingPlaylist } = _state;
   const container = document.getElementById("channel-container");
@@ -7717,32 +7726,17 @@ function renderCatalog() {
     return;
   }
 
-  container.innerHTML = viewMode === "grid"
-    ? `<div class="channel-grid">${vis.map(cardHTML).join("")}</div>`
-    : `<div class="channel-list">${vis.map(listHTML).join("")}</div>`;
-
-  container.querySelectorAll("[data-channel-id]").forEach(el => {
-    el.addEventListener("click", () => selectChannel(getChannels().find(c => c.id === +el.dataset.channelId)));
-  });
-  container.querySelectorAll("[data-fav-id]").forEach(el => {
-    el.addEventListener("click", e => { e.stopPropagation(); toggleFav(+el.dataset.favId); });
-  });
-  container.querySelectorAll("[data-tv-channel-id]").forEach(el => {
-    el.addEventListener("click", e => {
-      e.stopPropagation();
-      const ch = getChannels().find(c => c.id === +el.dataset.tvChannelId);
-      if (ch) castToTv("channel", ch);
-    });
-  });
-  container.querySelectorAll("[data-epg-id]").forEach(el => {
-    el.addEventListener("click", e => {
-      e.stopPropagation();
-      const ch = getChannels().find(c => c.id === +el.dataset.epgId);
-      const popover = document.getElementById("epg-popover");
-      if (popover._anchor === el) { hideEpgPopover(); return; }
-      showEpgPopoverFor(el, ch);
-    });
-  });
+  // Só os primeiros cartões entram no DOM; o resto vem em pedaços conforme a rolagem (ver appendMoreChannels).
+  // Antes todos os canais que casavam (até ~1000) eram montados de uma vez, com 4 ouvintes de clique cada: a 1ª letra da busca travava a tela.
+  const cardFn = viewMode === "grid" ? cardHTML : listHTML;
+  const primeiros = vis.slice(0, CATALOG_CHUNK);
+  container.innerHTML = (viewMode === "grid"
+    ? `<div class="channel-grid">${primeiros.map(cardFn).join("")}</div>`
+    : `<div class="channel-list">${primeiros.map(cardFn).join("")}</div>`)
+    + (vis.length > primeiros.length ? `<div id="catalog-sentinel" aria-hidden="true" style="height:1px"></div>` : "");
+  _catalogRender = { vis, shown: primeiros.length, cardFn };
+  if (!container._chDelegated) { container._chDelegated = true; container.addEventListener("click", onChannelAreaClick); }
+  watchCatalogSentinel(container);
   lucide.createIcons();
 }
 
@@ -8149,53 +8143,6 @@ function vodFetchCategoryItems(creds, isSeries, categoryId) {
     if (!Array.isArray(streams) || streams.length === 0) return [];
     return dedupeVodItemsByTitle(streams.map(sanitizeVodItem));
   });
-}
-
-const _warm = { w: null };
-
-// Indicador discreto: só liga/desliga uma classe (a animação é só de opacity/transform no CSS)
-function vodWarmChip(on) {
-  const chip = document.getElementById("warm-chip");
-  if (chip) chip.classList.toggle("visible", !!on);
-}
-
-// Uma etapa: traz as categorias e os itens de cada uma, duas por vez e com uma pausa entre elas (cada categoria é uma tarefa pequena)
-async function vodWarmType(creds, isSeries) {
-  const cats = await vodFetchCategories(creds, isSeries);
-  if (!Array.isArray(cats)) return;
-  const cancelado = () => !_warm.w || _warm.w.estado() === "cancelado";
-  let i = 0;
-  const trabalhador = async () => {
-    while (i < cats.length && !cancelado()) {
-      const cat = cats[i++];
-      try { await vodFetchCategoryItems(creds, isSeries, cat.category_id); } catch (e) { /* essa categoria carrega quando a aba abrir */ }
-      await new Promise(r => setTimeout(r, 40));
-    }
-  };
-  await Promise.all([trabalhador(), trabalhador()]);
-}
-
-// Começa com a conta liberada (já durante o seletor de perfil). Sem lista de filmes ou com economia de dados: não faz nada.
-function vodWarmStart() {
-  if (_warm.w) return;
-  const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
-  if (!creds) return;
-  try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) { /* segue */ }
-  _warm.w = createWarmer({
-    etapas: [
-      { nome: "filmes", run: () => vodWarmType(creds, false) },
-      { nome: "series", run: () => vodWarmType(creds, true) },
-    ],
-    agendar: (fn) => { if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout: 400 }); else setTimeout(fn, 50); },
-  });
-  vodWarmChip(true);
-  _warm.w.iniciar().then(() => vodWarmChip(false), () => vodWarmChip(false));
-}
-
-// Desvincular/trocar de conta: para o que ainda não começou
-function vodWarmCancel() {
-  if (_warm.w) _warm.w.cancelar();
-  vodWarmChip(false);
 }
 
 const CONTINUE_KEY = "sint_continue";
@@ -9977,7 +9924,6 @@ function ottOnOk(d) {
   }
   ottRenderAccountCard();
   ottScheduleRevalidate();
-  vodWarmStart(); // pré-carrega filmes e séries em segundo plano (já durante o seletor de perfil)
   // Perfis: valida o perfil ativo, entra direto (1 perfil) ou abre o "Quem está assistindo?" (2+, na abertura)
   profileBoot().catch(() => {});
 }
@@ -10014,7 +9960,6 @@ function ottScheduleRevalidate() {
 async function ottUnlink() {
   if (isWebApp()) { webSignOut(); return; } // no navegador o botão é "Sair"
   if (!window.confirm("Desvincular este aparelho da sua conta? Ele volta para a tela do código.")) return;
-  vodWarmCancel();
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
   [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY].forEach(k => localStorage.removeItem(k));
@@ -10081,7 +10026,6 @@ async function webBoot() {
 async function webSignOut() {
   if (!window.confirm("Sair da sua conta neste navegador?")) return;
   _web.signedOut = true; // nada de registrar de novo (revalidação, tela de bloqueio) enquanto sai
-  vodWarmCancel();
   ottStopTimers();
   clearInterval(_ott.revalidate);
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
@@ -10929,11 +10873,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── SEARCH ──
   const searchInput = document.getElementById("search-input");
   const searchClear = document.getElementById("search-clear");
+  // Cada letra redesenhava a lista inteira (até ~1000 cartões): agora espera ~140 ms sem digitar e redesenha uma vez
+  let _searchTimer = 0;
   searchInput.addEventListener("input", () => {
-    setState({ query: searchInput.value });
     searchClear.style.display = searchInput.value ? "" : "none";
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => setState({ query: searchInput.value }), SEARCH_DEBOUNCE_MS);
   });
   searchClear.addEventListener("click", () => {
+    clearTimeout(_searchTimer);
     setState({ query: "" });
     searchInput.value = "";
     searchClear.style.display = "none";
