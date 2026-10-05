@@ -1438,6 +1438,8 @@
     html[data-web-app] .sidebar-header { height: calc(5rem + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
     html[data-web-app] .sidebar-nav { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
     html[data-web-app] :is(button, a, input, select):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    /* Campo de busca: só o cursor piscando, sem o retângulo laranja do anel de foco dentro da caixa arredondada */
+    html[data-web-app] .search-box input:focus-visible { outline: none; }
 
     /* Volume (só com mouse; no celular o volume é o do aparelho) */
     .web-volume { display: none; align-items: center; gap: .1rem; }
