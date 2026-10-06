@@ -21,13 +21,13 @@ export function loadOtt() {
         ottBuildCastPayload, ottCastTargets, ottCastSend, ottCastStatus, ottCastIsFinal, ottCastStatusText,
         ottProgressKey, ottPickResume, ottProgressGet, ottProgressPut, ottProgressClear,
         ottPerfilIdOk, ottPerfilNormalize, ottPerfilPickActive, ottPerfilDecide, ottGreeting, ottPerfilValidName,
-        ottPerfilList, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
+        ottPerfilList, ottPerfilListFull, ottPerfilSave, ottPerfilDelete, OTT_PERFIL_MAX,
         ottNormName, ottFavKeyChannel, ottFavKeyVod, ottFavKeySeries, ottFavItemsFromChannels, ottFavItemsFromMyList,
         ottFavLocalFromItems, ottFavPlan, ottFavApply, ottFavList, ottFavSet, ottFavMerge,
         ottHistKeyMovie, ottHistKeyEpisode, ottHistKeyChannel, ottHistKeyFromContinueId, ottHistFinished, ottHistItemsFromContinue,
         ottHistItemsFromChannels, ottHistLocalFromItems, ottHistPlan, ottHistApplyContinue, ottHistApplyChannels, ottHistList, ottHistPut, ottHistRemove,
         OTT_WEB_KEYS, ottIsWebPath, ottWebInstallId, ottWebParseSession, ottWebNeedsRefresh, ottWebRefresh, ottWebRegister, ottWebLogout,
-        ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid };`,
+        ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid, ottWebOwnerSwitch, ottWebWipeAccountData };`,
     ctx
   );
   return ctx.__ott;
@@ -41,6 +41,8 @@ export function fakeStorage(initial = {}) {
     getItem: (k) => (k in data ? data[k] : null),
     setItem: (k, v) => { data[k] = String(v); },
     removeItem: (k) => { delete data[k]; },
+    get length() { return Object.keys(data).length; },
+    key: (i) => (Object.keys(data)[i] === undefined ? null : Object.keys(data)[i]),
   };
 }
 

@@ -127,12 +127,13 @@ const URL_APP = `http://127.0.0.1:${PORTA}/app/`;
 
 // ── Supabase falso dentro da página (o estado do log fica no localStorage: sobrevive aos reloads do app) ──
 // m3u/vod: endereços do provedor na conta (padrão provedor.test, inalcançável direto); memoria: sint_web_hosts já gravado
-function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vodUrl = VOD_URL, memoria = null }) {
+function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vodUrl = VOD_URL, memoria = null, extra = null }) {
   const src = `(() => {
     ${standalone ? 'Object.defineProperty(navigator, "standalone", { get: () => true });' : ""}
     if (!localStorage.getItem("__seeded")) {
       ${sessao ? `localStorage.setItem("sintoniza_painel_sessao", ${JSON.stringify(JSON.stringify(sessao))});` : ""}
       ${memoria ? `localStorage.setItem("sint_web_hosts", ${JSON.stringify(JSON.stringify(memoria))});` : ""}
+      ${extra ? Object.keys(extra).map((k) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(extra[k])});`).join("\n      ") : ""}
       localStorage.setItem("__log", "[]");
       localStorage.setItem("__seeded", "1");
     }
@@ -151,11 +152,24 @@ function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vod
         localStorage.setItem("__log", JSON.stringify(log));
         if (nome === "web_device_register") return J({ status: "ok", device_token: ${JSON.stringify(TOKEN)} });
         if (nome === "device_config") {
+          // o aparelho do ADMIN continua válido no servidor (o "Sair" do site não o apaga): se o app o usar, entra como admin
+          if (body.p_token === "e".repeat(64)) return J({ status: "ok", user: { nome: "Administrador", status: "active", acesso_fim: "2030-01-01T00:00:00Z" },
+            playlists: [{ id: "9", nome: "Admin", url_m3u: ${JSON.stringify(m3uUrl)}, url_vod: ${JSON.stringify(vodUrl)}, url_epg: null }] });
           if (body.p_token !== ${JSON.stringify(TOKEN)}) return J({ status: "unknown_device" });
           return J({ status: "ok", user: { nome: "Ana Teste", status: "active", acesso_fim: "2030-01-01T00:00:00Z" },
             playlists: [{ id: "1", nome: "Principal", url_m3u: ${JSON.stringify(m3uUrl)}, url_vod: ${JSON.stringify(vodUrl)}, url_epg: null }] });
         }
-        if (nome === "perfil_list") return J({ status: "ok", perfis: [${JSON.stringify(PERFIL)}] });
+        if (nome === "perfil_list") {
+          // __semperfil: conta nova (migração 0014): com p_auto_criar:false o servidor devolve a lista como está, sem criar o principal
+          if (localStorage.getItem("__semperfil") === "1" && body.p_auto_criar === false) return J({ status: "ok", perfis: JSON.parse(localStorage.getItem("__perfis") || "[]") });
+          return J({ status: "ok", perfis: [${JSON.stringify(PERFIL)}] });
+        }
+        if (nome === "perfil_save" && localStorage.getItem("__semperfil") === "1") {
+          const lista = JSON.parse(localStorage.getItem("__perfis") || "[]");
+          const novo = { id: "cccccccc-3333-4333-8333-333333333333", nome: body.p_nome, avatar: body.p_avatar, padrao: lista.length === 0 };
+          lista.push(novo); localStorage.setItem("__perfis", JSON.stringify(lista));
+          return J({ status: "ok", perfil: novo });
+        }
         if (nome.indexOf("/auth/") === 0 || nome.indexOf("/auth") >= 0) return J({});
         return J({ status: "ok", itens: [], found: false, tvs: [] });
       }
@@ -557,6 +571,86 @@ try {
       confere((await estado()).mini, "depois do ciclo, rolar de novo ainda gera o mini-player");
     } else console.log("  (a página não rola o bastante neste tamanho: parte do mini-player por rolagem não conferida)");
     confere(page.blocked.length === 0, "nenhuma requisição externa (" + page.blocked.length + ")");
+  });
+
+  // ── (i) outra conta entra no mesmo navegador: nada da conta anterior (admin) pode aparecer ──
+  console.log("(i) troca de conta no mesmo navegador (o 'Sair' do site não apaga os dados do app)");
+  const ADMIN_PERFIL = "bbbbbbbb-2222-4222-8222-222222222222";
+  const dadosDoAdmin = {
+    sint_web_owner: "u-admin",
+    sint_ott_token: "e".repeat(64), sint_ott_last_ok: String(Date.now()), sint_ott_account: JSON.stringify({ nome: "Administrador", status: "active" }),
+    sint_profile_active: ADMIN_PERFIL, sint_profiles: JSON.stringify([{ id: ADMIN_PERFIL, nome: "Administrador", avatar: "padrao", padrao: true }]),
+    sint_pbbbbbbbb_fav: JSON.stringify(["Canal do Admin"]), sint_pbbbbbbbb_recents: JSON.stringify(["Canal do Admin"]),
+    sint_fav: JSON.stringify(["Canal antigo do Admin"]),
+    sint_view: "list", // preferência do navegador: deve ficar
+  };
+  await withPage(URL_APP, { width: 1440, height: 900, desktop: true, blockExternal: true, preScript: preScript({ sessao: sessaoOk(), extra: dadosDoAdmin }) }, async (page) => {
+    confere(await espera(page, PRONTO, 25000), "(i) o app carregou os canais da conta NOVA");
+    const ls = JSON.parse(await page.eval(`JSON.stringify({
+      dono: localStorage.getItem("sint_web_owner"), token: localStorage.getItem("sint_ott_token"),
+      conta: localStorage.getItem("sint_ott_account"), perfis: localStorage.getItem("sint_profiles"), ativo: localStorage.getItem("sint_profile_active"),
+      favAdmin: localStorage.getItem("sint_pbbbbbbbb_fav"), recAdmin: localStorage.getItem("sint_pbbbbbbbb_recents"), favAntigo: localStorage.getItem("sint_fav"), view: localStorage.getItem("sint_view") })`));
+    confere(ls.dono === "u1", "(i) o dono guardado passou a ser a conta nova (" + ls.dono + ")");
+    confere(ls.token === TOKEN, "(i) o token é o do aparelho registrado AGORA, não o do admin");
+    confere(!/Administrador/.test(ls.conta || "") && !/Administrador/.test(ls.perfis || ""), "(i) conta e perfis em cache não são os do admin");
+    confere(ls.ativo !== ADMIN_PERFIL, "(i) o perfil ativo não é o do admin (" + ls.ativo + ")");
+    confere(ls.favAdmin === null && ls.recAdmin === null && ls.favAntigo === null, "(i) favoritos e recentes do admin sumiram");
+    confere(ls.view === "list", "(i) preferências do navegador ficaram (sint_view)");
+    const reg = (await log(page)).find((c) => c.nome === "web_device_register");
+    confere(!!reg && reg.auth === "Bearer " + JWT, "(i) o registro do aparelho usou a sessão da conta nova");
+    confere(!(await log(page)).some((c) => c.nome === "device_config" && c.body && c.body.p_token === "e".repeat(64)), "(i) o aparelho do admin nunca foi consultado (o app não entrou como admin)");
+    confere(!(await page.eval(`document.body.innerText`)).includes("Administrador"), "(i) a palavra 'Administrador' não aparece na tela");
+    // outra aba troca o login do site: esta aba recarrega para refletir a conta certa
+    const vigia = await page.eval(`JSON.stringify({ ligado: _web.watching === true, usuario: _webWatchedUser, saiu: _web.signedOut })`);
+    confere(JSON.parse(vigia).ligado && JSON.parse(vigia).usuario === "u1", "(i) o vigia da sessão do site está ligado para a conta u1 (" + vigia + ")");
+    await page.eval(`window.__marca = 1; window.dispatchEvent(new StorageEvent("storage", { key: "sintoniza_painel_sessao", newValue: JSON.stringify({ access_token: "x", refresh_token: "y", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "outro-usuario", email: "o@x.com" } }) }))`);
+    await page.sleep(2500);
+    confere(await page.eval(`window.__marca === undefined`), "(i) o login do site mudou em outra aba: o app recarregou");
+    // a mesma conta renovando o token NÃO recarrega
+    await espera(page, PRONTO, 25000);
+    await page.eval(`window.__marca = 1; window.dispatchEvent(new StorageEvent("storage", { key: "sintoniza_painel_sessao", newValue: JSON.stringify({ access_token: "novo", refresh_token: "y", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "u1", email: "ana@exemplo.com" } }) }))`);
+    await page.sleep(1500);
+    confere(await page.eval(`window.__marca === 1`), "(i) a mesma conta renovando o token não recarrega o app");
+  });
+
+  // ── (j) o "Sair" do site apagou o login, mas o app ainda tem o aparelho da conta antiga: tem de voltar ao login, sem entrar ──
+  console.log("(j) sem login do site, mas com aparelho antigo guardado no app");
+  await withPage(URL_APP, { width: 1440, height: 900, desktop: true, blockExternal: true, preScript: preScript({ sessao: null, extra: dadosDoAdmin }) }, async (page) => {
+    await espera(page, `location.pathname === "/"`, 8000);
+    confere(await page.eval(`location.pathname + location.search`) === "/?next=%2Fapp%2F", "(j) redireciona para o login do site");
+    const resto = await page.eval(`JSON.stringify({ token: localStorage.getItem("sint_ott_token"), perfis: localStorage.getItem("sint_profiles"), fav: localStorage.getItem("sint_pbbbbbbbb_fav") })`);
+    confere(JSON.parse(resto).token === null && JSON.parse(resto).perfis === null && JSON.parse(resto).fav === null, "(j) os dados da conta antiga foram apagados (" + resto + ")");
+    confere(!(await log(page)).some((c) => c.nome === "device_config"), "(j) o aparelho antigo não foi consultado no servidor");
+  });
+
+  // ── (k) conta nova: o app pede o nome e o avatar do perfil principal (o servidor não cria mais sozinho) ──
+  console.log("(k) conta sem perfil: 'Crie seu perfil' com nome e avatar escolhidos pela pessoa");
+  await withPage(URL_APP, { width: 1440, height: 900, desktop: true, blockExternal: true, preScript: preScript({ sessao: sessaoOk(), extra: { __semperfil: "1" } }) }, async (page) => {
+    confere(await espera(page, `!document.getElementById("profile-editor").hidden`, 25000), "(k) o editor de perfil abre sozinho");
+    const ed = JSON.parse(await page.eval(`JSON.stringify({ titulo: document.getElementById("profile-editor-title").textContent, topo: document.getElementById("profile-editor-eyebrow").textContent,
+      cancelar: document.getElementById("profile-cancel-btn").hidden, nome: document.getElementById("profile-name-input").value, excluir: document.getElementById("profile-delete-btn").hidden,
+      avatares: document.querySelectorAll("#profile-avatar-grid .pe-av").length, aberto: document.documentElement.classList.contains("profile-open") })`));
+    confere(ed.titulo === "Crie seu perfil" && ed.topo === "Perfil principal", "(k) título 'Crie seu perfil' / 'Perfil principal' (" + ed.titulo + " / " + ed.topo + ")");
+    confere(ed.cancelar === true && ed.excluir === true, "(k) sem Cancelar nem Excluir (o app precisa de um perfil)");
+    confere(ed.nome === "", "(k) o nome começa VAZIO (não usa o nome do cadastro): '" + ed.nome + "'");
+    confere(ed.avatares >= 12 && ed.aberto, "(k) os avatares aparecem (" + ed.avatares + ") e a tela cobre o app");
+    let chamadas = await log(page);
+    const lista = chamadas.find((c) => c.nome === "perfil_list");
+    confere(!!lista && lista.body.p_auto_criar === false, "(k) o app pediu perfil_list com p_auto_criar:false");
+    confere(!chamadas.some((c) => c.nome === "perfil_save"), "(k) nada foi criado antes de a pessoa escolher");
+    await page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await page.sleep(400);
+    confere(await page.eval(`!document.getElementById("profile-editor").hidden`), "(k) Esc não fecha o editor do 1º perfil");
+    await page.eval(`(() => { const i = document.getElementById("profile-name-input"); i.value = "Gustavo"; i.dispatchEvent(new Event("input", { bubbles: true })); document.querySelectorAll("#profile-avatar-grid .pe-av")[2].click(); })()`);
+    const avEscolhido = await page.eval(`document.querySelector("#profile-avatar-grid .pe-av.is-selected").dataset.av`);
+    await page.eval(`document.getElementById("profile-save-btn").click()`);
+    confere(await espera(page, `typeof _state !== "undefined" && _state.channels && _state.channels.length > 0 && !document.documentElement.classList.contains("profile-open")`, 25000), "(k) depois de salvar o app abre com o perfil criado");
+    chamadas = await log(page);
+    const salvo = chamadas.find((c) => c.nome === "perfil_save");
+    confere(!!salvo && salvo.body.p_id === null && salvo.body.p_nome === "Gustavo" && salvo.body.p_avatar === avEscolhido, "(k) perfil_save com o nome e o avatar escolhidos (" + JSON.stringify(salvo && salvo.body) + ")");
+    const ls = JSON.parse(await page.eval(`JSON.stringify({ ativo: localStorage.getItem("sint_profile_active"), perfis: localStorage.getItem("sint_profiles") })`));
+    confere(ls.ativo === "cccccccc-3333-4333-8333-333333333333" && /Gustavo/.test(ls.perfis || ""), "(k) o perfil criado ficou ativo e em cache");
   });
 } finally {
   servidor.close();

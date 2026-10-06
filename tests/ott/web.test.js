@@ -363,3 +363,72 @@ test("registro: erro técnico (não 400) vira mensagem amigável e não vaza tex
   const vencido = fakeFetch(() => ({ status: 401, body: { message: "JWT expired" } }));
   await assert.rejects(o.ottWebRegister(cfg, "JWT", inst, {}, vencido), (e) => e.kind === "login");
 });
+
+// ── Troca de conta no mesmo navegador: os dados da conta anterior NÃO podem aparecer na nova ──
+const DADOS_DA_CONTA_A = {
+  sint_ott_token: "TOKEN_A", sint_ott_last_ok: "1", sint_ott_account: '{"nome":"Admin"}', sint_ott_config: "{}",
+  sint_profile_active: "aaaaaaaa-1111", sint_profiles: '[{"id":"aaaaaaaa-1111","nome":"Admin"}]', sint_profiles_migrated: "1",
+  sint_paaaaaaaa_fav: '["ESPN"]', sint_paaaaaaaa_recents: "[]", sint_paaaaaaaa_continue: "[]", sint_paaaaaaaa_favsync: "{}",
+  sint_fav: '["antigo"]', sint_recents: "[]", sint_continue: "[]",
+  sint_url: "http://lista", sint_mode: "url", sint_vod_url: "http://vod", sint_epg_url: "http://epg",
+  sint_web_chosen: "x",
+};
+const DADOS_DO_NAVEGADOR = { sint_web_install: "inst-0123456789abcdef", sint_view: "grid", sint_fit: "cover", sint_web_volume: '{"v":0.5}', sint_web_hosts: "{}", sint_proxy: "https://p" };
+
+test("conta diferente da última: apaga perfis, favoritos, recentes, token e lista da conta anterior e guarda o novo dono", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DA_CONTA_A, ...DADOS_DO_NAVEGADOR, sint_web_owner: "admin-id" });
+  assert.equal(o.ottWebOwnerSwitch(s, "novo-id"), true);
+  for (const k of Object.keys(DADOS_DA_CONTA_A)) assert.equal(s.getItem(k), null, k + " deveria ter sido apagada");
+  for (const k of Object.keys(DADOS_DO_NAVEGADOR)) assert.equal(s.getItem(k), DADOS_DO_NAVEGADOR[k], k + " é do navegador e deve ficar");
+  assert.equal(s.getItem("sint_web_owner"), "novo-id");
+});
+
+test("mesma conta: não apaga nada", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DA_CONTA_A, ...DADOS_DO_NAVEGADOR, sint_web_owner: "admin-id" });
+  assert.equal(o.ottWebOwnerSwitch(s, "admin-id"), false);
+  for (const k of Object.keys(DADOS_DA_CONTA_A)) assert.equal(s.getItem(k), DADOS_DA_CONTA_A[k], k);
+});
+
+test("sem dono guardado (navegador de antes desta correção): apaga e passa a guardar o dono", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DA_CONTA_A, ...DADOS_DO_NAVEGADOR });
+  assert.equal(o.ottWebOwnerSwitch(s, "u1"), true);
+  assert.equal(s.getItem("sint_profiles"), null);
+  assert.equal(s.getItem("sint_web_owner"), "u1");
+  assert.equal(s.getItem("sint_web_install"), DADOS_DO_NAVEGADOR.sint_web_install);
+});
+
+test("sem id de usuário na sessão: não mexe em nada (nunca apaga por falta de informação)", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DA_CONTA_A, sint_web_owner: "admin-id" });
+  assert.equal(o.ottWebOwnerSwitch(s, ""), false);
+  assert.equal(o.ottWebOwnerSwitch(s, undefined), false);
+  assert.equal(s.getItem("sint_profiles"), DADOS_DA_CONTA_A.sint_profiles);
+});
+
+test("armazenamento que lança erro não derruba a entrada", () => {
+  const o = loadOtt();
+  const ruim = { getItem() { throw new Error("bloqueado"); }, setItem() { throw new Error("bloqueado"); }, removeItem() { throw new Error("bloqueado"); } };
+  assert.doesNotThrow(() => o.ottWebOwnerSwitch(ruim, "u1"));
+});
+
+test("o 'Sair' do app e o do site apagam os mesmos dados da conta", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DA_CONTA_A, ...DADOS_DO_NAVEGADOR, sint_web_owner: "admin-id", sintoniza_painel_sessao: "{}" });
+  o.ottWebWipeAccountData(s);
+  for (const k of Object.keys(DADOS_DA_CONTA_A)) assert.equal(s.getItem(k), null, k);
+  assert.equal(s.getItem("sint_web_owner"), null);
+  assert.equal(s.getItem("sint_web_install"), DADOS_DO_NAVEGADOR.sint_web_install);
+  assert.equal(s.getItem("sint_view"), "grid");
+});
+
+test("navegador virgem (sem dono e sem dados de conta): só guarda o dono, sem apagar nem pedir recarga", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ ...DADOS_DO_NAVEGADOR });
+  assert.equal(o.ottWebOwnerSwitch(s, "u1"), false);
+  assert.equal(s.getItem("sint_web_owner"), "u1");
+  assert.equal(s.getItem("sint_web_install"), DADOS_DO_NAVEGADOR.sint_web_install);
+  assert.equal(o.ottWebOwnerSwitch(s, "u1"), false);
+});

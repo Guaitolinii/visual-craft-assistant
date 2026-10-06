@@ -158,7 +158,7 @@ await cena("3 perfis: seletor e troca", {
   confere(!r.aberto, "depois de escolher, a revalidação não pode perguntar de novo: " + JSON.stringify(r));
   confere(/, Bia\.$/.test(r.h1) && r.nome === "Bia", "saudação e menu deveriam mostrar a Bia: " + JSON.stringify(r));
   const listas = await page.rpcs("perfil_list");
-  confere(listas.length >= 2 && listas.every(b => b.p_token === "token-falso" && Object.keys(b).join() === "p_token"), "perfil_list deveria levar só o token: " + JSON.stringify(listas));
+  confere(listas.length >= 2 && listas.every(b => b.p_token === "token-falso" && b.p_auto_criar === false && Object.keys(b).join() === "p_token,p_auto_criar"), "perfil_list deveria levar o token e p_auto_criar:false (o servidor não cria o perfil sozinho): " + JSON.stringify(listas));
 
   // ── (c1) o avatar do topo abre o seletor (e dá para fechar sem escolher) ──
   await page.eval(`document.getElementById("profile-btn").click()`);

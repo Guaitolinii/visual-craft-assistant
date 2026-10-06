@@ -3584,8 +3584,25 @@ function ottPerfilValidName(nome) {
   return n.length >= 1 && n.length <= OTT_PERFIL_NOME_MAX ? n : null;
 }
 
+// { status, perfis }: status "ok" com lista vazia = conta SEM perfil (o app novo mostra "Crie seu perfil principal"); outro status
+// (aparelho desconhecido...) NUNCA conta como "sem perfil". semAutoCriar: pede ao servidor para NÃO criar o perfil sozinho
+// (p_auto_criar:false, migração 0014). Servidor ainda sem a 0014 responde 404 (função não existe): repete sem o parâmetro,
+// que é o comportamento de sempre (cria o principal com o nome da conta). A TV e os apps antigos nunca passam semAutoCriar.
+async function ottPerfilListFull(cfg, token, fetchImpl, semAutoCriar) {
+  let data = null;
+  if (semAutoCriar) {
+    try {
+      data = await ottCallRpc(cfg, "perfil_list", { p_token: token, p_auto_criar: false }, fetchImpl);
+    } catch (e) {
+      if (!(e && e.status === 404)) throw e;
+    }
+  }
+  if (data === null) data = await ottCallRpc(cfg, "perfil_list", { p_token: token }, fetchImpl);
+  return { status: data && typeof data.status === "string" ? data.status : "", perfis: ottPerfilNormalize(data) };
+}
+
 async function ottPerfilList(cfg, token, fetchImpl) {
-  return ottPerfilNormalize(await ottCallRpc(cfg, "perfil_list", { p_token: token }, fetchImpl));
+  return (await ottPerfilListFull(cfg, token, fetchImpl, false)).perfis;
 }
 
 // id nulo = criar; erros de negócio chegam como Error em português (ottCallRpc)
@@ -4191,7 +4208,7 @@ function ottAccountSummary(account, nowMs) {
 // ── App no navegador (sintonizatv.com.br/app): aparelho do tipo "web", sem código nem QR ──
 // A conta vem do login do site (mesma origem: sessão em sintoniza_painel_sessao). O navegador se registra
 // sozinho (web_device_register, com o token do usuário) e passa a agir como o app de celular.
-const OTT_WEB_KEYS = { INSTALL: "sint_web_install", SESSION: "sintoniza_painel_sessao", SIGNED_OUT: "sint_web_signed_out", CHOSEN: "sint_web_chosen" };
+const OTT_WEB_KEYS = { INSTALL: "sint_web_install", SESSION: "sintoniza_painel_sessao", SIGNED_OUT: "sint_web_signed_out", CHOSEN: "sint_web_chosen", OWNER: "sint_web_owner" };
 const OTT_WEB_INSTALL_RE = /^[A-Za-z0-9-]{16,64}$/;
 const OTT_WEB_REFRESH_MARGIN_MS = 60 * 1000;
 const OTT_WEB_CHOSEN_TTL_MS = 12 * 3600 * 1000;
@@ -4326,6 +4343,52 @@ async function ottWebLogout(cfg, session, fetchImpl) {
       headers: { apikey: cfg.anonKey, Authorization: "Bearer " + session.access_token, "Content-Type": "application/json" },
     }), 8000);
   } catch (e) { /* o app apaga a sessão local de qualquer jeito */ }
+}
+
+// Dados do app que pertencem à CONTA, não ao navegador: token do aparelho, conta/config em cache, perfis e perfil ativo,
+// favoritos/recentes/continuar assistindo (por perfil e os antigos sem perfil) e a lista de canais/filmes/guia da conta.
+// Preferências do navegador (id da instalação, volume, grade/lista, rotas por host) NÃO entram aqui.
+const OTT_WEB_ACCOUNT_KEY_RES = [
+  /^sint_ott_/,
+  /^sint_profile/,
+  /^sint_p[0-9a-f]{8}_/,
+  /^sint_(fav|recents|fav_kind|continue|mylist|favsync|histsync)$/,
+  /^sint_web_chosen$/,
+];
+
+// Lista as chaves do armazenamento (localStorage tem length/key; um armazenamento sem isso só perde as chaves por perfil)
+function ottWebStorageKeys(storage) {
+  const keys = [];
+  try {
+    const n = Number(storage.length) || 0;
+    for (let i = 0; i < n; i++) { const k = storage.key(i); if (typeof k === "string") keys.push(k); }
+  } catch (e) { /* sem enumeração: usa só as chaves fixas */ }
+  return keys;
+}
+
+// Apaga tudo que é da conta (inclusive o "dono" guardado). A sessão do site NÃO é mexida aqui.
+function ottWebWipeAccountData(storage) {
+  const fixas = [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, OTT_KEYS.CONFIG, "sint_profile_active", "sint_profiles", "sint_profiles_migrated",
+    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN];
+  const todas = fixas.concat(ottWebStorageKeys(storage).filter((k) => OTT_WEB_ACCOUNT_KEY_RES.some((re) => re.test(k))));
+  todas.forEach((k) => { try { storage.removeItem(k); } catch (e) { /* ignora */ } });
+  try { ottApplyPlaylist(storage, null); } catch (e) { /* ignora */ }
+  try { storage.removeItem(OTT_WEB_KEYS.OWNER); } catch (e) { /* ignora */ }
+}
+
+// A conta que entrou agora é a mesma da última vez neste navegador? Se não (ou se nunca foi registrada), apaga os dados da conta
+// anterior ANTES de carregar qualquer coisa e guarda o novo dono. Sem id de usuário não faz nada. Devolve true se apagou.
+function ottWebOwnerSwitch(storage, userId) {
+  const id = ottStr(userId);
+  if (!id) return false;
+  let dono = null;
+  try { dono = storage.getItem(OTT_WEB_KEYS.OWNER); } catch (e) { /* trata como sem dono */ }
+  if (dono === id) return false;
+  // Navegador virgem (sem dono e sem nenhum dado de conta): só passa a guardar o dono, sem apagar nem pedir recarga
+  const sujo = dono !== null || ottWebStorageKeys(storage).some((k) => OTT_WEB_ACCOUNT_KEY_RES.some((re) => re.test(k)));
+  if (sujo) ottWebWipeAccountData(storage);
+  try { storage.setItem(OTT_WEB_KEYS.OWNER, id); } catch (e) { /* ignora */ }
+  return sujo;
 }
 
 // Nome do navegador e do sistema (aparecem na lista de aparelhos do painel) e se é o atalho instalado
@@ -6283,7 +6346,7 @@ function shouldApplyResume(target, duration) {
 // do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
 // que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
 // carregam usuário e senha.
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 
 function sanitizeDiagnosticText(text) {
   return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();
@@ -9942,6 +10005,22 @@ function ottApplyDecision(d) {
 
 // Pergunta ao servidor a situação do aparelho (ao abrir, ao voltar ao app e a cada 6 h)
 async function ottCheck() {
+  if (isWebApp() && !_web.signedOut) {
+    // No app web quem manda é o login do SITE (mesmo armazenamento): sem ele não há conta; com outra conta, o token guardado
+    // é de outra pessoa (o "Sair" do site não apaga o aparelho do app) e tem de ser descartado antes de qualquer coisa.
+    const sessao = ottWebParseSession(localStorage.getItem(OTT_WEB_KEYS.SESSION));
+    if (!sessao) { ottWebWipeAccountData(localStorage); webGoLogin(); return; }
+    if (ottWebOwnerSwitch(localStorage, sessao.user.id)) {
+      // O estado em memória já leu favoritos/perfil da conta anterior ao abrir a página: recarrega UMA vez com tudo limpo
+      // (a marca em sessionStorage evita laço se o navegador não deixar gravar o dono)
+      let jaRecarregou = false;
+      try { sessionStorage.removeItem("sint_profile_chosen"); jaRecarregou = sessionStorage.getItem("sint_web_switched") === "1"; sessionStorage.setItem("sint_web_switched", "1"); } catch (e) { /* ignora */ }
+      if (!jaRecarregou) { location.reload(); return; }
+      webBoot();
+      return;
+    }
+    webWatchSessionChange(sessao.user.id);
+  }
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   if (!token) { ottBeginActivation(); return; }
   let decision;
@@ -9993,6 +10072,21 @@ function webShowBlocked(title, detail) {
   ottShowGate("blocked");
 }
 
+// O site e o app dividem o mesmo armazenamento: se o login do site mudar em outra aba (sair, entrar com outra conta),
+// esta aba recarrega para o app mostrar a conta certa (o webBoot apaga os dados da conta anterior).
+let _webWatchedUser = null;
+function webWatchSessionChange(userId) {
+  _webWatchedUser = userId || "";
+  if (_web.watching) return;
+  _web.watching = true;
+  window.addEventListener("storage", (e) => {
+    if (e.key !== OTT_WEB_KEYS.SESSION || _web.signedOut) return;
+    const nova = ottWebParseSession(e.newValue);
+    const novoId = nova ? nova.user.id : "";
+    if (novoId !== _webWatchedUser) location.reload();
+  });
+}
+
 // Entrada do app web (no lugar da ativação por código): sessão do site -> aparelho web -> fluxo normal (ottCheck)
 async function webBoot() {
   if (_web.signedOut) return;
@@ -10011,6 +10105,11 @@ async function webBoot() {
       return;
     }
   }
+  // Outra conta entrou neste navegador (o "Sair" do site não apaga os dados do app): tira tudo da conta anterior antes de seguir
+  if (ottWebOwnerSwitch(localStorage, session.user.id)) {
+    try { sessionStorage.removeItem("sint_profile_chosen"); } catch (e) { /* ignora */ } // mesma chave do seletor de perfis (PROFILE_CHOSEN_KEY)
+  }
+  webWatchSessionChange(session.user.id);
   let token;
   try {
     token = await ottWebRegister(_ott.cfg, session.access_token, ottWebInstallId(localStorage), ottWebDevice(navigator.userAgent, navigator.platform, isStandaloneDisplay()));
@@ -10033,9 +10132,10 @@ async function webSignOut() {
   const token = localStorage.getItem(OTT_KEYS.TOKEN);
   const session = ottWebParseSession(localStorage.getItem(OTT_WEB_KEYS.SESSION));
   try { if (token) await ottDeviceUnlink(_ott.cfg, token); } catch (e) { /* apaga localmente mesmo assim */ }
-  [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, PROFILE_ACTIVE_KEY, PROFILES_CACHE_KEY, OTT_WEB_KEYS.SESSION, OTT_WEB_KEYS.CHOSEN].forEach(k => localStorage.removeItem(k));
+  ottWebWipeAccountData(localStorage); // perfis, favoritos, recentes, token, lista... (o mesmo que o app faz ao detectar outra conta)
+  try { localStorage.removeItem(OTT_WEB_KEYS.SESSION); } catch (e) { /* ignora */ }
+  try { sessionStorage.removeItem("sint_profile_chosen"); } catch (e) { /* ignora */ }
   try { localStorage.setItem(OTT_WEB_KEYS.SIGNED_OUT, "1"); } catch (e) { /* ignora */ }
-  ottApplyPlaylist(localStorage, null);
   await ottWebLogout(_ott.cfg, session);
   location.replace("/");
 }
@@ -10304,6 +10404,7 @@ const _profile = {
   busy: false,
   booting: false,
   wired: false,
+  firstRun: false,     // conta sem perfil: a pessoa escolhe o nome e o avatar do perfil principal (não dá para fechar sem criar)
 };
 try { _profile.chosen = profileChosenRead(); } catch (e) { /* sem sessionStorage: pergunta a cada abertura */ }
 
@@ -10517,11 +10618,21 @@ async function profileBoot() {
       if (list.length >= 2) { _profile.list = list; profileOpenGate({ voluntary: false }); }
       else if (!list.length && ctx) { _profile.list = []; profileOpenGate({ voluntary: false }); }
     }
+    let semPerfil = false;
     if (ctx) {
       try {
-        const fresh = await ottPerfilList(ctx.cfg, ctx.token);
-        if (fresh.length) { list = fresh; profileWriteCache(list); }
+        const r = await ottPerfilListFull(ctx.cfg, ctx.token, undefined, true);
+        if (r.perfis.length) { list = r.perfis; profileWriteCache(list); }
+        else if (r.status === "ok") semPerfil = true; // a conta existe e ainda não tem perfil
       } catch (e) { /* offline: segue com o cache */ }
+    }
+    if (semPerfil) {
+      // Conta nova: quem escolhe o nome e o avatar do perfil principal é a pessoa (o servidor não cria mais sozinho)
+      profileWriteCache([]);
+      _profile.list = [];
+      if (!_profile.firstRun) profileOpenFirstRun();
+      renderProfileUi();
+      return;
     }
     _profile.list = list;
     const d = ottPerfilDecide(list, activeProfileId(), _profile.chosen);
@@ -10562,13 +10673,23 @@ function profileSelectAvatar(id) {
   document.getElementById("profile-preview").innerHTML = avatarHtml(id, { vivo: true });
 }
 
+// Conta sem perfil: abre direto o editor "Crie seu perfil principal" (sem cancelar: o app precisa de um perfil para abrir)
+function profileOpenFirstRun() {
+  _profile.firstRun = true;
+  _profile.list = [];
+  profileOpenGate({ voluntary: false });
+  profileOpenEditor(null);
+}
+
 function profileOpenEditor(p) {
   _profile.editing = p || null;
   const input = document.getElementById("profile-name-input");
   input.value = p ? p.nome : "";
   document.getElementById("profile-name-count").textContent = input.value.length + "/20";
-  document.getElementById("profile-editor-title").textContent = p ? "Editar perfil" : "Novo perfil";
-  document.getElementById("profile-editor-eyebrow").textContent = p && p.padrao ? "Perfil principal" : "Perfil";
+  const primeiro = _profile.firstRun && !p;
+  document.getElementById("profile-editor-title").textContent = p ? "Editar perfil" : primeiro ? "Crie seu perfil" : "Novo perfil";
+  document.getElementById("profile-editor-eyebrow").textContent = (p && p.padrao) || primeiro ? "Perfil principal" : "Perfil";
+  document.getElementById("profile-cancel-btn").hidden = primeiro;
   document.getElementById("profile-delete-btn").hidden = !p || p.padrao === true;   // o principal não pode ser excluído
   document.getElementById("profile-delete-confirm").hidden = true;
   document.getElementById("profile-editor-actions").hidden = false;
@@ -10591,6 +10712,7 @@ function profileOpenEditor(p) {
 }
 
 function profileCloseEditor() {
+  if (_profile.firstRun) return; // sem perfil o app não abre: só fecha depois de criar
   _profile.editing = null;
   profileShowScreen("picker");
   profileRenderGrid();
@@ -10614,6 +10736,7 @@ async function profileSave() {
     if (!achou) _profile.list.push(salvo);
     profileWriteCache(_profile.list);
     _profile.busy = false;
+    if (_profile.firstRun) { _profile.firstRun = false; profileChoose(salvo); return; } // 1º perfil criado: entra com ele
     renderProfileUi();
     profileCloseEditor();
   } catch (e) {
@@ -10669,7 +10792,7 @@ function profileOpenFromUi(manage) {
   profileOpenGate({ voluntary: true, manage: !!manage });
   const ctx = profileCtx();
   if (!ctx) return;
-  ottPerfilList(ctx.cfg, ctx.token).then(fresh => {
+  ottPerfilListFull(ctx.cfg, ctx.token, undefined, true).then(r => r.perfis).then(fresh => {
     if (!fresh.length) return;
     profileWriteCache(fresh);
     _profile.list = fresh;

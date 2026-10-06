@@ -83,3 +83,54 @@ test("RPCs de perfil e o perfilId no progresso e no envio", async () => {
   assert.deepEqual(plain(o.ottBuildCastPayload("episode", { series_id: 5, name: "S" }, { season: 1, episode: 2, perfilId: id })), { seriesId: "5", title: "S", season: 1, episode: 2, perfilId: id });
   assert.deepEqual(plain(o.ottBuildCastPayload("channel", { name: "Globo" }, { perfilId: id })), { name: "Globo", group: "" });
 });
+
+// ── Perfil principal escolhido pela pessoa (migração 0014): conta nova não ganha perfil sozinha ──
+test("app novo pede p_auto_criar:false e conta sem perfil vem como status ok com lista vazia", async () => {
+  const o = loadOtt();
+  const f = fakeFetch(() => ({ body: { status: "ok", perfis: [] } }));
+  const r = await o.ottPerfilListFull(cfg, "tok", f, true);
+  assert.deepEqual(plain(r), { status: "ok", perfis: [] });
+  assert.deepEqual(JSON.parse(f.calls[0].init.body), { p_token: "tok", p_auto_criar: false });
+  assert.equal(f.calls.length, 1);
+});
+
+test("sem o pedido de não criar, a chamada é a de sempre (TV e apps antigos)", async () => {
+  const o = loadOtt();
+  const f = fakeFetch(() => ({ body: { status: "ok", perfis: [{ id: "a1", nome: "Ana", avatar: "padrao", padrao: true }] } }));
+  const r = await o.ottPerfilListFull(cfg, "tok", f);
+  assert.equal(r.perfis.length, 1);
+  assert.deepEqual(JSON.parse(f.calls[0].init.body), { p_token: "tok" });
+});
+
+test("servidor SEM a migração 0014 (404 na função): repete sem o parâmetro e segue como antes", async () => {
+  const o = loadOtt();
+  const f = fakeFetch((url, init) => {
+    const corpo = JSON.parse(init.body);
+    if ("p_auto_criar" in corpo) return { status: 404, body: { message: "Could not find the function public.perfil_list(p_auto_criar, p_token) in the schema cache" } };
+    return { body: { status: "ok", perfis: [{ id: "a1", nome: "Ana", avatar: "padrao", padrao: true }] } };
+  });
+  const r = await o.ottPerfilListFull(cfg, "tok", f, true);
+  assert.equal(r.status, "ok");
+  assert.equal(r.perfis.length, 1);
+  assert.equal(f.calls.length, 2);
+  assert.deepEqual(JSON.parse(f.calls[1].init.body), { p_token: "tok" });
+});
+
+test("outros erros do servidor (não 404) não são escondidos pela repetição", async () => {
+  const o = loadOtt();
+  const f = fakeFetch(() => ({ status: 500, body: { message: "boom" } }));
+  await assert.rejects(o.ottPerfilListFull(cfg, "tok", f, true), /boom/);
+  assert.equal(f.calls.length, 1);
+});
+
+test("dispositivo desconhecido não vira 'conta sem perfil'", async () => {
+  const o = loadOtt();
+  const f = fakeFetch(() => ({ body: { status: "unknown_device" } }));
+  assert.deepEqual(plain(await o.ottPerfilListFull(cfg, "tok", f, true)), { status: "unknown_device", perfis: [] });
+});
+
+test("ottPerfilList continua devolvendo só a lista", async () => {
+  const o = loadOtt();
+  const f = fakeFetch(() => ({ body: { status: "ok", perfis: [{ id: "a1", nome: "Ana", avatar: "padrao", padrao: true }] } }));
+  assert.equal((await o.ottPerfilList(cfg, "tok", f)).length, 1);
+});
