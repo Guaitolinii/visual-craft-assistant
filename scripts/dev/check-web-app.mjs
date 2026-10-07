@@ -127,9 +127,13 @@ const URL_APP = `http://127.0.0.1:${PORTA}/app/`;
 
 // ── Supabase falso dentro da página (o estado do log fica no localStorage: sobrevive aos reloads do app) ──
 // m3u/vod: endereços do provedor na conta (padrão provedor.test, inalcançável direto); memoria: sint_web_hosts já gravado
-function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vodUrl = VOD_URL, memoria = null, extra = null }) {
+function preScript({ sessao, standalone = false, m3u: m3uUrl = M3U_URL, vod: vodUrl = VOD_URL, memoria = null, extra = null, ios = false }) {
   const src = `(() => {
     ${standalone ? 'Object.defineProperty(navigator, "standalone", { get: () => true });' : ""}
+    ${ios ? `Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1" });
+      const _cpt = HTMLMediaElement.prototype.canPlayType; HTMLMediaElement.prototype.canPlayType = function (t) { return /mpegurl/i.test(t) ? "maybe" : _cpt.call(this, t); };
+      window.__srcs = []; const _sd = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src");
+      Object.defineProperty(HTMLMediaElement.prototype, "src", { get() { return _sd.get.call(this); }, set(v) { window.__srcs.push(String(v).slice(0, 12)); _sd.set.call(this, v); } });` : ""}
     if (!localStorage.getItem("__seeded")) {
       ${sessao ? `localStorage.setItem("sintoniza_painel_sessao", ${JSON.stringify(JSON.stringify(sessao))});` : ""}
       ${memoria ? `localStorage.setItem("sint_web_hosts", ${JSON.stringify(JSON.stringify(memoria))});` : ""}
@@ -395,7 +399,7 @@ try {
   };
   const abrirFilmes = async (page) => {
     await page.eval(`document.getElementById("nav-vod-movies").click()`);
-    return espera(page, `document.querySelectorAll(".vod-row .vod-card").length > 6`, 15000);
+    return espera(page, `document.querySelectorAll(".vod-row .vod-card").length > 6`, 40000); // 15 s era curto quando a máquina está ocupada (falha intermitente)
   };
 
   console.log("(g1) provedor com CORS liberado: tudo direto, zero chamadas ao proxy");
@@ -651,6 +655,28 @@ try {
     confere(!!salvo && salvo.body.p_id === null && salvo.body.p_nome === "Gustavo" && salvo.body.p_avatar === avEscolhido, "(k) perfil_save com o nome e o avatar escolhidos (" + JSON.stringify(salvo && salvo.body) + ")");
     const ls = JSON.parse(await page.eval(`JSON.stringify({ ativo: localStorage.getItem("sint_profile_active"), perfis: localStorage.getItem("sint_profiles") })`));
     confere(ls.ativo === "cccccccc-3333-4333-8333-333333333333" && /Gustavo/.test(ls.perfis || ""), "(k) o perfil criado ficou ativo e em cache");
+  });
+
+  // ── (l) iPhone/iPad: o app tenta o HLS NATIVO (<video src>) e, se não tocar, volta sozinho para o hls.js ──
+  // Neste Chrome o nativo não toca (e a página é http, então a 1ª tentativa vai direto ao provedor falso e a 2ª pelo proxy, como a regra do direto-primeiro);
+  // no iPhone de verdade a página é https e o provedor http vai direto pelo proxy. O que se confere aqui é a ORDEM e a volta ao hls.js.
+  console.log("(l) iPhone: HLS nativo primeiro, hls.js como volta");
+  await withPage(URL_APP, { width: 390, height: 844, blockExternal: true, preScript: preScript({ sessao: sessaoOk(), ios: true }) }, async (page) => {
+    confere(await espera(page, PRONTO, 25000), "(l) a lista de canais carregou");
+    await page.eval(`document.querySelector('.sidebar-nav .nav-item[data-section="Todos os canais"]') ? document.querySelector('.sidebar-nav .nav-item[data-section="Todos os canais"]').click() : setSection("Todos os canais")`);
+    await page.sleep(700);
+    const decisao = await page.eval(`ottWebPreferNativeHls(isIOSDevice(), !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl"), false)`);
+    confere(decisao === true, "(l) com iPhone + HLS nativo a decisão é usar o nativo");
+    await page.eval(`document.querySelector(".channel-card .card-main").click()`);
+    confere(await espera(page, `window.__srcs.length >= 1 && window.__srcs[0].indexOf("blob:") !== 0`, 12000), "(l) 1º o app entrega a URL do canal ao <video src> (nativo), não ao hls.js");
+    confere(await espera(page, `window.__srcs.some(x => x.indexOf("blob:") === 0)`, 45000), "(l) o nativo não tocou neste Chrome: o app trocou para o hls.js (blob: do MSE)");
+    const srcs = JSON.parse(await page.eval(`JSON.stringify(window.__srcs)`));
+    const i2 = srcs.findIndex((x) => x.indexOf("blob:") === 0);
+    confere(i2 > 0 && srcs.slice(0, i2).every((x) => x.indexOf("blob:") !== 0), "(l) a ordem foi nativo e depois hls.js (" + JSON.stringify(srcs) + ")");
+    const estado = JSON.parse(await page.eval(`JSON.stringify({ falhou: !!_webNativeFailedUrl, hls: !!hlsInstance })`));
+    confere(estado.falhou && estado.hls, "(l) o canal ficou marcado como 'nativo falhou' e o hls.js está ativo (" + JSON.stringify(estado) + ")");
+    await page.sleep(20000);
+    confere(JSON.parse(await page.eval(`JSON.stringify(window.__srcs)`)).filter((x) => x.indexOf("blob:") !== 0).length === srcs.filter((x) => x.indexOf("blob:") !== 0).length, "(l) depois da volta não tenta o nativo de novo (sem laço)");
   });
 } finally {
   servidor.close();

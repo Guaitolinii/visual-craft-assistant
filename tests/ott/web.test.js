@@ -432,3 +432,16 @@ test("navegador virgem (sem dono e sem dados de conta): só guarda o dono, sem a
   assert.equal(s.getItem("sint_web_install"), DADOS_DO_NAVEGADOR.sint_web_install);
   assert.equal(o.ottWebOwnerSwitch(s, "u1"), false);
 });
+
+// ── iPhone/iPad no app web: HLS nativo (AVPlayer) em vez de hls.js sobre ManagedMediaSource ──
+test("iPhone/iPad com HLS nativo: prefere o nativo; Android/computador seguem no hls.js", () => {
+  const o = loadOtt();
+  assert.equal(o.ottWebPreferNativeHls(true, true, false), true);   // iPhone, Safari sabe tocar HLS
+  assert.equal(o.ottWebPreferNativeHls(false, true, false), false); // Android/Chrome/computador: hls.js
+  assert.equal(o.ottWebPreferNativeHls(true, false, false), false); // iOS sem HLS nativo: hls.js
+});
+
+test("se o nativo falhou neste canal, volta para o hls.js (uma vez)", () => {
+  const o = loadOtt();
+  assert.equal(o.ottWebPreferNativeHls(true, true, true), false);
+});

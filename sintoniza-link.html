@@ -4391,6 +4391,13 @@ function ottWebOwnerSwitch(storage, userId) {
   return sujo;
 }
 
+// iPhone/iPad no app web: o HLS nativo do Safari (AVPlayer: decodificação por hardware, buffer e bateria geridos pelo sistema)
+// é bem mais estável e leve que o hls.js sobre ManagedMediaSource, que dava travadas no celular. Só se o aparelho sabe tocar HLS
+// e o nativo ainda não falhou neste canal (se falhar, volta para o hls.js uma vez). Android e computador seguem no hls.js.
+function ottWebPreferNativeHls(ios, canPlayNativeHls, nativeJaFalhou) {
+  return !!ios && !!canPlayNativeHls && !nativeJaFalhou;
+}
+
 // Nome do navegador e do sistema (aparecem na lista de aparelhos do painel) e se é o atalho instalado
 function ottWebDevice(ua, platform, standalone) {
   const u = String(ua || "");
@@ -5964,8 +5971,11 @@ async function playStream(url) {
   if (!isWebApp()) {
     playUrl = proxyIfInsecure(streamInfo.url);
   } else if (streamInfo.type === "hls") {
-    if (!Hls.isSupported() && video.canPlayType('application/vnd.apple.mpegurl')) {
+    const nativoPossivel = !!video.canPlayType('application/vnd.apple.mpegurl');
+    const nativoPreferido = ottWebPreferNativeHls(isIOSDevice(), nativoPossivel, _webNativeFailedUrl === streamInfo.url);
+    if ((!Hls.isSupported() && nativoPossivel) || nativoPreferido) {
       webNative = webMediaSrc(streamInfo.url, false, "hls"); // <video src> não exige CORS: direto, sem sondar
+      webNative.preferido = nativoPreferido && Hls.isSupported(); // se o nativo falhar, ainda dá para tentar o hls.js
       playUrl = webNative.src;
     } else {
       const plan = await webHlsPlan(streamInfo.url);
@@ -5999,7 +6009,7 @@ async function playStream(url) {
   }
 
   if (currentStreamType === "hls") {
-    if (Hls.isSupported()) {
+    if (Hls.isSupported() && !(webNative && webNative.preferido)) { // iPhone/iPad: o HLS nativo (<video src>) vem primeiro
       hlsInstance = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -6082,16 +6092,22 @@ async function playStream(url) {
       const nativeFail = () => {
         if (nativeDone || gen !== playbackGeneration) return;
         nativeLeave();
-        _webForceProxyUrl = streamInfo.url;
-        webCount("fallback", webHost(streamInfo.url));
+        if (webNative && webNative.direct) {
+          _webForceProxyUrl = streamInfo.url;
+          webCount("fallback", webHost(streamInfo.url));
+        } else {
+          _webNativeFailedUrl = streamInfo.url; // nativo (pelo proxy) não tocou: recomeça no hls.js
+          console.warn("[Player] HLS nativo falhou; trocando para o hls.js");
+        }
         playStream(url);
       };
-      if (webNative && webNative.direct) {
+      if (webNative && (webNative.direct || webNative.preferido)) {
         video.addEventListener("error", nativeFail);
-        nativeTimer = setTimeout(nativeFail, 8000);
+        nativeTimer = setTimeout(nativeFail, webNative.direct ? 8000 : 12000); // antes dos 15 s do timeout de abertura (que recarregaria o canal); canal "frio" demorado cai no hls.js, que espera mais
       }
       video.play().then(() => {
         if (webNative && webNative.direct) { nativeLeave(); webCount("direto", webHost(streamInfo.url)); }
+        else if (webNative && webNative.preferido) { nativeLeave(); } // começou a tocar: o nativo cuida do resto
         else if (webNative && webNative.forced) webMemSet(streamInfo.url, "media", "p"); // o proxy tocou onde o direto falhou
         hidePlayerLoader();
         showPlayerVideo();
@@ -6914,6 +6930,7 @@ function webHlsShouldFallback(info) {
 // Espelho em memória: o aprendizado vale na sessão mesmo se o localStorage estiver bloqueado ou cheio
 let _webMemSession = {};
 let _webForceProxyUrl = null; // reprodução reiniciada por falha no direto: a próxima decisão desta URL é proxy (uma vez)
+let _webNativeFailedUrl = null; // canal em que o HLS nativo (iPhone) não tocou: a próxima decisão é hls.js
 
 function webMemLoad() {
   let mem = {};

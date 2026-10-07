@@ -27,7 +27,7 @@ export function loadOtt() {
         ottHistKeyMovie, ottHistKeyEpisode, ottHistKeyChannel, ottHistKeyFromContinueId, ottHistFinished, ottHistItemsFromContinue,
         ottHistItemsFromChannels, ottHistLocalFromItems, ottHistPlan, ottHistApplyContinue, ottHistApplyChannels, ottHistList, ottHistPut, ottHistRemove,
         OTT_WEB_KEYS, ottIsWebPath, ottWebInstallId, ottWebParseSession, ottWebNeedsRefresh, ottWebRefresh, ottWebRegister, ottWebLogout,
-        ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid, ottWebOwnerSwitch, ottWebWipeAccountData };`,
+        ottWebDevice, ottWebProxy, ottWebShouldProxy, ottWebChosenValid, ottWebOwnerSwitch, ottWebWipeAccountData, ottWebPreferNativeHls };`,
     ctx
   );
   return ctx.__ott;
