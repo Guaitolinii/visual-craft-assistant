@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-10-09T17:01:13.648311+00:00",
+  "generatedAt": "2026-10-10T15:34:29.890725+00:00",
   "movies": {
     "a magia começa na rocha encantada|": [
       "apple"
     ],
-    "bugonia|": [
+    "amor|": [
       "prime"
     ],
-    "drácula - uma história de amor eterno|": [
-      "globoplay"
+    "bugonia|": [
+      "prime"
     ],
     "eternidade|": [
       "apple"
@@ -25,9 +25,6 @@
     "wicked parte ii|": [
       "prime"
     ],
-    "007 cassino royale|": [
-      "prime"
-    ],
     "007 sem tempo para morrer|": [
       "prime"
     ],
@@ -42,7 +39,6 @@
       "globoplay"
     ],
     "a identidade bourne|": [
-      "prime",
       "apple"
     ],
     "a lenda de tarzan|": [
@@ -111,7 +107,8 @@
       "max"
     ],
     "beekeeper rede de vingança|": [
-      "prime"
+      "prime",
+      "max"
     ],
     "bons companheiros|": [
       "max"
@@ -134,13 +131,8 @@
     "cherry inocencia perdida|": [
       "apple"
     ],
-    "chocolate|": [
-      "netflix",
-      "max"
-    ],
     "cidade de deus|": [
-      "netflix",
-      "globoplay"
+      "netflix"
     ],
     "cidade perdida|": [
       "paramount"
@@ -214,15 +206,13 @@
       "netflix"
     ],
     "furiosa a mad max saga - black & chrome edition|": [
-      "netflix",
-      "max"
+      "netflix"
     ],
     "furia em alto mar|": [
       "globoplay"
     ],
     "furiosa uma saga mad max|": [
-      "netflix",
-      "max"
+      "netflix"
     ],
     "fúria de titãs|": [
       "globoplay"
@@ -232,9 +222,6 @@
     ],
     "gladiador|": [
       "prime"
-    ],
-    "gladiador 2|": [
-      "paramount"
     ],
     "greyhound - na mira do inimigo|": [
       "apple"
@@ -248,7 +235,7 @@
     "homem de ferro|": [
       "disney"
     ],
-    "homem de ferro 2|": [
+    "homem de ferro 3|": [
       "disney"
     ],
     "homem-aranha 3|": [
@@ -295,9 +282,6 @@
     "john wick 2|": [
       "netflix"
     ],
-    "john wick 3|": [
-      "netflix"
-    ],
     "jumanji próxima fase|": [
       "netflix"
     ],
@@ -316,7 +300,7 @@
     "karatê kid lendas|": [
       "max"
     ],
-    "kill bill volume 1|": [
+    "kill bill volume 2|": [
       "netflix"
     ],
     "kong a ilha da caveira|": [
@@ -373,7 +357,8 @@
       "netflix"
     ],
     "missão impossível|": [
-      "netflix"
+      "netflix",
+      "paramount"
     ],
     "missão impossível - acerto de contas parte 1|": [
       "paramount"
@@ -392,7 +377,6 @@
       "paramount"
     ],
     "missão impossível - protocolo fantasma|": [
-      "netflix",
       "paramount"
     ],
     "missão impossível 3|": [
@@ -420,6 +404,7 @@
       "paramount"
     ],
     "o contador|": [
+      "prime",
       "apple"
     ],
     "o especialista|": [
@@ -446,6 +431,9 @@
     ],
     "o homem do norte|": [
       "paramount"
+    ],
+    "o passageiro|": [
+      "disney"
     ],
     "o protetor|": [
       "prime",
@@ -514,6 +502,7 @@
       "prime"
     ],
     "resistência|": [
+      "netflix",
       "globoplay"
     ],
     "robô|": [
@@ -597,15 +586,12 @@
       "max"
     ],
     "tudo em todo o lugar ao mesmo tempo|": [
-      "max"
+      "prime"
     ],
     "velozes & furiosos 7|": [
       "netflix",
       "prime",
       "max"
-    ],
-    "velozes & furiosos 8|": [
-      "netflix"
     ],
     "velozes e furiosos hobbs & shaw|": [
       "netflix"
@@ -646,8 +632,7 @@
       "netflix"
     ],
     "a era do gelo 4|": [
-      "netflix",
-      "disney"
+      "netflix"
     ],
     "a era do gelo o big bang|": [
       "netflix"
@@ -697,9 +682,6 @@
     "como treinar o seu dragão 2|": [
       "prime"
     ],
-    "como treinar o seu dragão 3|": [
-      "prime"
-    ],
     "corrida contra o tempo|": [
       "prime"
     ],
@@ -713,9 +695,6 @@
       "disney"
     ],
     "divertida mente 2|": [
-      "disney"
-    ],
-    "enrolados|": [
       "disney"
     ],
     "franklin!|": [
@@ -744,9 +723,6 @@
       "disney"
     ],
     "meu amigo totoro|": [
-      "netflix"
-    ],
-    "meu malvado favorito 4|": [
       "netflix"
     ],
     "moana 2|": [
@@ -789,6 +765,12 @@
     "operacao big hero|": [
       "disney"
     ],
+    "os caras malvados 2|": [
+      "prime"
+    ],
+    "os incriveis|": [
+      "disney"
+    ],
     "os incríveis 2|": [
       "disney"
     ],
@@ -801,13 +783,13 @@
     "patrulha canina um filme superpoderoso|": [
       "paramount"
     ],
-    "planeta 51|": [
-      "globoplay"
-    ],
     "procurando nemo|": [
       "disney"
     ],
     "red crescer é uma fera|": [
+      "disney"
+    ],
+    "ratatouille|": [
       "disney"
     ],
     "robô selvagem|": [
@@ -833,14 +815,23 @@
     "space jam - o jogo do seculo|": [
       "globoplay"
     ],
+    "toy story - um mundo de aventuras|": [
+      "disney"
+    ],
     "toy story 2|": [
       "disney"
     ],
     "toy story 3|": [
       "disney"
     ],
+    "toy story 4|": [
+      "disney"
+    ],
     "transformers o início|": [
       "paramount"
+    ],
+    "trolls 2|": [
+      "netflix"
     ],
     "uma aventura congelante|": [
       "disney"
@@ -896,9 +887,6 @@
     "baywatch s.o.s malibu|": [
       "paramount"
     ],
-    "bill|": [
-      "netflix"
-    ],
     "cha cha real smooth o próximo passo|": [
       "apple"
     ],
@@ -913,6 +901,9 @@
     ],
     "corra que a policia vem ai 1|": [
       "paramount"
+    ],
+    "debi & lóide - dois idiotas em apuros|": [
+      "prime"
     ],
     "do que as mulheres gostam|": [
       "globoplay"
@@ -932,10 +923,10 @@
     "jack|": [
       "paramount"
     ],
-    "lilo & stitch|": [
-      "disney"
-    ],
     "loucademia de policia|": [
+      "globoplay"
+    ],
+    "loucuras na idade média|": [
       "globoplay"
     ],
     "mens@gem para você|": [
@@ -990,8 +981,7 @@
       "globoplay"
     ],
     "parasita|": [
-      "netflix",
-      "prime"
+      "netflix"
     ],
     "podres de ricos|": [
       "globoplay"
@@ -1031,9 +1021,6 @@
     "uma noite no museu|": [
       "apple"
     ],
-    "a teia|": [
-      "globoplay"
-    ],
     "los angeles cidade proibida|": [
       "paramount"
     ],
@@ -1062,14 +1049,14 @@
       "paramount",
       "globoplay"
     ],
+    "9 ½ semanas de amor|": [
+      "globoplay"
+    ],
     "a aposta|": [
       "paramount"
     ],
     "a casa|": [
       "max"
-    ],
-    "a história sem fim|": [
-      "globoplay"
     ],
     "a juventude|": [
       "apple"
@@ -1095,9 +1082,6 @@
     ],
     "ao seu lado|": [
       "paramount",
-      "globoplay"
-    ],
-    "aqui|": [
       "globoplay"
     ],
     "atraídos pelo destino|": [
@@ -1164,6 +1148,9 @@
     "gênio indomável|": [
       "paramount"
     ],
+    "joias brutas|": [
+      "netflix"
+    ],
     "laços de sangue|": [
       "max"
     ],
@@ -1192,9 +1179,6 @@
       "paramount"
     ],
     "o poderoso chefão parte ii|": [
-      "paramount"
-    ],
-    "o poderoso chefão parte iii|": [
       "paramount"
     ],
     "o resgate do soldado ryan|": [
@@ -1229,9 +1213,6 @@
     "passageiros|": [
       "globoplay"
     ],
-    "perdido em marte|": [
-      "disney"
-    ],
     "prenda me se for capaz|": [
       "paramount"
     ],
@@ -1254,6 +1235,9 @@
     ],
     "sociedade dos poetas mortos|": [
       "disney"
+    ],
+    "soul surfer coragem de viver|": [
+      "globoplay"
     ],
     "tempo de matar|": [
       "paramount"
@@ -1300,6 +1284,9 @@
     "a feiticeira e o guarda-roupa|": [
       "disney"
     ],
+    "a lenda|": [
+      "globoplay"
+    ],
     "a origem|": [
       "max"
     ],
@@ -1330,8 +1317,8 @@
     "crepusculo 5 - amanhecer parte 2|": [
       "globoplay"
     ],
-    "doutor estranho no multiverso da loucura|": [
-      "disney"
+    "dora e a cidade perdida|": [
+      "paramount"
     ],
     "edward mãos de tesoura|": [
       "disney"
@@ -1375,9 +1362,6 @@
     "jumanji|": [
       "netflix"
     ],
-    "maze runner 1|": [
-      "disney"
-    ],
     "monster hunter|": [
       "globoplay"
     ],
@@ -1388,9 +1372,6 @@
       "netflix"
     ],
     "o hobbit a batalha dos cinco exércitos|": [
-      "prime"
-    ],
-    "o hobbit a desolação de smaug|": [
       "prime"
     ],
     "o hobbit uma jornada inesperada|": [
@@ -1415,6 +1396,9 @@
       "max",
       "disney"
     ],
+    "princesa mononoke|": [
+      "netflix"
+    ],
     "star trek|": [
       "paramount"
     ],
@@ -1428,21 +1412,18 @@
       "netflix"
     ],
     "o regresso|": [
-      "netflix",
       "max",
+      "paramount",
       "globoplay"
-    ],
-    "2001 uma odisséia no espaço|": [
-      "max"
     ],
     "a guerra dos mundos|": [
       "prime"
     ],
-    "além da escuridão - star trek|": [
-      "paramount"
-    ],
     "atlas|": [
       "paramount"
+    ],
+    "avatar|": [
+      "disney"
     ],
     "blade runner o caçador de andróides|": [
       "prime",
@@ -1497,9 +1478,6 @@
     "o demolidor|": [
       "globoplay"
     ],
-    "refúgio|": [
-      "prime"
-    ],
     "star trek sem fronteiras|": [
       "paramount"
     ],
@@ -1520,9 +1498,6 @@
     ],
     "wonderland|": [
       "disney"
-    ],
-    "além da escuridão|": [
-      "paramount"
     ],
     "guerra civil|": [
       "netflix"
@@ -1561,8 +1536,8 @@
     "a substância|": [
       "netflix"
     ],
-    "ainda estou aqui|": [
-      "globoplay"
+    "o brutalista|": [
+      "prime"
     ],
     "a espera de um milagre|": [
       "max"
@@ -1591,9 +1566,6 @@
     "cinzas|": [
       "disney"
     ],
-    "da magia a seducao|": [
-      "max"
-    ],
     "diario de uma paixao|": [
       "prime",
       "max"
@@ -1603,6 +1575,9 @@
     ],
     "na ponta dos dedos|": [
       "apple"
+    ],
+    "nossa culpa|": [
+      "prime"
     ],
     "perdida|": [
       "paramount"
@@ -1616,9 +1591,6 @@
     "uma paixão|": [
       "prime",
       "max"
-    ],
-    "vanilla sky|": [
-      "paramount"
     ],
     "a chegada|": [
       "max"
@@ -1649,6 +1621,12 @@
     ],
     "girl|": [
       "disney"
+    ],
+    "luta de classes|": [
+      "apple"
+    ],
+    "monster|": [
+      "max"
     ],
     "o acerto|": [
       "netflix"
@@ -1689,11 +1667,17 @@
     "a última casa|": [
       "netflix"
     ],
+    "alien romulus|": [
+      "disney"
+    ],
     "bela|": [
       "disney"
     ],
     "cadáver|": [
       "max"
+    ],
+    "carrie a estranha|": [
+      "prime"
     ],
     "chamas da vingança|": [
       "paramount",
@@ -1735,8 +1719,7 @@
       "paramount"
     ],
     "invasao zumbi|": [
-      "netflix",
-      "prime"
+      "netflix"
     ],
     "it capítulo 2|": [
       "max"
@@ -1762,9 +1745,6 @@
     "o último ritual|": [
       "max"
     ],
-    "os fantasmas ainda se divertem beetlejuice beetlejuice|": [
-      "netflix"
-    ],
     "pesadelo|": [
       "max"
     ],
@@ -1775,6 +1755,9 @@
       "netflix"
     ],
     "pânico 2|": [
+      "paramount"
+    ],
+    "pânico 3|": [
       "paramount"
     ],
     "pânico|": [
@@ -1814,17 +1797,11 @@
     "meu amigo|": [
       "netflix"
     ],
-    "dupla perigosa|": [
-      "prime"
-    ],
     "7 - harry potter e as reliquias da morte - parte 1 4k|": [
       "max"
     ],
     "8 - harry potter e as reliquias da morte - parte 2 4k|": [
       "max"
-    ],
-    "doutor estranho no multiverso da loucura 4k [hdr]|": [
-      "disney"
     ],
     "dungeons & dragons honra entre rebeldes 4k [hybrid]|": [
       "paramount"
@@ -1834,9 +1811,6 @@
     ],
     "missão impossível - acerto de contas parte 1 4k|": [
       "paramount"
-    ],
-    "os fantasmas ainda se divertem beetlejuice beetlejuice 4k|": [
-      "netflix"
     ],
     "13 exorcismos [l]|": [
       "prime"
@@ -1880,11 +1854,8 @@
     "corra que a polícia vem aí! [l]|": [
       "netflix"
     ],
-    "doutor estranho no multiverso da loucura [l]|": [
+    "delicious [l]|": [
       "disney"
-    ],
-    "drácula - uma história de amor eterno [l]|": [
-      "globoplay"
     ],
     "dungeons & dragons honra entre rebeldes [l]|": [
       "paramount"
@@ -1904,12 +1875,8 @@
     "f1 - o filme [l]|": [
       "apple"
     ],
-    "fathom [l]|": [
-      "apple"
-    ],
     "furiosa a mad max saga - black & chrome edition [l]|": [
-      "netflix",
-      "max"
+      "netflix"
     ],
     "garota exemplar [l]|": [
       "disney"
@@ -1919,9 +1886,6 @@
     ],
     "harry potter e a pedra filosofal [l]|": [
       "max"
-    ],
-    "how to train your dragon the hidden world legendado|": [
-      "prime"
     ],
     "infidelidade [l]|": [
       "paramount"
@@ -1934,6 +1898,9 @@
     ],
     "los angeles cidade proibida [l]|": [
       "paramount"
+    ],
+    "luta de classes [l]|": [
+      "apple"
     ],
     "megatubarão 2 [l]|": [
       "netflix",
@@ -1996,9 +1963,6 @@
     "operação cupido [l]|": [
       "disney"
     ],
-    "os fantasmas ainda se divertem beetlejuice beetlejuice [l]|": [
-      "netflix"
-    ],
     "patrulha canina um filme superpoderoso [l]|": [
       "paramount"
     ],
@@ -2036,8 +2000,14 @@
     "o primata|": [
       "paramount"
     ],
+    "predador terras selvagens|": [
+      "disney"
+    ],
     "snoopy apresenta: seja bem-vindo, franklin! 4k [hdr]|": [
       "apple"
+    ],
+    "terror em silent hill regresso para o inferno [l]|": [
+      "prime"
     ],
     "o menino, a toupeira, a raposa e o cavalo 4k [hdr]|": [
       "apple"
@@ -2064,7 +2034,7 @@
       "disney"
     ],
     "corrente do mal|": [
-      "globoplay"
+      "prime"
     ],
     "invocação do mal 2|": [
       "max"
@@ -2087,6 +2057,9 @@
     "space jam o jogo do século|": [
       "globoplay"
     ],
+    "lindas e letais|": [
+      "prime"
+    ],
     "destruição final 2|": [
       "prime"
     ],
@@ -2108,6 +2081,9 @@
     "avatar fogo e cinzas|": [
       "disney"
     ],
+    "a noiva! [l]|": [
+      "max"
+    ],
     "killer|": [
       "globoplay"
     ],
@@ -2120,7 +2096,10 @@
     "o jogo do predador|": [
       "netflix"
     ],
-    "missão refúgio|": [
+    "terror em silent hill regresso para o inferno 4k [hdr]|": [
+      "prime"
+    ],
+    "terror em silent hill regresso para o inferno|": [
       "prime"
     ],
     "como mágica|": [
@@ -2149,6 +2128,9 @@
     ],
     "o justiceiro uma última morte|": [
       "disney"
+    ],
+    "terror em silent hill regresso para o inferno [lançamento]|": [
+      "prime"
     ],
     "emilia pérez|": [
       "paramount"
@@ -2202,8 +2184,7 @@
       "disney"
     ],
     "parasita (2019)|": [
-      "netflix",
-      "prime"
+      "netflix"
     ],
     "a invasão [l] (2019)|": [
       "globoplay"
@@ -2221,6 +2202,9 @@
     ],
     "um sonho possível [l]|": [
       "globoplay"
+    ],
+    "vermelha|": [
+      "netflix"
     ],
     "focinho de outro|": [
       "disney"
@@ -2297,9 +2281,6 @@
     "o diabo veste prada 2|": [
       "disney"
     ],
-    "a boca do diabo|": [
-      "prime"
-    ],
     "snoopy|": [
       "apple"
     ],
@@ -2313,9 +2294,6 @@
       "disney"
     ],
     "john wick - de volta ao jogo|": [
-      "netflix"
-    ],
-    "john wick 3 parabellum|": [
       "netflix"
     ],
     "john wick um novo dia para matar|": [
@@ -2351,9 +2329,6 @@
     "você me deixa louca|": [
       "prime"
     ],
-    "dragão|": [
-      "prime"
-    ],
     "clash of the thundermans|": [
       "paramount"
     ],
@@ -2379,9 +2354,6 @@
     ],
     "american horror story|": [
       "disney"
-    ],
-    "animal kingdom|": [
-      "netflix"
     ],
     "as aventuras do gato de botas|": [
       "globoplay"
@@ -2511,6 +2483,7 @@
       "prime"
     ],
     "s.w.a.t. força de intervenção|": [
+      "netflix",
       "disney",
       "globoplay"
     ],
@@ -2630,9 +2603,6 @@
     "cinco dias no hospital memorial|": [
       "apple"
     ],
-    "constelacao|": [
-      "apple"
-    ],
     "cortina de fumaca|": [
       "apple"
     ],
@@ -2649,9 +2619,6 @@
       "apple"
     ],
     "disclaimer|": [
-      "apple"
-    ],
-    "doug o robo curioso|": [
       "apple"
     ],
     "dr. house|": [
@@ -2711,9 +2678,6 @@
       "paramount",
       "globoplay"
     ],
-    "kingdom|": [
-      "netflix"
-    ],
     "ladroes de drogas|": [
       "apple"
     ],
@@ -2729,9 +2693,6 @@
     "monarch - legado de monstros|": [
       "apple"
     ],
-    "mulheres de azul|": [
-      "apple"
-    ],
     "mythic quest raven's banquet|": [
       "apple"
     ],
@@ -2745,9 +2706,6 @@
     "o estudio|": [
       "apple"
     ],
-    "os bandidos do tempo|": [
-      "apple"
-    ],
     "os bucaneiros|": [
       "apple"
     ],
@@ -2757,7 +2715,13 @@
     "palm royale|": [
       "apple"
     ],
+    "pequenas maravilhas|": [
+      "apple"
+    ],
     "physical|": [
+      "apple"
+    ],
+    "planeta estranho|": [
       "apple"
     ],
     "planeta pré-histórico|": [
@@ -2773,6 +2737,9 @@
       "netflix",
       "paramount"
     ],
+    "querido edward|": [
+      "apple"
+    ],
     "revenge|": [
       "disney"
     ],
@@ -2785,12 +2752,6 @@
     "scandal|": [
       "prime",
       "disney"
-    ],
-    "schmigadoon|": [
-      "apple"
-    ],
-    "schmigadoon!|": [
-      "apple"
     ],
     "see|": [
       "apple"
@@ -2852,16 +2813,10 @@
     "trying|": [
       "apple"
     ],
-    "ultimo ato|": [
-      "apple"
-    ],
     "uma maldicao de familia|": [
       "apple"
     ],
     "uma questao de quimica|": [
-      "apple"
-    ],
-    "wecrashed|": [
       "apple"
     ],
     "wondla a trilogia|": [
@@ -2907,9 +2862,6 @@
     "bones|": [
       "netflix",
       "disney"
-    ],
-    "brooklyn nine nine|": [
-      "netflix"
     ],
     "estação 19|": [
       "disney"
@@ -3001,6 +2953,9 @@
     "gravity falls_ um verão de mistérios|": [
       "disney"
     ],
+    "hannah montana|": [
+      "disney"
+    ],
     "its always sunny in philadelphia|": [
       "disney"
     ],
@@ -3036,7 +2991,6 @@
       "disney"
     ],
     "o residente|": [
-      "netflix",
       "disney"
     ],
     "os simpsons|": [
@@ -3049,9 +3003,6 @@
       "disney"
     ],
     "spidey e seus amigos espetaculares|": [
-      "disney"
-    ],
-    "star wars rebels|": [
       "disney"
     ],
     "the mandalorian|": [
@@ -3184,6 +3135,9 @@
     "os trapalhoes|": [
       "globoplay"
     ],
+    "porchat|": [
+      "globoplay"
+    ],
     "sangue azul|": [
       "paramount"
     ],
@@ -3212,17 +3166,14 @@
       "prime",
       "max"
     ],
-    "a idade dourada|": [
-      "max"
-    ],
-    "a sete palmos|": [
-      "max"
-    ],
     "a vaca e o frango|": [
       "max"
     ],
     "abbott elementary|": [
       "disney"
+    ],
+    "arlequina|": [
+      "max"
     ],
     "as terríveis aventuras de billy e mandy|": [
       "max"
@@ -3276,9 +3227,6 @@
       "prime",
       "max"
     ],
-    "george o curioso|": [
-      "max"
-    ],
     "georgie e mandy seu primeiro casamento|": [
       "max"
     ],
@@ -3313,8 +3261,7 @@
       "max"
     ],
     "o pacífico|": [
-      "prime",
-      "max"
+      "prime"
     ],
     "o show de tom e jerry|": [
       "max"
@@ -3350,7 +3297,6 @@
       "max"
     ],
     "roma|": [
-      "prime",
       "max"
     ],
     "scooby-doo_ mistério s_a|": [
@@ -3395,23 +3341,14 @@
       "prime",
       "max"
     ],
-    "true detective|": [
-      "max"
-    ],
     "um maluco no pedaço|": [
       "globoplay"
-    ],
-    "ursos sem curso|": [
-      "max"
     ],
     "veep|": [
       "max"
     ],
     "agency|": [
       "paramount"
-    ],
-    "animal|": [
-      "netflix"
     ],
     "arnold|": [
       "paramount"
@@ -3443,9 +3380,6 @@
     ],
     "billions|": [
       "paramount"
-    ],
-    "black mirror|": [
-      "netflix"
     ],
     "bojack horseman|": [
       "netflix"
@@ -3559,18 +3493,13 @@
       "paramount"
     ],
     "pj masks herois de pijama|": [
-      "max"
+      "max",
+      "disney"
     ],
     "platonico|": [
       "apple"
     ],
-    "riverdale|": [
-      "netflix"
-    ],
     "round 6|": [
-      "netflix"
-    ],
-    "sailor moon|": [
       "netflix"
     ],
     "scorpion serviço de inteligência|": [
@@ -3676,13 +3605,16 @@
     "celebridade|": [
       "globoplay"
     ],
+    "cobras & lagartos|": [
+      "globoplay"
+    ],
+    "coração de estudante|": [
+      "globoplay"
+    ],
     "da cor do pecado|": [
       "globoplay"
     ],
-    "dona de mim|": [
-      "globoplay"
-    ],
-    "fera ferida|": [
+    "eta mundo melhor|": [
       "globoplay"
     ],
     "força de um desejo|": [
@@ -3721,16 +3653,16 @@
     "mania de voce|": [
       "globoplay"
     ],
-    "morde & assopra|": [
+    "maria do bairro|": [
       "globoplay"
     ],
-    "mulheres apaixonadas|": [
-      "globoplay"
-    ],
-    "mulheres de areia|": [
+    "melhor!|": [
       "globoplay"
     ],
     "o clone|": [
+      "globoplay"
+    ],
+    "o dono do mundo|": [
       "globoplay"
     ],
     "o rei do gado|": [
@@ -3757,10 +3689,10 @@
     "roque santeiro|": [
       "globoplay"
     ],
-    "senhora do destino|": [
+    "selva de pedra|": [
       "globoplay"
     ],
-    "suave veneno|": [
+    "senhora do destino|": [
       "globoplay"
     ],
     "terra e paixão|": [
@@ -3772,7 +3704,7 @@
     "tieta|": [
       "globoplay"
     ],
-    "uga-uga|": [
+    "tres gracas|": [
       "globoplay"
     ],
     "vale tudo|": [
@@ -3822,6 +3754,9 @@
     "death note|": [
       "max"
     ],
+    "dexter sangue novo|": [
+      "paramount"
+    ],
     "drake & josh|": [
       "paramount"
     ],
@@ -3841,8 +3776,7 @@
       "disney"
     ],
     "legacies|": [
-      "prime",
-      "max"
+      "prime"
     ],
     "love - a história de lisey|": [
       "apple"
@@ -4067,7 +4001,6 @@
       "paramount"
     ],
     "seal team|": [
-      "netflix",
       "paramount"
     ],
     "south park|": [
@@ -4142,6 +4075,9 @@
     "a sonhadora|": [
       "globoplay"
     ],
+    "o canto do passaro|": [
+      "max"
+    ],
     "lobo adolescente|": [
       "netflix"
     ],
@@ -4204,6 +4140,12 @@
     "scandal os bastidores do poder|": [
       "prime",
       "disney"
+    ],
+    "a escolhida - o canto do passaro - yali capkini [dub]|": [
+      "max"
+    ],
+    "a escolhida - o canto do passaro - yali capkini [l]|": [
+      "max"
     ],
     "a sonhadora - passaro madrugador - erkenci kus [opcao 2] [dub]|": [
       "globoplay"
