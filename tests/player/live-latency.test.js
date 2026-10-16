@@ -32,6 +32,8 @@ test("config do hls.js: atraso do degrau e só pula para o ao vivo se ficar MUIT
   const cfg = c.liveLatencyHlsConfig(2);
   assert.equal(cfg.liveSyncDurationCount, 5);
   assert.equal(cfg.liveMaxLatencyDurationCount, 5 * 3 + 3);
+  assert.equal(cfg.maxBufferLength, 60);      // o teto do buffer acompanha o atraso: senão o colchão real fica em ~25 s
+  assert.equal(cfg.maxMaxBufferLength, 120);
 });
 
 test("sobe o atraso quando trava 2 s, depois de 15 s tocando, no máximo 1x a cada 20 s e até o teto", () => {

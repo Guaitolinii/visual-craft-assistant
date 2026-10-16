@@ -2358,7 +2358,8 @@ function liveLatencySync(stage) {
 // Parte do hls.js que muda com o degrau: só pula para o ao vivo se ficar MUITO atrás do alvo
 function liveLatencyHlsConfig(stage) {
   var sync = liveLatencySync(stage);
-  return { liveSyncDurationCount: sync, liveMaxLatencyDurationCount: sync * 3 + 3 };
+  // O colchão real é o que o hls.js deixa carregar: sem subir o teto do buffer junto, o atraso maior não vira folga (testado: ficava em ~25 s)
+  return { liveSyncDurationCount: sync, liveMaxLatencyDurationCount: sync * 3 + 3, maxBufferLength: sync * 12, maxMaxBufferLength: sync * 24 };
 }
 
 // Subir o atraso: parado há 2 s, depois de 15 s tocando (engasgo de abertura não conta), no máximo 1x a cada 20 s, até o teto
@@ -5536,6 +5537,8 @@ function bumpLiveLatencyStage() {
     const cfg = liveLatencyHlsConfig(currentLiveLatencyStage);
     hlsInstance.config.liveSyncDurationCount = cfg.liveSyncDurationCount;
     hlsInstance.config.liveMaxLatencyDurationCount = cfg.liveMaxLatencyDurationCount;
+    hlsInstance.config.maxBufferLength = Math.max(hlsInstance.config.maxBufferLength, cfg.maxBufferLength);
+    hlsInstance.config.maxMaxBufferLength = Math.max(hlsInstance.config.maxMaxBufferLength, cfg.maxMaxBufferLength);
   }
   console.warn("[Atraso adaptativo] Travou: o canal passa a tocar " + liveLatencySync(currentLiveLatencyStage) + " trechos atrás do ao vivo.");
 }
@@ -6114,8 +6117,8 @@ async function playStream(url) {
         lowLatencyMode: false,
         liveSyncDurationCount: liveLatencySync(currentLiveLatencyStage),
         liveMaxLatencyDurationCount: liveLatencyHlsConfig(currentLiveLatencyStage).liveMaxLatencyDurationCount,
-        maxBufferLength: stage.hlsMax,
-        maxMaxBufferLength: stage.hlsMaxMax,
+        maxBufferLength: Math.max(stage.hlsMax, liveLatencyHlsConfig(currentLiveLatencyStage).maxBufferLength),
+        maxMaxBufferLength: Math.max(stage.hlsMaxMax, liveLatencyHlsConfig(currentLiveLatencyStage).maxMaxBufferLength),
         backBufferLength: 30,
         manifestLoadingMaxRetry: webDirect ? 2 : 8, // direto: se for CORS, o erro precisa aparecer logo para cair no proxy
         fragLoadingMaxRetry: webDirect ? 3 : 8,
