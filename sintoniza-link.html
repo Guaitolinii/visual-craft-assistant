@@ -2336,6 +2336,64 @@ var MPEGTS_RESILIENCE_CONFIG = {
   autoCleanupMinBackwardDuration: 30,
 };
 
+// ─── Atraso (colchão) adaptativo dos canais ao vivo ───
+// Em canal ao vivo o buffer só cresce até a ponta do ao vivo; a folga real contra oscilação do provedor é tocar mais ATRÁS dela.
+// Mesma regra do app da TV (services/liveGuard.ts): o canal parte ~5 trechos atrás (≈50 s com trechos de 10 s) e, se travar de verdade,
+// sobe um degrau; o degrau fica guardado por canal (storage) e a regra é pura (sem DOM/timers), testável no Node.
+var LIVE_LATENCY_SYNC = [3, 4, 5, 6];
+var LIVE_LATENCY_DEFAULT_STAGE = 2;
+var LIVE_LATENCY_KEY = "sint_live_stage";
+var LIVE_LATENCY_MAX_ENTRIES = 200;
+
+function clampLiveLatencyStage(n) {
+  var v = Math.floor(Number(n));
+  if (!isFinite(v) || v < 0) return 0;
+  return Math.min(v, LIVE_LATENCY_SYNC.length - 1);
+}
+
+function liveLatencySync(stage) {
+  return LIVE_LATENCY_SYNC[clampLiveLatencyStage(stage)];
+}
+
+// Parte do hls.js que muda com o degrau: só pula para o ao vivo se ficar MUITO atrás do alvo
+function liveLatencyHlsConfig(stage) {
+  var sync = liveLatencySync(stage);
+  return { liveSyncDurationCount: sync, liveMaxLatencyDurationCount: sync * 3 + 3 };
+}
+
+// Subir o atraso: parado há 2 s, depois de 15 s tocando (engasgo de abertura não conta), no máximo 1x a cada 20 s, até o teto
+function shouldEscalateLiveLatency(o) {
+  return o.frozenSeconds >= 2 && o.msSincePlayStart >= 15000 && o.msSinceLastEscalation >= 20000 &&
+    clampLiveLatencyStage(o.stage) < LIVE_LATENCY_SYNC.length - 1;
+}
+
+function readLiveLatencyMap(storage) {
+  try {
+    var obj = JSON.parse(storage.getItem(LIVE_LATENCY_KEY) || "{}");
+    return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function readLiveLatencyStage(storage, channelKey) {
+  var v = readLiveLatencyMap(storage)[channelKey];
+  return v === undefined || v === null || !isFinite(Number(v)) ? LIVE_LATENCY_DEFAULT_STAGE : clampLiveLatencyStage(Number(v));
+}
+
+function writeLiveLatencyStage(storage, channelKey, stage) {
+  try {
+    var map = readLiveLatencyMap(storage);
+    delete map[channelKey]; // reinsere no fim: o objeto guarda a ordem (os mais recentes por último)
+    map[channelKey] = clampLiveLatencyStage(stage);
+    var keys = Object.keys(map);
+    if (keys.length > LIVE_LATENCY_MAX_ENTRIES) {
+      keys.slice(0, keys.length - LIVE_LATENCY_MAX_ENTRIES).forEach(function (k) { delete map[k]; });
+    }
+    storage.setItem(LIVE_LATENCY_KEY, JSON.stringify(map));
+  } catch (e) { /* sem espaço ou bloqueado: o degrau só vale nesta abertura */ }
+}
+
 // Exponential backoff with jitter for HLS NETWORK_ERROR retries. Without
 // this, hls.js's NETWORK_ERROR handler called startLoad() immediately on
 // every fatal network error - if the origin is truly down, that hammers it
@@ -5457,6 +5515,30 @@ const BUFFER_STAGES = [
   { seconds: 60, hlsMax: 60, hlsMaxMax: 120, mpegBufSec: 60 },
 ];
 let currentBufferStageIndex = 0; // Começa sempre no padrão 25s (MPEG-TS) / 20s (HLS)
+// Atraso (colchão) do canal ao vivo atual: degrau guardado por canal (ver LIVE_LATENCY_* no resilience-helpers)
+let currentLiveLatencyStage = LIVE_LATENCY_DEFAULT_STAGE;
+let liveLatencyLastEscalation = 0;
+let liveLatencyLastTrouble = 0; // último problema: 20 min sem nenhum e o atraso do canal desce um degrau
+let livePlayStartedAt = 0;      // quando a imagem do canal atual começou a andar (0 = ainda não)
+function liveLatencyChannelKey() {
+  const ch = _state && _state.selected;
+  return ch ? String(ch.id != null ? ch.id : ch.name || "") : "";
+}
+// Travou de verdade: sobe o atraso do canal (vale na hora no hls.js em uso e fica guardado para as próximas aberturas)
+function bumpLiveLatencyStage() {
+  if (currentLiveLatencyStage >= LIVE_LATENCY_SYNC.length - 1) return;
+  currentLiveLatencyStage++;
+  liveLatencyLastEscalation = Date.now();
+  liveLatencyLastTrouble = liveLatencyLastEscalation;
+  const key = liveLatencyChannelKey();
+  if (key) writeLiveLatencyStage(localStorage, key, currentLiveLatencyStage);
+  if (hlsInstance && hlsInstance.config) {
+    const cfg = liveLatencyHlsConfig(currentLiveLatencyStage);
+    hlsInstance.config.liveSyncDurationCount = cfg.liveSyncDurationCount;
+    hlsInstance.config.liveMaxLatencyDurationCount = cfg.liveMaxLatencyDurationCount;
+  }
+  console.warn("[Atraso adaptativo] Travou: o canal passa a tocar " + liveLatencySync(currentLiveLatencyStage) + " trechos atrás do ao vivo.");
+}
 
 function escalateBufferStage() {
   if (currentBufferStageIndex < BUFFER_STAGES.length - 1) {
@@ -5706,6 +5788,13 @@ function startWatchdog(url) {
 
     if (timeProgressed || framesProgressed) {
       // Reprodução saudável
+      if (!livePlayStartedAt) livePlayStartedAt = Date.now();
+      if (currentLiveLatencyStage > LIVE_LATENCY_DEFAULT_STAGE && Date.now() - liveLatencyLastTrouble > 20 * 60 * 1000) {
+        currentLiveLatencyStage--; // 20 min sem nenhum problema: uma travada isolada não deixa o canal atrasado para sempre
+        liveLatencyLastTrouble = Date.now();
+        const kd = liveLatencyChannelKey();
+        if (kd) writeLiveLatencyStage(localStorage, kd, currentLiveLatencyStage);
+      }
       watchdogLastTime = curTime;
       watchdogLastFrames = curFrames;
       watchdogFrozenSeconds = 0;
@@ -5755,6 +5844,11 @@ function startWatchdog(url) {
       // Paralisado no mesmo quadro
       watchdogFrozenSeconds++;
       if (video.readyState < 3) watchdogWaitingSeconds++;
+      // Só HLS ao vivo: imagem parada de verdade sobe o atraso do canal (o buffer sozinho não cresce além do ao vivo)
+      if (hlsInstance && livePlayStartedAt && shouldEscalateLiveLatency({
+        frozenSeconds: watchdogFrozenSeconds, msSincePlayStart: Date.now() - livePlayStartedAt,
+        msSinceLastEscalation: Date.now() - liveLatencyLastEscalation, stage: currentLiveLatencyStage,
+      })) bumpLiveLatencyStage();
 
       console.warn(`[Watchdog] Congelamento: ${watchdogFrozenSeconds}s (waiting: ${watchdogWaitingSeconds}s)`);
 
@@ -5956,6 +6050,11 @@ async function playStream(url) {
 
   // Aplica o degrau de buffer atual (15s base -> 20s -> 30s -> 45s -> 60s)
   const stage = BUFFER_STAGES[currentBufferStageIndex];
+  // Atraso adaptativo: o degrau guardado deste canal (sobe sozinho se ele travar); a contagem do início da imagem recomeça a cada (re)carga
+  const chaveAtraso = liveLatencyChannelKey();
+  currentLiveLatencyStage = chaveAtraso ? readLiveLatencyStage(localStorage, chaveAtraso) : LIVE_LATENCY_DEFAULT_STAGE;
+  livePlayStartedAt = 0;
+  liveLatencyLastTrouble = Date.now();
 
   // Detecta formato inteligente & probe HLS
   const streamInfo = await detectStreamType(url);
@@ -6013,8 +6112,8 @@ async function playStream(url) {
       hlsInstance = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 8,
+        liveSyncDurationCount: liveLatencySync(currentLiveLatencyStage),
+        liveMaxLatencyDurationCount: liveLatencyHlsConfig(currentLiveLatencyStage).liveMaxLatencyDurationCount,
         maxBufferLength: stage.hlsMax,
         maxMaxBufferLength: stage.hlsMaxMax,
         backBufferLength: 30,
@@ -6362,7 +6461,7 @@ function shouldApplyResume(target, duration) {
 // do servidor (sondagem HEAD) e o que o aparelho diz suportar num texto
 // que o usuário copia e manda. Nenhuma URL entra no texto: as do Xtream
 // carregam usuário e senha.
-const APP_VERSION = "v20";
+const APP_VERSION = "v22";
 
 function sanitizeDiagnosticText(text) {
   return String(text || "").replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]").trim();
