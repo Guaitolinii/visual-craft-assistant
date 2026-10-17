@@ -2486,6 +2486,94 @@ function createReconnectCircuitBreaker(opts) {
     },
   };
 }
+
+// ─── Categorias VOD e Canais: remoção de adultos e prioridade de streaming ───
+function normalizeCategoryName(name) {
+  if (typeof name !== "string") return "";
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+var ADULT_CATEGORY_REGEX = /(?:adult|xxx|\+\s*18|18\s*\+|porn|erotic|onlyfans|hentai|\bsexo\b|\bsexy\b|bela da semana)/;
+
+function isAdultCategory(name) {
+  var norm = normalizeCategoryName(name);
+  if (!norm) return false;
+  return ADULT_CATEGORY_REGEX.test(norm);
+}
+
+var STREAMING_PRIORITY = [
+  /netflix/,
+  /amazon|\bprime\b/,
+  /\bmax\b|hbo/,
+  /disney/,
+  /apple/,
+  /globoplay/,
+  /paramount/,
+  /star\+|star plus/,
+  /discovery/,
+  /crunchyroll/,
+  /telecine/,
+  /\bclaro\b/,
+  /universal/,
+  /pluto/,
+  /mgm/,
+  /hulu/,
+  /peacock/,
+  /lionsgate/,
+  /looke/,
+  /mubi/
+];
+
+function streamingRank(name) {
+  var norm = normalizeCategoryName(name);
+  if (!norm) return -1;
+  for (var i = 0; i < STREAMING_PRIORITY.length; i++) {
+    if (STREAMING_PRIORITY[i].test(norm)) return i;
+  }
+  return -1;
+}
+
+function orderCategories(cats, nameOf) {
+  if (!Array.isArray(cats)) return [];
+  var getName = typeof nameOf === "function" ? nameOf : function (c) {
+    if (typeof c === "string") return c;
+    if (c && typeof c === "object") return c.category_name || c.name || "";
+    return "";
+  };
+  var streamings = [];
+  var others = [];
+  for (var i = 0; i < cats.length; i++) {
+    var item = cats[i];
+    var name = getName(item);
+    if (isAdultCategory(name)) continue;
+    var rank = streamingRank(name);
+    if (rank >= 0) {
+      streamings.push({ item: item, rank: rank, origIndex: i });
+    } else {
+      others.push(item);
+    }
+  }
+  streamings.sort(function (a, b) {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.origIndex - b.origIndex;
+  });
+  var result = [];
+  for (var s = 0; s < streamings.length; s++) {
+    result.push(streamings[s].item);
+  }
+  for (var o = 0; o < others.length; o++) {
+    result.push(others[o]);
+  }
+  return result;
+}
+
+function filterAdultChannels(channels) {
+  if (!Array.isArray(channels)) return [];
+  return channels.filter(function (ch) {
+    if (!ch || !ch.category) return true;
+    return !isAdultCategory(ch.category);
+  });
+}
 </script>
 
 <script id="epg-helpers">
@@ -5273,7 +5361,7 @@ async function loadPlaylistFromUrl(url) {
     const res = isWebApp() ? await webFetchRouted(url, { cache: "no-cache" }) : await fetch(proxyIfInsecure(url), { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
-    const channels = parseM3U(text);
+    const channels = filterAdultChannels(parseM3U(text));
 
     if (channels.length === 0) throw new Error("Lista vazia ou formato inválido");
 
@@ -5307,7 +5395,7 @@ async function loadPlaylistFromFile(file) {
 
   try {
     const text = await file.text();
-    const channels = parseM3U(text);
+    const channels = filterAdultChannels(parseM3U(text));
     if (channels.length === 0) throw new Error("Arquivo vazio ou inválido");
     const cats = [...new Set(channels.map(c => c.category))].sort();
     setState({ channels, categories: cats, loadingPlaylist: false, selected: keepSelectionIfPresent(_state.selected, channels) }, true);
@@ -8463,7 +8551,7 @@ function vodFetchCategories(creds, isSeries) {
     const res = await vodApiFetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
-    return Array.isArray(raw) ? raw.map(sanitizeVodItem) : raw;
+    return Array.isArray(raw) ? orderCategories(raw.map(sanitizeVodItem), (c) => c.category_name) : raw;
   });
 }
 
