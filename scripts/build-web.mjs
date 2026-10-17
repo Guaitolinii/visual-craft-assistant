@@ -96,7 +96,9 @@ export async function buildWeb({ outDir, offline = false, cacheDir, vendorFile, 
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
     '<meta name="apple-mobile-web-app-title" content="Sintoniza">',
     '<link rel="apple-touch-icon" sizes="180x180" href="/app/icons/icon-180.png">',
-    '<link rel="icon" type="image/png" sizes="32x32" href="/app/icons/favicon-32.png">',
+    // ícone da aba = o mesmo do site (/favicon.svg e /favicon.png, sem fundo); o favicon-32.png antigo tinha fundo e ficava pequeno
+    '<link rel="icon" type="image/svg+xml" href="/favicon.svg">',
+    '<link rel="icon" type="image/png" href="/favicon.png">',
   ];
   if (!/^[ \t]*<script>/m.test(html)) throw new Error("build-web: nenhum <script> embutido encontrado no sintoniza-link.html");
   html = html.replace(/^([ \t]*)<script>/m, (m, ind) => tags.map((t) => `${ind}${t}\n`).join("") + m);
