@@ -90,6 +90,10 @@ export async function buildWeb({ outDir, offline = false, cacheDir, vendorFile, 
   // (c) tags de PWA/iOS antes do primeiro <script> embutido
   const tags = [
     '<link rel="manifest" href="/app/manifest.webmanifest">',
+    // Provedores IPTV redirecionam o link (https) por servidores http: o navegador bloquearia ("conteúdo misto") e o vídeo passaria pelo proxy
+    // do site, cujos IPs compartilhados o provedor limita (10 conexões, depois 429). Com esta política o navegador promove esses saltos
+    // para https (os servidores aceitam) e o canal chega direto. Medido no Chrome com o xjet.fun: sem a política "Failed to fetch", com ela 200.
+    '<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">',
     '<meta name="theme-color" content="#08080D">',
     '<meta name="apple-mobile-web-app-capable" content="yes">',
     '<meta name="mobile-web-app-capable" content="yes">',

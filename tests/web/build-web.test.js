@@ -26,6 +26,9 @@ test("o app web sai em /app/ com manifest, service worker e ícones", () => {
 test("tags de PWA e iOS", () => {
   assert.match(html, /<link rel="manifest" href="\/app\/manifest\.webmanifest">/);
   assert.match(html, /<meta name="theme-color" content="#08080D">/);
+  // redirecionamentos https→http dos provedores viram https no navegador (canal direto, sem proxy); vem antes do 1º <script>
+  assert.match(html, /<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">/);
+  assert.ok(html.indexOf('upgrade-insecure-requests') < html.indexOf('<script>'), "a política tem que vir antes do primeiro script");
   assert.match(html, /<meta name="apple-mobile-web-app-capable" content="yes">/);
   assert.match(html, /<meta name="mobile-web-app-capable" content="yes">/);
   assert.match(html, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/);
