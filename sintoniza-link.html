@@ -5623,6 +5623,27 @@ function proxyIfInsecure(url) {
   return `${proxyBase.replace(/\/$/, "")}/stream?url=${encodeURIComponent(url)}`;
 }
 
+// Hosts em que o "espelho" .m3u8 de um canal .ts devolveu 200 mas NÃO era um manifesto (o xjet.fun entrega o mesmo MPEG-TS): a sondagem não se
+// repete a cada canal (cada uma abre uma conexão no provedor, e ele limita as conexões vindas do proxy). Vale 6 h, no máximo 100 hosts.
+const PROBE_NOHLS_KEY = "sint_probe_nohls";
+const PROBE_NOHLS_MS = 6 * 3600 * 1000;
+function probeNoHlsLoad() {
+  try { const m = JSON.parse(localStorage.getItem(PROBE_NOHLS_KEY) || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; }
+}
+function probeNoHlsKnown(url) {
+  const t = probeNoHlsLoad()[webHost(url)];
+  return typeof t === "number" && Date.now() - t < PROBE_NOHLS_MS;
+}
+function probeNoHlsMark(url) {
+  const h = webHost(url);
+  if (!h || h === "__proto__") return;
+  const m = probeNoHlsLoad();
+  m[h] = Date.now();
+  const ks = Object.keys(m);
+  if (ks.length > 100) ks.sort((a, b) => m[a] - m[b]).slice(0, ks.length - 100).forEach((k) => { delete m[k]; });
+  lsSet(PROBE_NOHLS_KEY, JSON.stringify(m));
+}
+
 // ─── Detecção Inteligente de Stream & Dual-Stack HLS Probe ───
 // Em listas IPTV (Xtream Codes/XUI), links .ts quase sempre têm espelho .m3u8 no mesmo servidor.
 // O HLS baixa blocos em paralelo e mantém o buffer de 15s-60s sem nunca esgotar.
@@ -5647,6 +5668,7 @@ async function detectStreamType(url) {
   // Se for .ts, realiza teste rápido (probe de 800ms) para verificar se o servidor IPTV aceita .m3u8
   if (clean.endsWith('.ts')) {
     const hlsAlternative = url.replace(/\.ts($|\?)/i, '.m3u8$1');
+    if (probeNoHlsKnown(url)) return { type: "mpegts", url }; // este host já mostrou que o .m3u8 é o mesmo MPEG-TS: não gasta outra conexão sondando
     try {
       const controller = new AbortController();
       const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 6000 : 800); // no app web cobre a tentativa direta (2,5 s) e a do proxy
@@ -5665,6 +5687,7 @@ async function detectStreamType(url) {
       }
       clearTimeout(probeTimer);
       controller.abort(); // fecha a conexão (um fluxo contínuo não pode ficar aberto)
+      if (probeRes.ok && !ehManifesto) probeNoHlsMark(url); // respondeu 200 mas não é manifesto: lembra por 6 h
       if (ehManifesto) {
         console.log(`[StreamProbe] Canal .ts possui espelho HLS ativo! Promovendo para HLS com buffer inesgotável.`);
         return { type: "hls", url: hlsAlternative };
@@ -6079,6 +6102,7 @@ async function playStream(url) {
   let webDirect = false; // hls.js/mpegts.js tocando direto: se falhar antes de tocar, recomeça pelo proxy
   let webStarted = false; // já chegou dado do provedor direto (o CORS funciona)
   let webFellBack = false; // o recomeço pelo proxy só acontece uma vez
+  let webResolvedDirect = false; // MPEG-TS tocando o endereço final (resolvido pelo proxy) direto: se não tocar, o recomeço usa o proxy de vez
   let webNative = null; // Safari nativo (<video src> com HLS): { src, direct, forced }
   if (!isWebApp()) {
     playUrl = proxyIfInsecure(streamInfo.url);
@@ -6096,7 +6120,13 @@ async function playStream(url) {
       webDirect = plan.direct;
     }
   } else if (streamInfo.type === "mpegts") {
-    const plan = webStreamPlan(streamInfo.url);
+    let plan = webStreamPlan(streamInfo.url);
+    if (!plan.direct && plan.src !== streamInfo.url) {
+      // ia pelo proxy: antes tenta o endereço final (https) direto, que não prende conexão do provedor no proxy
+      const final = await webResolveFinal(streamInfo.url);
+      if (gen !== playbackGeneration) return; // outra reprodução começou durante a resolução
+      if (final) { plan = { src: final, direct: true }; webResolvedDirect = true; }
+    }
     playUrl = plan.src;
     webDirect = plan.direct;
   } else {
@@ -6372,6 +6402,7 @@ async function playStream(url) {
           if (isReloadingStream) return;
           if (webDirect && !webStarted && !webFellBack && errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
             webFellBack = true;
+            if (webResolvedDirect) _webResolveFail.set(streamInfo.url, Date.now()); // o endereço final não tocou: o recomeço vai direto ao proxy
             webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto antes de chegar dado: recomeça uma vez pelo proxy
             return;
           }
@@ -6589,7 +6620,17 @@ function tryDirectPlay(url, video, attempt, generation, forceProxy) {
   attempt = attempt || 1;
   const gen = generation != null ? generation : playbackGeneration;
   if (gen !== playbackGeneration) return; // uma reprodução mais nova assumiu
+  if (!isWebApp()) { tryDirectPlayWith(url, video, attempt, gen, forceProxy, { src: url, direct: false }); return; }
+  const media = webMediaSrc(url, forceProxy === true);
+  if (media.direct) { tryDirectPlayWith(url, video, attempt, gen, forceProxy, media); return; }
+  // ia pelo proxy: antes tenta o endereço final (https) direto, que não prende conexão do provedor no proxy (ver webResolveFinal)
+  webResolveFinal(url).then((final) => {
+    if (gen !== playbackGeneration) return;
+    tryDirectPlayWith(url, video, attempt, gen, forceProxy, final ? { src: final, direct: true, resolved: true } : media);
+  });
+}
 
+function tryDirectPlayWith(url, video, attempt, gen, forceProxy, media) {
   const loaderText = document.querySelector("#player-loader p");
   if (loaderText) {
     loaderText.textContent = attempt === 1
@@ -6599,8 +6640,8 @@ function tryDirectPlay(url, video, attempt, generation, forceProxy) {
 
   if (attempt > 1) releaseVideoElement(video);
   // App web (v16): <video src> não exige CORS, então tenta o provedor direto (https) e só usa o proxy se for http, se a memória do
-  // host disser "p" ou se o direto falhar (a URL original segue nas regras de extensão e diagnóstico)
-  const media = isWebApp() ? webMediaSrc(url, forceProxy === true) : { src: url, direct: false };
+  // host disser "p" ou se o direto falhar (a URL original segue nas regras de extensão e diagnóstico). A escolha (media) vem de tryDirectPlay:
+  // direto, endereço final resolvido (media.resolved, https direto) ou proxy
   video.src = media.src;
 
   let settled = false;
@@ -6627,6 +6668,7 @@ function tryDirectPlay(url, video, attempt, generation, forceProxy) {
     }
     if (media.direct) {
       // O direto falhou antes de tocar: UMA troca para o proxy, logo, na mesma tentativa ("p" só é gravado se o proxy tocar)
+      if (media.resolved) _webResolveFail.set(url, Date.now()); // o endereço final não tocou: a próxima escolha é o proxy de vez
       webCount("fallback", webHost(url));
       releaseVideoElement(video);
       tryDirectPlay(url, video, attempt, gen, true);
@@ -6654,7 +6696,8 @@ function tryDirectPlay(url, video, attempt, generation, forceProxy) {
     clearTimeout(attemptTimer);
     video.removeEventListener("error", onVideoError);
     if (gen !== playbackGeneration) return;
-    if (media.direct) webCount("direto", webHost(url));
+    if (media.resolved) { webCount("direto", webHost(url)); webMemSet(url, "media", "p"); } // o direto original não toca neste host (http no meio): da próxima vai direto à resolução
+    else if (media.direct) webCount("direto", webHost(url));
     else if (media.forced) webMemSet(url, "media", "p"); // o proxy tocou onde o direto falhou: lembra o host
     hidePlayerLoader();
     showPlayerVideo();
@@ -7162,6 +7205,56 @@ function webStreamPlan(url) {
     return { src: proxied, direct: false };
   }
   return { src: url, direct: true };
+}
+
+// ─── Endereço final de links que redirecionam (xjet.fun: https → http → http), tocado DIRETO no navegador ───
+// Um provedor assim não deixa o app tocar direto (o redirecionamento cai em http, "conteúdo misto") e, pelo proxy do site, o vídeo
+// inteiro passa pelos IPs compartilhados da Cloudflare: o xjet.fun aceita só 10 conexões simultâneas por IP e devolve 429 depois disso
+// (medido). O proxy com k=resolve só segue os redirecionamentos e devolve o endereço final (sem baixar vídeo); se esse destino aceita
+// https (porta 80 vira https, nome de domínio; IP puro não tem certificado) o navegador toca direto, sem passar vídeo pelo proxy.
+// Qualquer falha cai no proxy normal. O endereço final não é preso ao IP de quem o pediu (testado de IPv4 para IPv6).
+const _webResolved = new Map(); // url -> { final, t }
+const _webResolveFail = new Map(); // url -> t da última vez que o endereço resolvido não tocou (por 10 min vai direto ao proxy)
+const WEB_RESOLVE_TTL_MS = 60000;
+const WEB_RESOLVE_FAIL_MS = 600000;
+
+function webUpgradeToHttps(finalUrl) {
+  let u;
+  try { u = new URL(String(finalUrl == null ? "" : finalUrl)); } catch (e) { return null; }
+  if (u.protocol === "https:") return u.href;
+  if (u.protocol !== "http:" || (u.port !== "" && u.port !== "80")) return null;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname) || u.hostname.indexOf(":") >= 0) return null; // IP puro: sem certificado válido
+  u.protocol = "https:";
+  u.port = "";
+  return u.href;
+}
+
+function webResolveFailed(url) {
+  const t = _webResolveFail.get(url);
+  return !!t && Date.now() - t < WEB_RESOLVE_FAIL_MS;
+}
+
+async function webResolveFinal(url) {
+  if (!isWebApp() || webResolveFailed(url)) return null;
+  const hit = _webResolved.get(url);
+  if (hit && Date.now() - hit.t < WEB_RESOLVE_TTL_MS) return hit.final;
+  const pedido = webUrl(url, "resolve");
+  if (pedido === url) return null; // sem token do aparelho ou destino próprio
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const res = await fetch(pedido, { cache: "no-store", signal: ctl.signal });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const final = j && j.status === 200 && j.url && j.url !== url ? webUpgradeToHttps(j.url) : null;
+    if (_webResolved.size > 50) _webResolved.clear();
+    _webResolved.set(url, { final, t: Date.now() });
+    return final;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Mídia em <video src> (filme/episódio; HLS nativo do Safari com kind "hls"): direto, a menos que a memória ou o http mandem proxy.

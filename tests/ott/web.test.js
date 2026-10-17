@@ -288,7 +288,8 @@ test("todo acesso a provedor no app web passa por webFetchRouted/webUrl (lista, 
   assert.match(html, /webFetchRouted\(url, headInit, undefined, \{ directTimeoutMs: 2500 \}\)/);
   assert.match(html, /webFetchRouted\(url, probeInit, undefined, \{ directTimeoutMs: 3000 \}\)/);
   // mídia e streams: o plano de rota decide direto x proxy
-  assert.match(html, /const media = isWebApp\(\) \? webMediaSrc\(url, forceProxy === true\) : \{ src: url, direct: false \};/);
+  assert.match(html, /const media = webMediaSrc\(url, forceProxy === true\);/); // tryDirectPlay (a escolha vai para tryDirectPlayWith, com a resolução do endereço final)
+  assert.match(html, /if \(!isWebApp\(\)\) \{ tryDirectPlayWith\(url, video, attempt, gen, forceProxy, \{ src: url, direct: false \}\); return; \}/);
   assert.match(html, /await webHlsPlan\(streamInfo\.url\)/);
   assert.match(html, /webStreamPlan\(streamInfo\.url\)/);
   assert.match(html, /webMediaSrc\(streamInfo\.url, false, "hls"\)/);
@@ -297,6 +298,32 @@ test("todo acesso a provedor no app web passa por webFetchRouted/webUrl (lista, 
   assert.doesNotMatch(html, /fetch\(isWebApp\(\) \? webUrl\(/);
   assert.doesNotMatch(html, /fetch\(webUrl\(/);
   assert.doesNotMatch(html, /video\.src = isWebApp\(\) \? webUrl\(/);
+});
+
+test("endereço final resolvido pelo proxy (k=resolve): só vira https o que tem certificado possível; o resto fica no proxy", async () => {
+  const vm = await import("node:vm");
+  const i = html.indexOf("function webUpgradeToHttps(");
+  assert.ok(i > 0, "falta webUpgradeToHttps");
+  const fim = i + html.slice(i).search(/\r?\n\}\r?\n/) + 3; // o arquivo pode ter quebra de linha CRLF
+  const ctx = vm.createContext({ URL });
+  vm.runInContext(html.slice(i, fim) + "\n;this.f = webUpgradeToHttps;", ctx);
+  const up = (u) => ctx.f(u);
+  assert.equal(up("http://s2.fofura.top:80/auth/abc"), "https://s2.fofura.top/auth/abc"); // porta 80 → https sem porta
+  assert.equal(up("http://vod.exemplo.fun/Filmes/a.mp4"), "https://vod.exemplo.fun/Filmes/a.mp4");
+  assert.equal(up("https://ja.https.exemplo/x.ts"), "https://ja.https.exemplo/x.ts");
+  assert.equal(up("http://209.14.88.180/x.mp4"), null); // IP puro não tem certificado válido
+  assert.equal(up("http://exemplo.com:8080/x.ts"), null); // porta diferente de 80: não adivinha
+  assert.equal(up("lixo"), null);
+  assert.equal(up(undefined), null);
+  // o proxy resolve (k=resolve) e o app só usa isso fora do plano direto; falha do endereço final cai no proxy normal
+  assert.match(html, /const pedido = webUrl\(url, "resolve"\);/);
+  assert.match(html, /const final = await webResolveFinal\(streamInfo\.url\);/);
+  assert.match(html, /if \(webResolvedDirect\) _webResolveFail\.set\(streamInfo\.url, Date\.now\(\)\);/);
+  assert.match(html, /webResolveFinal\(url\)\.then\(\(final\) => \{/);
+  assert.match(html, /if \(media\.resolved\) _webResolveFail\.set\(url, Date\.now\(\)\);/);
+  // a sondagem do espelho .m3u8 não se repete por canal depois que o host mostrou que não tem HLS
+  assert.match(html, /if \(probeNoHlsKnown\(url\)\) return \{ type: "mpegts", url \};/);
+  assert.match(html, /if \(probeRes\.ok && !ehManifesto\) probeNoHlsMark\(url\);/);
 });
 
 test("v16: a memória por host é gravada com lsSet em sint_web_hosts; os contadores ficam em window.__sintWeb", () => {
