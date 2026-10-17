@@ -277,8 +277,13 @@ test("todo acesso a provedor no app web passa por webFetchRouted/webUrl (lista, 
   assert.match(html, /isWebApp\(\) \? await webFetchRouted\(epgUrl, \{ cache: "no-store" \}\) : await fetch\(proxyIfInsecure\(epgUrl\), \{ cache: "no-store" \}\)/);
   assert.match(html, /const proxied = web \? EPGSHARE01_URL : proxyForCors\(EPGSHARE01_URL\)/);
   assert.match(html, /routed \? await webFetchRouted\(url, \{ cache: "no-store" \}\) : await fetch\(url, \{ cache: "no-store" \}\)/);
-  assert.equal((html.match(/await webFetchRouted\(url\);/g) || []).length, 2); // categorias e itens do catálogo
-  assert.match(html, /await webFetchRouted\(xtreamApiUrl\(creds, "get_series_info"/);
+  // catálogo Xtream (categorias, itens, info de série): tudo passa por vodApiFetch, que chama webFetchRouted uma vez só, limita a
+  // concorrência e repete 429/5xx (o xjet.fun devolvia 500/429 quando as 38 categorias saíam de uma vez)
+  assert.equal((html.match(/await webFetchRouted\(url\);/g) || []).length, 1);
+  assert.equal((html.match(/await vodApiFetch\(url\);/g) || []).length, 2); // categorias e itens do catálogo
+  assert.match(html, /await vodApiFetch\(xtreamApiUrl\(creds, "get_series_info"/);
+  assert.match(html, /const VOD_API_CONCURRENCY = 4;/);
+  assert.match(html, /if \(\(res\.status !== 429 && res\.status < 500\) \|\| n >= VOD_API_RETRY_MS\.length\) return res;/);
   assert.match(html, /webFetchRouted\(hlsAlternative, probeInit, "hls", \{ directTimeoutMs: 2500 \}\)/);
   assert.match(html, /webFetchRouted\(url, headInit, undefined, \{ directTimeoutMs: 2500 \}\)/);
   assert.match(html, /webFetchRouted\(url, probeInit, undefined, \{ directTimeoutMs: 3000 \}\)/);
