@@ -7217,6 +7217,7 @@ const _webResolved = new Map(); // url -> { final, t }
 const _webResolveFail = new Map(); // url -> t da última vez que o endereço resolvido não tocou (por 10 min vai direto ao proxy)
 const WEB_RESOLVE_TTL_MS = 60000;
 const WEB_RESOLVE_FAIL_MS = 600000;
+const WEB_RESOLVE_RETRY_MS = [700, 1500];
 
 function webUpgradeToHttps(finalUrl) {
   let u;
@@ -7240,21 +7241,34 @@ async function webResolveFinal(url) {
   if (hit && Date.now() - hit.t < WEB_RESOLVE_TTL_MS) return hit.final;
   const pedido = webUrl(url, "resolve");
   if (pedido === url) return null; // sem token do aparelho ou destino próprio
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 12000);
-  try {
-    const res = await fetch(pedido, { cache: "no-store", signal: ctl.signal });
-    if (!res.ok) return null;
-    const j = await res.json();
-    const final = j && j.status === 200 && j.url && j.url !== url ? webUpgradeToHttps(j.url) : null;
-    if (_webResolved.size > 50) _webResolved.clear();
-    _webResolved.set(url, { final, t: Date.now() });
-    return final;
-  } catch (e) {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  for (let tentativa = 0; tentativa <= WEB_RESOLVE_RETRY_MS.length; tentativa++) {
+    if (tentativa > 0) {
+      if (webResolveFailed(url)) return null;
+      await new Promise((resolve) => setTimeout(resolve, WEB_RESOLVE_RETRY_MS[tentativa - 1]));
+      if (webResolveFailed(url)) return null;
+    }
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12000);
+    try {
+      const res = await fetch(pedido, { cache: "no-store", signal: ctl.signal });
+      if (!res.ok) return null;
+      const j = await res.json();
+      if (j && (j.status === 429 || j.status >= 500)) {
+        continue; // provedor limitou conexões ou erro no último salto: repete
+      }
+      const final = j && j.status === 200 && j.url && j.url !== url ? webUpgradeToHttps(j.url) : null;
+      if (final) {
+        if (_webResolved.size > 50) _webResolved.clear();
+        _webResolved.set(url, { final, t: Date.now() });
+      }
+      return final;
+    } catch (e) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return null;
 }
 
 // Mídia em <video src> (filme/episódio; HLS nativo do Safari com kind "hls"): direto, a menos que a memória ou o http mandem proxy.

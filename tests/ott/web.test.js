@@ -477,3 +477,211 @@ test("se o nativo falhou neste canal, volta para o hls.js (uma vez)", () => {
   const o = loadOtt();
   assert.equal(o.ottWebPreferNativeHls(true, true, true), false);
 });
+
+// ── webResolveFinal: repetição em 429/5xx no último salto (provedor limitando conexão) ──
+test("webResolveFinal: constante WEB_RESOLVE_RETRY_MS existe com [700, 1500]", () => {
+  assert.match(html, /const\s+WEB_RESOLVE_RETRY_MS\s*=\s*\[\s*700\s*,\s*1500\s*\];/);
+});
+
+const makeResolveRunner = async (opts = {}) => {
+  const vm = await import("node:vm");
+  const i = html.indexOf("const _webResolved = new Map();");
+  assert.ok(i > 0, "falta _webResolved");
+  const fim = html.indexOf("// Mídia em <video src>");
+  assert.ok(fim > i, "falta fim do bloco webResolveFinal");
+  const code = html.slice(i, fim);
+
+  const fetchCalls = [];
+  const delays = [];
+  const queue = [...(opts.responses || [])];
+
+  const ctx = vm.createContext({
+    isWebApp: () => (opts.isWebApp !== undefined ? opts.isWebApp : true),
+    webUrl: opts.webUrl || ((u, k) => "/api/proxy?k=" + k + "&u=" + encodeURIComponent(u)),
+    fetch: async (u, reqOpts) => {
+      fetchCalls.push({ u, reqOpts });
+      if (opts.fetchThrows) throw new Error("rede indisponível");
+      const next = queue.shift();
+      if (!next) throw new Error("sem resposta no stub");
+      if (next instanceof Error) throw next;
+      return next;
+    },
+    AbortController,
+    setTimeout: (fn, ms) => {
+      delays.push(ms);
+      if (ms >= 5000) return 0;
+      if (typeof opts.onTimeout === "function") opts.onTimeout(ms, delays.length);
+      fn();
+      return 0;
+    },
+    clearTimeout: () => {},
+    Date,
+    Map,
+    URL,
+    JSON,
+    Promise,
+  });
+
+  vm.runInContext(code + "\n;this.webResolveFinal = webResolveFinal; this._webResolved = _webResolved; this._webResolveFail = _webResolveFail;", ctx);
+  return { ctx, fetchCalls, delays };
+};
+
+test("webResolveFinal: 429, 429 e depois 200 repete 2 vezes e devolve https (3 chamadas)", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const okJson = { status: 200, url: "http://s2.exemplo.top:80/auth/x" };
+  const { ctx, fetchCalls, delays } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => okJson },
+    ],
+  });
+  const res = await ctx.webResolveFinal(url);
+  assert.equal(res, "https://s2.exemplo.top/auth/x");
+  assert.equal(fetchCalls.length, 3);
+  assert.deepEqual(delays.filter((ms) => ms < 5000), [700, 1500]);
+});
+
+test("webResolveFinal: 200 na primeira tentativa devolve https e usa cache na segunda (1 chamada no total)", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const okJson = { status: 200, url: "http://s2.exemplo.top:80/auth/x" };
+  const { ctx, fetchCalls } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => okJson },
+    ],
+  });
+  const res1 = await ctx.webResolveFinal(url);
+  assert.equal(res1, "https://s2.exemplo.top/auth/x");
+  assert.equal(fetchCalls.length, 1);
+  const res2 = await ctx.webResolveFinal(url);
+  assert.equal(res2, "https://s2.exemplo.top/auth/x");
+  assert.equal(fetchCalls.length, 1);
+});
+
+test("webResolveFinal: 429 nas 3 tentativas devolve null e não grava cache (total 6 chamadas em 2 invocações)", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const { ctx, fetchCalls } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 429, url }) },
+    ],
+  });
+  const res1 = await ctx.webResolveFinal(url);
+  assert.equal(res1, null);
+  assert.equal(fetchCalls.length, 3);
+  assert.equal(ctx._webResolved.has(url), false);
+
+  const res2 = await ctx.webResolveFinal(url);
+  assert.equal(res2, null);
+  assert.equal(fetchCalls.length, 6);
+  assert.equal(ctx._webResolved.has(url), false);
+});
+
+test("webResolveFinal: 404 do último salto devolve null sem repetir (1 chamada)", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const { ctx, fetchCalls } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 404, url }) },
+    ],
+  });
+  const res = await ctx.webResolveFinal(url);
+  assert.equal(res, null);
+  assert.equal(fetchCalls.length, 1);
+});
+
+test("webResolveFinal: res.ok === false (proxy fora) devolve null sem repetir (1 chamada)", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const { ctx, fetchCalls } = await makeResolveRunner({
+    responses: [
+      { ok: false, status: 502, json: async () => ({}) },
+    ],
+  });
+  const res = await ctx.webResolveFinal(url);
+  assert.equal(res, null);
+  assert.equal(fetchCalls.length, 1);
+});
+
+test("webResolveFinal: resposta com url igual à de entrada ou IP puro devolve null", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const { ctx: ctx1 } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 200, url }) },
+    ],
+  });
+  assert.equal(await ctx1.webResolveFinal(url), null);
+
+  const { ctx: ctx2 } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 200, url: "http://192.168.1.10:80/auth/x" }) },
+    ],
+  });
+  assert.equal(await ctx2.webResolveFinal(url), null);
+});
+
+test("webResolveFinal: 5xx no último salto repete até 2 vezes", async () => {
+  const url = "http://prov.test:8080/live/x";
+  const okJson = { status: 200, url: "http://s2.exemplo.top:80/auth/x" };
+  const { ctx, fetchCalls } = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 502, url }) },
+      { ok: true, json: async () => ({ status: 500, url }) },
+      { ok: true, json: async () => okJson },
+    ],
+  });
+  const res = await ctx.webResolveFinal(url);
+  assert.equal(res, "https://s2.exemplo.top/auth/x");
+  assert.equal(fetchCalls.length, 3);
+});
+
+test("webResolveFinal entradas inválidas: json sem url ou status, fetch que lança, webUrl sem proxy", async () => {
+  const url = "http://prov.test:8080/live/x";
+
+  // JSON sem url
+  const { ctx: ctxSemUrl, fetchCalls: fSemUrl } = await makeResolveRunner({
+    responses: [{ ok: true, json: async () => ({ status: 200 }) }],
+  });
+  assert.equal(await ctxSemUrl.webResolveFinal(url), null);
+  assert.equal(fSemUrl.length, 1);
+
+  // JSON sem status
+  const { ctx: ctxSemStatus, fetchCalls: fSemStatus } = await makeResolveRunner({
+    responses: [{ ok: true, json: async () => ({ url: "http://s2.exemplo.top:80/auth/x" }) }],
+  });
+  assert.equal(await ctxSemStatus.webResolveFinal(url), null);
+  assert.equal(fSemStatus.length, 1);
+
+  // fetch que lança exceção
+  const { ctx: ctxErro, fetchCalls: fErro } = await makeResolveRunner({
+    fetchThrows: true,
+  });
+  assert.equal(await ctxErro.webResolveFinal(url), null);
+  assert.equal(fErro.length, 1);
+
+  // webUrl devolve a própria URL (sem token do aparelho)
+  const { ctx: ctxSemToken, fetchCalls: fSemToken } = await makeResolveRunner({
+    webUrl: (u) => u,
+  });
+  assert.equal(await ctxSemToken.webResolveFinal(url), null);
+  assert.equal(fSemToken.length, 0);
+});
+
+test("webResolveFinal: interrompe repetições se webResolveFailed virar verdadeiro", async () => {
+  const url = "http://prov.test:8080/live/x";
+  let runner;
+  runner = await makeResolveRunner({
+    responses: [
+      { ok: true, json: async () => ({ status: 429, url }) },
+      { ok: true, json: async () => ({ status: 200, url: "http://s2.exemplo.top:80/auth/x" }) },
+    ],
+    onTimeout: () => {
+      runner.ctx._webResolveFail.set(url, Date.now());
+    },
+  });
+  const res = await runner.ctx.webResolveFinal(url);
+  assert.equal(res, null);
+  assert.equal(runner.fetchCalls.length, 1);
+});
