@@ -1,0 +1,56 @@
+name: Atualizar o guia extra (EPG público)
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+# O passo final faz push na branch vod-data com o GITHUB_TOKEN: precisa de
+# escrita no conteúdo do repositório (e só disso).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CODE_REF: v22
+    steps:
+      - name: Checkout (branch de dados)
+        uses: actions/checkout@v4
+        with:
+          ref: vod-data
+
+      - name: Baixar o script de geração de EPG da branch de código
+        # O script vive na branch de código ($CODE_REF); só o JSON gerado
+        # mora em vod-data. Copiamos o script para dentro do checkout da
+        # branch de dados só para rodar aqui, sem commitá-lo.
+        run: |
+          git fetch origin "$CODE_REF" --depth=1
+          git show "origin/$CODE_REF:scripts/epg_extra/build.mjs" > build-epg.mjs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # IMPORTANTE: não adicionar continue-on-error, "|| true" nem
+      # "if: always()" neste passo nem no de commit. O script sai com erro,
+      # SEM gravar epg-extra.json, quando o download ou o processamento falham;
+      # é essa falha que impede o passo de commit de rodar e mantém
+      # o último arquivo bom na branch vod-data. Suprimir o erro aqui
+      # deixaria uma execução com falha commitar um guia vazio/errado.
+      - name: Gerar epg-extra.json
+        run: node build-epg.mjs
+
+      - name: Commitar só o JSON (o script baixado não entra na branch de dados)
+        run: |
+          rm -f build-epg.mjs
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add epg-extra.json
+          if git diff --staged --quiet; then
+            echo "Sem mudanças no guia extra hoje."
+          else
+            git commit -m "chore(vod-data): atualizar o guia extra"
+            git push origin vod-data
+          fi
