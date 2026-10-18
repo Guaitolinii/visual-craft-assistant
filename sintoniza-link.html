@@ -6188,6 +6188,7 @@ async function playStream(url) {
   // (reescreve o manifesto); MPEG-TS cru; arquivo direto fica original (o tryDirectPlay decide a rota do src); Safari nativo toca o HLS em <video src>
   let playUrl;
   let webDirect = false; // hls.js/mpegts.js tocando direto: se falhar antes de tocar, recomeça pelo proxy
+  let webForced = false; // proxy forçado após o direto falhar: se tocar, agora sim lembra o host como "p"
   let webStarted = false; // já chegou dado do provedor direto (o CORS funciona)
   let webFellBack = false; // o recomeço pelo proxy só acontece uma vez
   let webResolvedDirect = false; // MPEG-TS tocando o endereço final (resolvido pelo proxy) direto: se não tocar, o recomeço usa o proxy de vez
@@ -6206,9 +6207,11 @@ async function playStream(url) {
       if (gen !== playbackGeneration) return; // outra reprodução começou durante a sondagem
       playUrl = plan.src;
       webDirect = plan.direct;
+      webForced = !!plan.forced;
     }
   } else if (streamInfo.type === "mpegts") {
     let plan = webStreamPlan(streamInfo.url);
+    webForced = !!plan.forced; // lido ANTES de o plano ser trocado pelo endereço resolvido (que não leva essa marca)
     if (!plan.direct && plan.src !== streamInfo.url) {
       // ia pelo proxy: antes tenta o endereço final (https) direto, que não prende conexão do provedor no proxy
       const final = await webResolveFinal(streamInfo.url);
@@ -6270,13 +6273,14 @@ async function playStream(url) {
         if (webStarted) return;
         webStarted = true;
         if (webDirect) webCount("direto", webHost(streamInfo.url));
+        else if (webForced) webMemSet(streamInfo.url, "data", "p");
       });
 
       hlsInstance.on(Hls.Events.ERROR, (_, data) => {
         console.warn("[HLS Event Error]", data);
         if (webHlsShouldFallback({ direct: webDirect, started: webStarted, fellBack: webFellBack, fatal: !!data.fatal, type: data.type, details: data.details, code: data.response && data.response.code })) {
           webFellBack = true;
-          webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto: recomeça uma vez pelo proxy e lembra o host
+          webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto: recomeça uma vez pelo proxy
           return;
         }
         if (data.fatal) {
@@ -6482,6 +6486,8 @@ async function playStream(url) {
         mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, () => {
           if (webStarted) return;
           webStarted = true;
+          // o direto original falhou neste host mas o proxy (forçado) ou o endereço resolvido tocou: agora sim lembra "p"
+          if (webForced || webResolvedDirect) webMemSet(streamInfo.url, "data", "p");
           if (webDirect) webCount("direto", webHost(streamInfo.url));
         });
 
@@ -7173,6 +7179,7 @@ function webHlsShouldFallback(info) {
 // Espelho em memória: o aprendizado vale na sessão mesmo se o localStorage estiver bloqueado ou cheio
 let _webMemSession = {};
 let _webForceProxyUrl = null; // reprodução reiniciada por falha no direto: a próxima decisão desta URL é proxy (uma vez)
+let _webForceProxyDataUrl = null; // reprodução de canal reiniciada por falha no direto: a próxima decisão desta URL é proxy (uma vez)
 let _webNativeFailedUrl = null; // canal em que o HLS nativo (iPhone) não tocou: a próxima decisão é hls.js
 
 function webMemLoad() {
@@ -7273,6 +7280,11 @@ async function webHlsPlan(url) {
   const proxied = webUrl(url, "hls");
   if (!isWebApp() || proxied === url) return { src: url, direct: false };
   const host = webHost(url);
+  if (_webForceProxyDataUrl === url) {
+    _webForceProxyDataUrl = null;
+    webCount("proxy", host);
+    return { src: proxied, direct: false, forced: true };
+  }
   const rota = webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "data");
   if (rota === "direct") return { src: url, direct: true };
   if (rota === "probe") {
@@ -7288,6 +7300,11 @@ async function webHlsPlan(url) {
 function webStreamPlan(url) {
   const proxied = webUrl(url);
   if (!isWebApp() || proxied === url) return { src: url, direct: false };
+  if (_webForceProxyDataUrl === url) {
+    _webForceProxyDataUrl = null;
+    webCount("proxy", webHost(url));
+    return { src: proxied, direct: false, forced: true };
+  }
   if (webRoute(url, webMemLoad(), Date.now(), webPageIsHttps(), "data") === "proxy") {
     webCount("proxy", webHost(url));
     return { src: proxied, direct: false };
@@ -7373,9 +7390,9 @@ function webMediaSrc(url, forceProxy, kind) {
   return { src: url, direct: true };
 }
 
-// O direto falhou antes de tocar (CORS no hls.js/mpegts.js): lembra o host como "p" e recomeça a reprodução, que agora vai pelo proxy
+// O direto falhou antes de tocar (CORS no hls.js/mpegts.js): força a próxima tentativa pelo proxy sem marcar "p" de imediato
 function webRestartViaProxy(channelUrl, hostUrl) {
-  webMemSet(hostUrl, "data", "p");
+  _webForceProxyDataUrl = hostUrl;
   webCount("fallback", webHost(hostUrl));
   playStream(channelUrl);
 }

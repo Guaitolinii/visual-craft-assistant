@@ -685,3 +685,139 @@ test("webResolveFinal: interrompe repetições se webResolveFailed virar verdade
   assert.equal(res, null);
   assert.equal(runner.fetchCalls.length, 1);
 });
+
+// ── webRestartViaProxy / canais mortos: proxy forçado uma vez sem envenenar a memória ──
+test("webRestartViaProxy: não grava 'p' imediatamente e usa _webForceProxyDataUrl para a próxima tentativa", () => {
+  const restartBody = fnBody("webRestartViaProxy");
+  assert.doesNotMatch(restartBody, /webMemSet\(hostUrl,\s*"data",\s*"p"\)/);
+  assert.match(restartBody, /_webForceProxyDataUrl\s*=\s*hostUrl/);
+  assert.match(html, /let\s+_webForceProxyDataUrl\s*=\s*null;/);
+  assert.match(fnBody("webStreamPlan"), /_webForceProxyDataUrl\s*===\s*url/);
+  assert.match(fnBody("webStreamPlan"), /forced:\s*true/);
+  assert.match(fnBody("webHlsPlan"), /_webForceProxyDataUrl\s*===\s*url/);
+  assert.match(fnBody("webHlsPlan"), /forced:\s*true/);
+  assert.match(html, /mpegtsPlayer\.on\(mpegts\.Events\.MEDIA_INFO,\s*\(\)\s*=>\s*\{[\s\S]*?(?:webForced\s*\|\|\s*webResolvedDirect)[\s\S]*?webMemSet\(streamInfo\.url,\s*"data",\s*"p"\)/);
+  assert.match(html, /hlsInstance\.on\(Hls\.Events\.FRAG_LOADED,\s*\(\)\s*=>\s*\{[\s\S]*?webForced[\s\S]*?webMemSet\(streamInfo\.url,\s*"data",\s*"p"\)/);
+});
+
+test("webStreamPlan: canal morto não grava 'p'; força proxy uma vez por URL e descarta", async () => {
+  const vm = await import("node:vm");
+  const i = html.indexOf("function webStreamPlan(");
+  assert.ok(i > 0, "falta webStreamPlan");
+  const fim = i + html.slice(i).search(/\r?\n\}\r?\n/) + 3;
+  const code = html.slice(i, fim);
+
+  let proxyCalls = 0;
+  const makeCtx = (opts = {}) => {
+    const ctx = vm.createContext({
+      isWebApp: () => (opts.isWebApp !== undefined ? opts.isWebApp : true),
+      webUrl: opts.webUrl || ((u) => "/api/proxy?u=" + u),
+      webRoute: () => (opts.webRoute !== undefined ? opts.webRoute : "direct"),
+      webMemLoad: () => ({}),
+      webPageIsHttps: () => true,
+      webCount: (name) => { if (name === "proxy") proxyCalls++; },
+      webHost: () => "h",
+      Date,
+      _webForceProxyDataUrl: opts._webForceProxyDataUrl !== undefined ? opts._webForceProxyDataUrl : null,
+    });
+    vm.runInContext(code + "\n;this.webStreamPlan = webStreamPlan; this.getForce = () => _webForceProxyDataUrl; this.setForce = (v) => { _webForceProxyDataUrl = v; };", ctx);
+    return ctx;
+  };
+
+  const url = "https://xjet.fun/live/1.ts";
+  const ctx = makeCtx();
+
+  // (a) sem força → { src: url, direct: true }
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), { src: url, direct: true });
+  assert.equal(ctx.getForce(), null);
+
+  // (b) com _webForceProxyDataUrl = url → devolve proxy com forced: true e a variável fica null
+  ctx.setForce(url);
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), {
+    src: "/api/proxy?u=" + url,
+    direct: false,
+    forced: true,
+  });
+  assert.equal(ctx.getForce(), null);
+
+  // uma segunda chamada volta a ser direta (consumido uma vez)
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), { src: url, direct: true });
+
+  // (c) com força para OUTRA url → ignora e segue direto
+  const outraUrl = "https://xjet.fun/live/outra.ts";
+  ctx.setForce(outraUrl);
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), { src: url, direct: true });
+  assert.equal(ctx.getForce(), outraUrl);
+
+  // Entradas inválidas:
+  // _webForceProxyDataUrl nulo ou diferente da URL pedida (ignora)
+  ctx.setForce(null);
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), { src: url, direct: true });
+  ctx.setForce("https://invalida.test");
+  assert.deepEqual(plain(ctx.webStreamPlan(url)), { src: url, direct: true });
+
+  // webStreamPlan com URL vazia/sem token (webUrl devolve a própria URL → { src: url, direct: false } como hoje)
+  const ctxSemToken = makeCtx({ webUrl: (u) => u });
+  assert.deepEqual(plain(ctxSemToken.webStreamPlan("")), { src: "", direct: false });
+  assert.deepEqual(plain(ctxSemToken.webStreamPlan(url)), { src: url, direct: false });
+  ctxSemToken.setForce(url);
+  assert.deepEqual(plain(ctxSemToken.webStreamPlan(url)), { src: url, direct: false });
+});
+
+test("webHlsPlan: se _webForceProxyDataUrl === url devolve proxy com forced: true e zera a variável", async () => {
+  const vm = await import("node:vm");
+  const i = html.indexOf("async function webHlsPlan(");
+  assert.ok(i > 0, "falta webHlsPlan");
+  const fim = i + html.slice(i).search(/\r?\n\}\r?\n/) + 3;
+  const code = html.slice(i, fim);
+
+  let probeCalls = 0;
+  let proxyCounts = 0;
+  const makeCtx = (opts = {}) => {
+    const ctx = vm.createContext({
+      isWebApp: () => (opts.isWebApp !== undefined ? opts.isWebApp : true),
+      webUrl: opts.webUrl || ((u, k) => "/api/proxy?k=" + k + "&u=" + u),
+      webRoute: () => (opts.webRoute !== undefined ? opts.webRoute : "direct"),
+      webMemLoad: () => ({}),
+      webPageIsHttps: () => true,
+      webCount: (name) => { if (name === "proxy") proxyCounts++; },
+      webHost: () => "h",
+      webHlsProbe: async () => { probeCalls++; return true; },
+      webMemSet: () => {},
+      Date,
+      _webForceProxyDataUrl: opts._webForceProxyDataUrl !== undefined ? opts._webForceProxyDataUrl : null,
+    });
+    vm.runInContext(code + "\n;this.webHlsPlan = webHlsPlan; this.getForce = () => _webForceProxyDataUrl; this.setForce = (v) => { _webForceProxyDataUrl = v; };", ctx);
+    return ctx;
+  };
+
+  const url = "https://xjet.fun/live/1.m3u8";
+  const ctx = makeCtx();
+
+  // Sem força: direto
+  const p1 = await ctx.webHlsPlan(url);
+  assert.deepEqual(plain(p1), { src: url, direct: true });
+  assert.equal(ctx.getForce(), null);
+
+  // Com força para a URL: proxy com forced: true e consome uma vez
+  ctx.setForce(url);
+  const p2 = await ctx.webHlsPlan(url);
+  assert.deepEqual(plain(p2), { src: "/api/proxy?k=hls&u=" + url, direct: false, forced: true });
+  assert.equal(ctx.getForce(), null);
+
+  // Próxima chamada volta a ser direta
+  const p3 = await ctx.webHlsPlan(url);
+  assert.deepEqual(plain(p3), { src: url, direct: true });
+
+  // Com força para outra URL: ignora
+  ctx.setForce("https://xjet.fun/live/outra.m3u8");
+  const p4 = await ctx.webHlsPlan(url);
+  assert.deepEqual(plain(p4), { src: url, direct: true });
+  assert.equal(ctx.getForce(), "https://xjet.fun/live/outra.m3u8");
+
+  // Entrada inválida: sem token (webUrl devolve a URL original)
+  const ctxSemToken = makeCtx({ webUrl: (u) => u });
+  ctxSemToken.setForce(url);
+  const p5 = await ctxSemToken.webHlsPlan(url);
+  assert.deepEqual(plain(p5), { src: url, direct: false });
+});
