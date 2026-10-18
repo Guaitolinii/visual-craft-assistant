@@ -9,7 +9,8 @@ const VAR = process.argv[3] || "OTT_CONTA_CANAIS";
 const N = Number(process.argv[4]) || 30;
 const SEG = Number(process.argv[5]) || 14;
 const GRUPO = (process.argv.find((a) => a.startsWith("--grupo=")) || "").split("=")[1] || "";
-const texto = await (await fetch(env[VAR], { headers: { "user-agent": "VLC/3.0.20" } })).text();
+// a variável pode ser uma URL ou o caminho de um arquivo .m3u local (útil para testar só uma seleção de canais)
+const texto = /^https?:/i.test(env[VAR]) ? await (await fetch(env[VAR], { headers: { "user-agent": "VLC/3.0.20" } })).text() : readFileSync(env[VAR], "utf8");
 const mascara = (s) => String(s).replace(/(username|password)=[^&\s"]+/gi, "$1=***").replace(/\/(live|movie|series)\/[^/\s"]+\/[^/\s"]+\//g, "/$1/***/***/");
 await withPage("https://sintonizatv.com.br/", { desktop: true, width: 1440, height: 900 }, async (page) => {
   try {

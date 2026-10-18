@@ -2574,6 +2574,107 @@ function filterAdultChannels(channels) {
     return !isAdultCategory(ch.category);
   });
 }
+
+// Hash FNV-1a de 32 bits da URL em hex de 8 dígitos.
+// Guarda apenas o hash (nunca a URL inteira no storage, pois contém usuário e senha).
+function webChanKey(url) {
+  if (typeof url !== "string" || !url) return "";
+  var hash = 2166136261;
+  for (var i = 0; i < url.length; i++) {
+    hash ^= url.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ("00000000" + (hash >>> 0).toString(16)).slice(-8);
+}
+
+// Verifica se o canal está lembrado para tocar direto pelo proxy (menos de 6 horas).
+// Em caso de storage ausente, JSON inválido, relógio adiantado (>60s) ou chave vazia, devolve false.
+function webChanProxyRead(storage, url, nowMs) {
+  try {
+    if (!storage || typeof storage.getItem !== "function") return false;
+    var key = webChanKey(url);
+    if (!key || key === "__proto__") return false;
+    var raw = storage.getItem("sint_web_chan_proxy");
+    if (!raw) return false;
+    var data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+    if (!Object.prototype.hasOwnProperty.call(data, key)) return false;
+    var ts = data[key];
+    if (typeof ts !== "number" || isNaN(ts)) return false;
+    if (typeof nowMs !== "number") nowMs = Date.now();
+    if (ts > nowMs + 60000) return false;
+    if (nowMs - ts >= 6 * 3600 * 1000) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Lembra por canal que ele só toca pelo proxy, limitando a 300 canais (descarta os mais antigos).
+function webChanProxyWrite(storage, url, nowMs) {
+  try {
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") return;
+    var key = webChanKey(url);
+    if (!key || key === "__proto__") return;
+    if (typeof nowMs !== "number") nowMs = Date.now();
+
+    var raw = storage.getItem("sint_web_chan_proxy");
+    var data = {};
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          data = parsed;
+        }
+      } catch (e) {}
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      delete data[key];
+    }
+    data[key] = nowMs;
+
+    var keys = [];
+    for (var k in data) {
+      if (Object.prototype.hasOwnProperty.call(data, k) && k !== "__proto__") {
+        keys.push(k);
+      }
+    }
+
+    if (keys.length > 300) {
+      keys.sort(function (a, b) {
+        var ta = typeof data[a] === "number" ? data[a] : 0;
+        var tb = typeof data[b] === "number" ? data[b] : 0;
+        return ta - tb;
+      });
+      var toRemove = keys.length - 300;
+      for (var i = 0; i < toRemove; i++) {
+        delete data[keys[i]];
+      }
+    }
+
+    delete data.__proto__;
+    storage.setItem("sint_web_chan_proxy", JSON.stringify(data));
+  } catch (e) {}
+}
+
+// Remove o canal da memória do proxy (ex.: quando a lembrança falhou e precisa tentar do zero).
+function webChanProxyClear(storage, url) {
+  try {
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") return;
+    var key = webChanKey(url);
+    if (!key || key === "__proto__") return;
+    var raw = storage.getItem("sint_web_chan_proxy");
+    if (!raw) return;
+    var data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      delete data[key];
+      delete data.__proto__;
+      storage.setItem("sint_web_chan_proxy", JSON.stringify(data));
+    }
+  } catch (e) {}
+}
 </script>
 
 <script id="epg-helpers">
@@ -5756,6 +5857,7 @@ async function detectStreamType(url) {
   // Se for .ts, realiza teste rápido (probe de 800ms) para verificar se o servidor IPTV aceita .m3u8
   if (clean.endsWith('.ts')) {
     const hlsAlternative = url.replace(/\.ts($|\?)/i, '.m3u8$1');
+    if (isWebApp() && webChanProxyRead(localStorage, url, Date.now())) return { type: "mpegts", url }; // canal que já se sabe que só toca pelo proxy: não sonda
     if (probeNoHlsKnown(url)) return { type: "mpegts", url }; // este host já mostrou que o .m3u8 é o mesmo MPEG-TS: não gasta outra conexão sondando
     try {
       const controller = new AbortController();
@@ -6192,6 +6294,7 @@ async function playStream(url) {
   let webStarted = false; // já chegou dado do provedor direto (o CORS funciona)
   let webFellBack = false; // o recomeço pelo proxy só acontece uma vez
   let webResolvedDirect = false; // MPEG-TS tocando o endereço final (resolvido pelo proxy) direto: se não tocar, o recomeço usa o proxy de vez
+  let webCanalLembrado = false; // canal lembrado por histórico recente que só toca pelo proxy
   let webNative = null; // Safari nativo (<video src> com HLS): { src, direct, forced }
   if (!isWebApp()) {
     playUrl = proxyIfInsecure(streamInfo.url);
@@ -6210,13 +6313,26 @@ async function playStream(url) {
       webForced = !!plan.forced;
     }
   } else if (streamInfo.type === "mpegts") {
-    let plan = webStreamPlan(streamInfo.url);
-    webForced = !!plan.forced; // lido ANTES de o plano ser trocado pelo endereço resolvido (que não leva essa marca)
-    if (!plan.direct && plan.src !== streamInfo.url) {
-      // ia pelo proxy: antes tenta o endereço final (https) direto, que não prende conexão do provedor no proxy
-      const final = await webResolveFinal(streamInfo.url);
-      if (gen !== playbackGeneration) return; // outra reprodução começou durante a resolução
-      if (final) { plan = { src: final, direct: true }; webResolvedDirect = true; }
+    const webLembrado = webChanProxyRead(localStorage, streamInfo.url, Date.now());
+    let plan;
+    if (webLembrado) {
+      const proxied = webUrl(streamInfo.url);
+      if (proxied !== streamInfo.url) {
+        // Canal lembrado que só toca pelo proxy: vai direto pelo proxy sem tentar o direto e sem resolver
+        plan = { src: proxied, direct: false };
+        webCanalLembrado = true;
+        webForced = false;
+      }
+    }
+    if (!plan) {
+      plan = webStreamPlan(streamInfo.url);
+      webForced = !!plan.forced; // lido ANTES de o plano ser trocado pelo endereço resolvido (que não leva essa marca)
+      if (!plan.direct && plan.src !== streamInfo.url) {
+        // ia pelo proxy: antes tenta o endereço final (https) direto, que não prende conexão do provedor no proxy
+        const final = await webResolveFinal(streamInfo.url);
+        if (gen !== playbackGeneration) return; // outra reprodução começou durante a resolução
+        if (final) { plan = { src: final, direct: true }; webResolvedDirect = true; }
+      }
     }
     playUrl = plan.src;
     webDirect = plan.direct;
@@ -6489,12 +6605,14 @@ async function playStream(url) {
           // o direto original falhou neste host mas o proxy (forçado) ou o endereço resolvido tocou: agora sim lembra "p"
           // (só quando o link NÃO tem redirecionamento: se a falha veio de um salto adiante, os outros canais do host seguem tocando direto)
           if ((webForced || webResolvedDirect) && !webChainRedirects(streamInfo.url)) webMemSet(streamInfo.url, "data", "p");
+          if (webForced && !webResolvedDirect && webChainRedirects(streamInfo.url)) webChanProxyWrite(localStorage, streamInfo.url, Date.now());
           if (webDirect) webCount("direto", webHost(streamInfo.url));
         });
 
         mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
           console.warn('[mpegts error event]', errorType, errorDetail);
           if (isReloadingStream) return;
+          if (webCanalLembrado && !webStarted && !webFellBack) { webFellBack = true; webChanProxyClear(localStorage, streamInfo.url); playStream(url); return; }
           if (webDirect && !webStarted && !webFellBack && errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
             webFellBack = true;
             if (webResolvedDirect) _webResolveFail.set(streamInfo.url, Date.now()); // o endereço final não tocou: o recomeço vai direto ao proxy
