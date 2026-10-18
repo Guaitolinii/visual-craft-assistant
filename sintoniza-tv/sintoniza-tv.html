@@ -357,6 +357,19 @@ function extractXmltvChannels(xmlText) {
   return channels;
 }
 
+function truncateDesc(text, max) {
+  if (typeof text !== "string") return "";
+  var limit = typeof max === "number" && max > 0 ? max : 240;
+  if (text.length <= limit) return text;
+  var target = limit - 1;
+  var sliced = text.slice(0, target);
+  var lastSpace = sliced.lastIndexOf(" ");
+  if (lastSpace !== -1 && lastSpace > 0) {
+    return sliced.slice(0, lastSpace).replace(/\s+$/, "") + "…";
+  }
+  return sliced.replace(/\s+$/, "") + "…";
+}
+
 // Extrai <programme> de forma tolerante à ordem/composição dos atributos -
 // feeds Xtream trazem start_timestamp/stop_timestamp prontos (epoch em
 // segundos), mas outros (epgshare01) só têm start/stop por extenso, caindo
@@ -380,11 +393,19 @@ function extractXmltvProgrammes(xmlText) {
     if (!isFinite(start) || !isFinite(stop)) continue;
 
     var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(body);
+    var descMatch = /<desc[^>]*>([\s\S]*?)<\/desc>/.exec(body);
+    var desc = "";
+    if (descMatch) {
+      var decodedDesc = decodeXmlEntities(descMatch[1]);
+      var collapsedDesc = decodedDesc.replace(/\s+/g, " ").trim();
+      desc = truncateDesc(collapsedDesc, 240);
+    }
     programmes.push({
       channelId: channelMatch[1],
       start: start,
       stop: stop,
       title: titleMatch ? decodeXmlEntities(titleMatch[1]) : "",
+      desc: desc,
     });
   }
   return programmes;
@@ -429,7 +450,11 @@ function buildNameToProgrammesIndex(channels, programmes, opts) {
     if (!names) return;
     names.forEach(function (name) {
       if (!index[name]) index[name] = [];
-      index[name].push({ start: p.start, stop: p.stop, title: p.title });
+      var entry = { start: p.start, stop: p.stop, title: p.title };
+      if (typeof p.desc === "string" && p.desc.length > 0) {
+        entry.desc = p.desc;
+      }
+      index[name].push(entry);
     });
   });
 

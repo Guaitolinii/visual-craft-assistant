@@ -256,6 +256,7 @@
       line-height: 1.05; font-weight: 600;
     }
     .player-copy p { margin-top: .45rem; color: oklch(0.78 0.02 75); }
+    .player-copy p.epg-desc { margin-top: .25rem; color: var(--muted-fg); max-width: 52ch; }
     /* Botão play central */
     .play-center {
       position: absolute; top: 50%; left: 50%; z-index: 3;
@@ -776,6 +777,18 @@
     @media (prefers-reduced-motion: reduce) {
       .epg-popover { transition: opacity 1ms linear; }
     }
+
+    .epg-desc {
+      color: var(--muted-fg);
+      font-size: .8rem;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      margin-top: .25rem;
+      line-height: 1.35;
+    }
+    .epg-desc:empty { display: none; }
 
     /* EMPTY */
     .empty-state {
@@ -1809,6 +1822,7 @@
           <span class="live-badge" id="player-badge">● AO VIVO</span>
           <h2 id="player-name">Nenhum canal selecionado</h2>
           <p id="player-status">Escolha um canal abaixo</p>
+          <p class="epg-desc" id="player-epg-desc"></p>
         </div>
         <button class="mini-play-btn" id="mini-play-btn" aria-label="Reproduzir/Pausar">
           <i data-lucide="play" style="width:20px;height:20px" id="mini-play-icon"></i>
@@ -2921,6 +2935,19 @@ function extractXmltvChannels(xmlText) {
   return channels;
 }
 
+function truncateDesc(text, max) {
+  if (typeof text !== "string") return "";
+  var limit = typeof max === "number" && max > 0 ? max : 240;
+  if (text.length <= limit) return text;
+  var target = limit - 1;
+  var sliced = text.slice(0, target);
+  var lastSpace = sliced.lastIndexOf(" ");
+  if (lastSpace !== -1 && lastSpace > 0) {
+    return sliced.slice(0, lastSpace).replace(/\s+$/, "") + "…";
+  }
+  return sliced.replace(/\s+$/, "") + "…";
+}
+
 // Extrai <programme> de forma tolerante à ordem/composição dos atributos -
 // feeds Xtream trazem start_timestamp/stop_timestamp prontos (epoch em
 // segundos), mas outros (epgshare01) só têm start/stop por extenso, caindo
@@ -2944,11 +2971,19 @@ function extractXmltvProgrammes(xmlText) {
     if (!isFinite(start) || !isFinite(stop)) continue;
 
     var titleMatch = /<title[^>]*>([^<]*)<\/title>/.exec(body);
+    var descMatch = /<desc[^>]*>([\s\S]*?)<\/desc>/.exec(body);
+    var desc = "";
+    if (descMatch) {
+      var decodedDesc = decodeXmlEntities(descMatch[1]);
+      var collapsedDesc = decodedDesc.replace(/\s+/g, " ").trim();
+      desc = truncateDesc(collapsedDesc, 240);
+    }
     programmes.push({
       channelId: channelMatch[1],
       start: start,
       stop: stop,
       title: titleMatch ? decodeXmlEntities(titleMatch[1]) : "",
+      desc: desc,
     });
   }
   return programmes;
@@ -2993,7 +3028,11 @@ function buildNameToProgrammesIndex(channels, programmes, opts) {
     if (!names) return;
     names.forEach(function (name) {
       if (!index[name]) index[name] = [];
-      index[name].push({ start: p.start, stop: p.stop, title: p.title });
+      var entry = { start: p.start, stop: p.stop, title: p.title };
+      if (typeof p.desc === "string" && p.desc.length > 0) {
+        entry.desc = p.desc;
+      }
+      index[name].push(entry);
     });
   });
 
@@ -5807,11 +5846,16 @@ async function refreshEpgIfStale() {
   }
 }
 
-function getNowPlayingTitle(ch) {
-  if (!ch || !ch.name) return "";
+function getNowPlayingProgramme(ch) {
+  if (!ch || !ch.name) return null;
   const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
-  if (!programmes || !programmes.length) return "";
+  if (!programmes || !programmes.length) return null;
   const { current } = getCurrentAndNextProgramme(programmes, Date.now());
+  return current || null;
+}
+
+function getNowPlayingTitle(ch) {
+  const current = getNowPlayingProgramme(ch);
   return current ? current.title : "";
 }
 
@@ -8039,16 +8083,22 @@ function renderPlayerInfo() {
   const ch = _state.selected;
   // Nada escolhido ainda: só o fundo preto e dourado (ponto 5 da v7).
   document.getElementById("player-screen").classList.toggle("is-idle", !ch);
-  if (!ch) return;
+  const descEl = document.getElementById("player-epg-desc");
+  if (!ch) {
+    if (descEl) descEl.textContent = "";
+    return;
+  }
 
-  const nowPlaying = getNowPlayingTitle(ch);
+  const curProg = getNowPlayingProgramme(ch);
+  const nowPlaying = curProg ? curProg.title : "";
+  const nowDesc = curProg && curProg.desc ? curProg.desc : "";
   document.getElementById("player-monogram").textContent = ch.initials;
   document.getElementById("player-name").textContent     = ch.name;
   document.getElementById("fs-title").textContent        = ch.name;
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
+  if (descEl) descEl.textContent = nowDesc;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
   updateVodSeekVisibility();
-
   // Logo no art
   const artLogo = document.getElementById("player-art-logo");
   if (ch.logo) {
@@ -8192,6 +8242,8 @@ function renderOnNow() {
       ? `<img src="${ch.logo}" alt="${ch.name}" style="width:100%;height:100%;object-fit:contain;padding:.2rem" onerror="this.style.display='none'">`
       : ch.initials;
     const actionIcon = isCur ? "volume-2" : "play";
+    const curProg = getNowPlayingProgramme(ch);
+    const nowDesc = curProg && curProg.desc ? curProg.desc : "";
 
     return `
       <button class="now-row ${activeClass}" data-channel-id="${ch.id}" title="${ch.name} — ${ch.category}">
@@ -8200,6 +8252,7 @@ function renderOnNow() {
           <strong>${ch.name}</strong>
           ${isChannelHls(ch) ? `<div style="margin-top:.15rem"><span class="tag-hls">HLS</span></div>` : ""}
           <small>${isCur ? "● Em reprodução" : ch.category}</small>
+          ${nowDesc ? `<p class="epg-desc">${escapeHtmlText(nowDesc)}</p>` : ""}
         </div>
         <i data-lucide="${actionIcon}" class="now-row-play ${isCur ? 'active-icon' : ''}" style="width:16px;height:16px"></i>
       </button>`;
@@ -8444,7 +8497,9 @@ function logoImgOrInitials(ch, size = "100%") {
 function cardHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
-  const nowPlaying = getNowPlayingTitle(ch);
+  const curProg = getNowPlayingProgramme(ch);
+  const nowPlaying = curProg ? curProg.title : "";
+  const nowDesc = curProg && curProg.desc ? curProg.desc : "";
   const hasSchedule = hasEpgSchedule(ch);
   return `
     <article class="channel-card ${sel}">
@@ -8454,6 +8509,7 @@ function cardHTML(ch) {
         <h3>${ch.name}</h3>
         ${isChannelHls(ch) ? `<div style="padding:0 .75rem;margin-top:.25rem"><span class="tag-hls">HLS</span></div>` : ""}
         <p class="${hasSchedule ? "has-epg-btn" : ""}">${nowPlaying ? `Agora: ${escapeHtmlText(nowPlaying)}` : ch.category}</p>
+        ${nowDesc ? `<p class="epg-desc">${escapeHtmlText(nowDesc)}</p>` : ""}
       </button>
       ${hasSchedule ? `
       <button class="epg-btn" data-epg-id="${ch.id}" aria-label="Ver o que vem a seguir em ${ch.name}" aria-haspopup="dialog">
@@ -8469,7 +8525,9 @@ function cardHTML(ch) {
 function listHTML(ch) {
   const sel = isSelected(ch) ? "selected" : "";
   const fav = isFav(ch.id);
-  const nowPlaying = getNowPlayingTitle(ch);
+  const curProg = getNowPlayingProgramme(ch);
+  const nowPlaying = curProg ? curProg.title : "";
+  const nowDesc = curProg && curProg.desc ? curProg.desc : "";
   const hasSchedule = hasEpgSchedule(ch);
   const logoHtml = ch.logo
     ? `<img src="${ch.logo}" alt="${ch.name}" style="width:100%;height:100%;object-fit:contain;padding:.25rem"
@@ -8488,6 +8546,7 @@ function listHTML(ch) {
           <h3>${ch.name}</h3>
           ${isChannelHls(ch) ? `<div style="margin-top:.2rem"><span class="tag-hls">HLS</span></div>` : ""}
           <p>${nowPlaying ? `Agora: ${escapeHtmlText(nowPlaying)}` : ch.category}</p>
+          ${nowDesc ? `<p class="epg-desc">${escapeHtmlText(nowDesc)}</p>` : ""}
         </div>
       </button>
       ${hasSchedule ? `
