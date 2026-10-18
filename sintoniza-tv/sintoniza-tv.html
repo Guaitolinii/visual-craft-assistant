@@ -498,6 +498,70 @@ function formatProgrammeTimeRange(startMs, stopMs) {
   }
   return fmt(startMs) + "–" + fmt(stopMs);
 }
+
+function epgExtraToIndex(data, nowMs, keepPastMs, keepFutureMs) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+  if (data.v !== 1) return {};
+  if (!data.canais || typeof data.canais !== "object" || Array.isArray(data.canais)) return {};
+
+  var now = nowMs != null && !isNaN(Number(nowMs)) ? Number(nowMs) : Date.now();
+  var pastLimit = keepPastMs != null && !isNaN(Number(keepPastMs)) ? Number(keepPastMs) : 30 * 60 * 1000;
+  var futureLimit = keepFutureMs != null && !isNaN(Number(keepFutureMs)) ? Number(keepFutureMs) : 7 * 60 * 60 * 1000;
+
+  var index = {};
+  var channelNames = Object.keys(data.canais);
+  for (var i = 0; i < channelNames.length; i++) {
+    var name = channelNames[i];
+    if (name === "__proto__") continue;
+    if (!Object.prototype.hasOwnProperty.call(data.canais, name)) continue;
+
+    var rawList = data.canais[name];
+    if (!Array.isArray(rawList)) continue;
+
+    var validList = [];
+    for (var j = 0; j < rawList.length; j++) {
+      var item = rawList[j];
+      if (!item || !Array.isArray(item) || item.length < 3) continue;
+
+      var rawStart = item[0];
+      var rawStop = item[1];
+      if (typeof rawStart !== "number" && typeof rawStart !== "string") continue;
+      if (typeof rawStop !== "number" && typeof rawStop !== "string") continue;
+      if (typeof rawStart === "string" && rawStart.trim() === "") continue;
+      if (typeof rawStop === "string" && rawStop.trim() === "") continue;
+
+      var iniSeg = Number(rawStart);
+      var fimSeg = Number(rawStop);
+      if (isNaN(iniSeg) || isNaN(fimSeg) || !isFinite(iniSeg) || !isFinite(fimSeg)) continue;
+      if (fimSeg <= iniSeg) continue;
+
+      var title = item[2];
+      if (typeof title !== "string") continue;
+
+      var startMs = iniSeg * 1000;
+      var stopMs = fimSeg * 1000;
+      if (stopMs < now - pastLimit) continue;
+      if (startMs > now + futureLimit) continue;
+
+      var entry = {
+        start: startMs,
+        stop: stopMs,
+        title: title
+      };
+      if (typeof item[3] === "string" && item[3].length > 0) {
+        entry.desc = item[3];
+      }
+      validList.push(entry);
+    }
+
+    if (validList.length > 0) {
+      validList.sort(function (a, b) { return a.start - b.start; });
+      index[name] = validList;
+    }
+  }
+
+  return index;
+}
 </script>
 
 <!-- ══════════════════════════════════════════════════════════
