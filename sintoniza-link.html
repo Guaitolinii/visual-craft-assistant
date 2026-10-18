@@ -5759,12 +5759,12 @@ async function detectStreamType(url) {
     if (probeNoHlsKnown(url)) return { type: "mpegts", url }; // este host já mostrou que o .m3u8 é o mesmo MPEG-TS: não gasta outra conexão sondando
     try {
       const controller = new AbortController();
-      const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 6000 : 800); // no app web cobre a tentativa direta (2,5 s) e a do proxy
+      const probeTimer = setTimeout(() => controller.abort(), isWebApp() ? 12000 : 800); // no app web cobre a tentativa direta (até 6 s: cadeia de 3 redirecionamentos) e a do proxy
       // GET (não HEAD) e olha os primeiros bytes: há provedores (xjet.fun) que respondem 200 no .m3u8 mas entregam o MESMO fluxo
       // MPEG-TS cru; só é espelho HLS de verdade se o corpo começar com #EXTM3U
       const probeInit = { method: "GET", signal: controller.signal, cache: "no-store" };
       const probeRes = isWebApp()
-        ? await webFetchRouted(hlsAlternative, probeInit, "hls", { directTimeoutMs: 2500 })
+        ? await webFetchRouted(hlsAlternative, probeInit, "hls", { directTimeoutMs: 6000, noMemory: true }) // sondagem não ensina a memória do host: uma cadeia lenta de redirecionamentos não pode marcar "p"
         : await fetch(hlsAlternative, probeInit);
       let ehManifesto = false;
       if (probeRes.ok && probeRes.body) {
@@ -6487,7 +6487,8 @@ async function playStream(url) {
           if (webStarted) return;
           webStarted = true;
           // o direto original falhou neste host mas o proxy (forçado) ou o endereço resolvido tocou: agora sim lembra "p"
-          if (webForced || webResolvedDirect) webMemSet(streamInfo.url, "data", "p");
+          // (só quando o link NÃO tem redirecionamento: se a falha veio de um salto adiante, os outros canais do host seguem tocando direto)
+          if ((webForced || webResolvedDirect) && !webChainRedirects(streamInfo.url)) webMemSet(streamInfo.url, "data", "p");
           if (webDirect) webCount("direto", webHost(streamInfo.url));
         });
 
@@ -7245,7 +7246,7 @@ async function webFetchRouted(url, init, kind, opts) {
     const res = await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
     clearTimeout(timer);
     if (WEB_FALLBACK_STATUS.indexOf(res.status) >= 0) throw new Error("HTTP " + res.status);
-    webMemSet(url, "data", "d");
+    if (!(opts && opts.noMemory)) webMemSet(url, "data", "d");
     webCount("direto", host);
     return res;
   } catch (e) {
@@ -7254,7 +7255,7 @@ async function webFetchRouted(url, init, kind, opts) {
     webCount("fallback", host);
     webCount("proxy", host);
     const res = await fetch(proxied, init);
-    if (res.ok) webMemSet(url, "data", "p");
+    if (res.ok && !(opts && opts.noMemory)) webMemSet(url, "data", "p");
     return res;
   }
 }
@@ -7320,6 +7321,12 @@ function webStreamPlan(url) {
 // Qualquer falha cai no proxy normal. O endereço final não é preso ao IP de quem o pediu (testado de IPv4 para IPv6).
 const _webResolved = new Map(); // url -> { final, t }
 const _webResolveFail = new Map(); // url -> t da última vez que o endereço resolvido não tocou (por 10 min vai direto ao proxy)
+// url -> true quando o link redireciona por outros servidores (xjet.fun: https → http → http). Nesse caso a falha do direto veio de um SALTO
+// adiante (servidor só http, nome que não resolve), não do host do link: o host não pode ser marcado "só funciona pelo proxy" por causa disso.
+const _webRedirected = new Map();
+function webChainRedirects(url) {
+  return _webRedirected.get(url) === true;
+}
 const WEB_RESOLVE_TTL_MS = 60000;
 const WEB_RESOLVE_FAIL_MS = 600000;
 const WEB_RESOLVE_RETRY_MS = [700, 1500];
@@ -7361,6 +7368,7 @@ async function webResolveFinal(url) {
       if (j && (j.status === 429 || j.status >= 500)) {
         continue; // provedor limitou conexões ou erro no último salto: repete
       }
+      if (j && j.status === 200 && j.url) _webRedirected.set(url, j.url !== url); // o link tem redirecionamento? (ver webChainRedirects)
       const final = j && j.status === 200 && j.url && j.url !== url ? webUpgradeToHttps(j.url) : null;
       if (final) {
         if (_webResolved.size > 50) _webResolved.clear();

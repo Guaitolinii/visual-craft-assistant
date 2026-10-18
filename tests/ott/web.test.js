@@ -284,7 +284,9 @@ test("todo acesso a provedor no app web passa por webFetchRouted/webUrl (lista, 
   assert.match(html, /await vodApiFetch\(xtreamApiUrl\(creds, "get_series_info"/);
   assert.match(html, /const VOD_API_CONCURRENCY = 4;/);
   assert.match(html, /if \(\(res\.status !== 429 && res\.status < 500\) \|\| n >= VOD_API_RETRY_MS\.length\) return res;/);
-  assert.match(html, /webFetchRouted\(hlsAlternative, probeInit, "hls", \{ directTimeoutMs: 2500 \}\)/);
+  assert.match(html, /webFetchRouted\(hlsAlternative, probeInit, "hls", \{ directTimeoutMs: 6000, noMemory: true \}\)/); // a sondagem não grava a memória do host
+  assert.match(html, /if \(!\(opts && opts\.noMemory\)\) webMemSet\(url, "data", "d"\);/);
+  assert.match(html, /if \(res\.ok && !\(opts && opts\.noMemory\)\) webMemSet\(url, "data", "p"\);/);
   assert.match(html, /webFetchRouted\(url, headInit, undefined, \{ directTimeoutMs: 2500 \}\)/);
   assert.match(html, /webFetchRouted\(url, probeInit, undefined, \{ directTimeoutMs: 3000 \}\)/);
   // mídia e streams: o plano de rota decide direto x proxy
@@ -820,4 +822,11 @@ test("webHlsPlan: se _webForceProxyDataUrl === url devolve proxy com forced: tru
   ctxSemToken.setForce(url);
   const p5 = await ctxSemToken.webHlsPlan(url);
   assert.deepEqual(plain(p5), { src: url, direct: false });
+});
+
+test("host só vira 'p' quando o link NÃO tem redirecionamento (falha de um salto adiante não envenena o host)", () => {
+  assert.match(html, /const _webRedirected = new Map\(\);/);
+  assert.match(html, /function webChainRedirects\(url\) \{\s*return _webRedirected\.get\(url\) === true;/);
+  assert.match(html, /_webRedirected\.set\(url, j\.url !== url\)/);
+  assert.match(html, /\(webForced \|\| webResolvedDirect\) && !webChainRedirects\(streamInfo\.url\)\) webMemSet\(streamInfo\.url, "data", "p"\)/);
 });
