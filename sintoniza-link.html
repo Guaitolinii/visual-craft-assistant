@@ -2675,6 +2675,166 @@ function webChanProxyClear(storage, url) {
     }
   } catch (e) {}
 }
+
+// ─── Metadados TMDB (capa e sinopse por /api/meta) ───
+function metaKey(titulo, ano, tipo) {
+  if (typeof titulo !== "string") return "";
+  var t = titulo.trim();
+  if (!t) return "";
+  if (t.normalize) {
+    t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  t = t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!t) return "";
+
+  var y = parseInt(ano, 10);
+  var yStr = (!isNaN(y) && y >= 1900 && y <= 2100) ? String(y) : "";
+  var k = (tipo === "tv" || tipo === "series") ? "tv" : "movie";
+  return t + "|" + yStr + "|" + k;
+}
+
+function metaCacheRead(storage, key, nowMs) {
+  try {
+    if (!storage || typeof storage.getItem !== "function") return null;
+    if (typeof key !== "string" || !key || key === "__proto__") return null;
+    var raw = storage.getItem("sint_meta");
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    if (!Object.prototype.hasOwnProperty.call(data, key) || key === "__proto__") return null;
+    var entry = data[key];
+    if (!entry || typeof entry !== "object") return null;
+
+    var now = typeof nowMs === "number" && !isNaN(nowMs) ? nowMs : Date.now();
+    var t = typeof entry.t === "number" ? entry.t : 0;
+    var isNegative = !!entry.x;
+    var ttl = isNegative ? 172800000 : 1209600000;
+    if (now - t > ttl) return null;
+
+    return {
+      c: typeof entry.c === "string" ? entry.c : "",
+      s: typeof entry.s === "string" ? entry.s : "",
+      n: (typeof entry.n === "number" && !isNaN(entry.n)) ? entry.n : null,
+      x: isNegative ? 1 : 0
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function metaCacheWrite(storage, key, meta, nowMs) {
+  try {
+    if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") return;
+    if (typeof key !== "string" || !key || key === "__proto__") return;
+    if (!meta || typeof meta !== "object") return;
+
+    var now = typeof nowMs === "number" && !isNaN(nowMs) ? nowMs : Date.now();
+    var raw = null;
+    try {
+      raw = storage.getItem("sint_meta");
+    } catch (e) {
+      raw = null;
+    }
+    var data = {};
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          data = parsed;
+        }
+      } catch (e) {
+        data = {};
+      }
+    }
+    delete data.__proto__;
+
+    var entry = {
+      c: typeof meta.c === "string" ? meta.c : "",
+      s: typeof meta.s === "string" ? meta.s : "",
+      n: (typeof meta.n === "number" && !isNaN(meta.n)) ? meta.n : null,
+      t: now
+    };
+    if (meta.x) entry.x = 1;
+    data[key] = entry;
+    delete data.__proto__;
+
+    var keys = [];
+    for (var k in data) {
+      if (Object.prototype.hasOwnProperty.call(data, k) && k !== "__proto__") {
+        keys.push(k);
+      }
+    }
+
+    if (keys.length > 2500) {
+      keys.sort(function (a, b) {
+        var ta = data[a] && typeof data[a].t === "number" ? data[a].t : 0;
+        var tb = data[b] && typeof data[b].t === "number" ? data[b].t : 0;
+        return ta - tb;
+      });
+      var toRemove = keys.length - 2500;
+      for (var i = 0; i < toRemove; i++) {
+        delete data[keys[i]];
+      }
+      delete data.__proto__;
+    }
+
+    try {
+      storage.setItem("sint_meta", JSON.stringify(data));
+    } catch (quotaErr) {
+      try {
+        var remainingKeys = [];
+        for (var rk in data) {
+          if (Object.prototype.hasOwnProperty.call(data, rk) && rk !== "__proto__") {
+            remainingKeys.push(rk);
+          }
+        }
+        remainingKeys.sort(function (a, b) {
+          var ta = data[a] && typeof data[a].t === "number" ? data[a].t : 0;
+          var tb = data[b] && typeof data[b].t === "number" ? data[b].t : 0;
+          return ta - tb;
+        });
+        var half = Math.ceil(remainingKeys.length / 2);
+        for (var j = 0; j < half; j++) {
+          delete data[remainingKeys[j]];
+        }
+        delete data.__proto__;
+        storage.setItem("sint_meta", JSON.stringify(data));
+      } catch (err2) {}
+    }
+  } catch (outerErr) {}
+}
+
+function metaApplyToItem(item, meta) {
+  if (!item || typeof item !== "object") return item;
+  if (!meta || typeof meta !== "object" || meta.x) return item;
+
+  var out = {};
+  for (var k in item) {
+    if (Object.prototype.hasOwnProperty.call(item, k)) {
+      out[k] = item[k];
+    }
+  }
+
+  if (meta.c && typeof meta.c === "string") {
+    out.stream_icon = meta.c;
+    out.cover = meta.c;
+    out.movie_image = meta.c;
+  }
+
+  var curPlot = item.plot;
+  var plotEmpty = !curPlot || !String(curPlot).trim() || curPlot === "Nenhuma sinopse disponível.";
+  if (plotEmpty && meta.s && typeof meta.s === "string" && String(meta.s).trim()) {
+    out.plot = meta.s;
+  }
+
+  var curRating = item.rating;
+  var ratingEmpty = !curRating || Number(curRating) === 0 || isNaN(Number(curRating));
+  if (ratingEmpty && meta.n !== null && meta.n !== undefined && typeof meta.n === "number" && !isNaN(meta.n)) {
+    out.rating = meta.n;
+  }
+
+  return out;
+}
 </script>
 
 <script id="epg-helpers">
@@ -8687,6 +8847,225 @@ async function vodApiFetch(url) {
   }
 }
 
+// ─── Cliente em lote do TMDB (/api/meta) ───
+// Lote do /api/meta: 12 itens por pedido (medido em produção: com 24 só 68% das buscas voltavam; com 12, de 82% a 91%)
+const META_BATCH_MAX = 12;
+let _metaQueue = [];
+let _metaQueuedKeys = {};
+let _metaInFlight = {};
+let _metaActiveRequests = 0;
+let _metaPausaAte = 0;
+let _metaTimer = null;
+let _metaObserver = null;
+let _metaObserveScheduled = false;
+
+function getMetaObserver() {
+  if (typeof IntersectionObserver === "undefined") return null;
+  if (!_metaObserver) {
+    _metaObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const card = entry.target;
+          _metaObserver.unobserve(card);
+          const vodKey = card.getAttribute("data-vod-key");
+          const item = _vodCardsIndex[vodKey];
+          if (item) {
+            const isSeries = (card.getAttribute("data-vod-type") === "series") || (vodKey && vodKey.startsWith("series-"));
+            metaQueue(item, isSeries ? "tv" : "movie");
+          }
+        }
+      });
+    }, { rootMargin: '200px' });
+  }
+  return _metaObserver;
+}
+
+function scheduleMetaObserve() {
+  if (_metaObserveScheduled) return;
+  _metaObserveScheduled = true;
+  const schedule = typeof queueMicrotask === "function" ? queueMicrotask : (fn) => setTimeout(fn, 0);
+  schedule(() => {
+    _metaObserveScheduled = false;
+    const observer = getMetaObserver();
+    if (!observer) return;
+    const cards = document.querySelectorAll(".vod-card[data-meta-key]:not([data-meta-observed])");
+    cards.forEach((card) => {
+      card.setAttribute("data-meta-observed", "1");
+      observer.observe(card);
+    });
+  });
+}
+
+function metaQueue(item, tipo) {
+  if (!item) return;
+  const k = (tipo === "series" || tipo === "tv") ? "tv" : "movie";
+  const rawTitle = item.name || item.title || "";
+  if (!rawTitle || typeof rawTitle !== "string") return;
+  const rawYear = item.year || (item.releaseDate ? String(item.releaseDate).slice(0, 4) : "");
+  const key = metaKey(rawTitle, rawYear, k);
+  if (!key) return;
+
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!token) return;
+
+  const cached = metaCacheRead(localStorage, key, Date.now());
+  if (cached) return;
+
+  if (_metaQueuedKeys[key] || _metaInFlight[key]) return;
+
+  const yNum = Number(rawYear);
+  const reqItem = { key, q: rawTitle, k };
+  if (!isNaN(yNum) && yNum >= 1900 && yNum <= 2100) {
+    reqItem.y = yNum;
+  }
+
+  _metaQueuedKeys[key] = true;
+  _metaQueue.push(reqItem);
+
+  if (!_metaTimer) {
+    _metaTimer = setTimeout(() => {
+      _metaTimer = null;
+      metaFlush();
+    }, 150);
+  }
+}
+
+function metaFlush() {
+  if (Date.now() < _metaPausaAte) return;
+  const token = localStorage.getItem(OTT_KEYS.TOKEN);
+  if (!token) {
+    _metaQueue = [];
+    _metaQueuedKeys = {};
+    return;
+  }
+
+  while (_metaActiveRequests < 2 && _metaQueue.length > 0) {
+    const batch = _metaQueue.splice(0, META_BATCH_MAX);
+    for (const it of batch) {
+      delete _metaQueuedKeys[it.key];
+      _metaInFlight[it.key] = true;
+    }
+    _metaActiveRequests++;
+
+    const base = isWebApp() ? location.origin : OTT_PANEL_URL;
+    const url = `${base}/api/meta?t=${encodeURIComponent(token)}`;
+    const payload = JSON.stringify({
+      itens: batch.map((b) => {
+        const itemObj = { q: b.q, k: b.k };
+        if (b.y !== undefined) itemObj.y = b.y;
+        return itemObj;
+      })
+    });
+
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: payload
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403 || res.status === 429 || res.status >= 500) {
+            _metaPausaAte = Date.now() + 60000;
+            _metaQueue = [];
+            _metaQueuedKeys = {};
+          }
+          return;
+        }
+        let data;
+        try {
+          data = await res.json();
+        } catch (e) {
+          return;
+        }
+        const resultados = data && Array.isArray(data.resultados) ? data.resultados : [];
+        const nowMs = Date.now();
+        for (let i = 0; i < batch.length; i++) {
+          if (i >= resultados.length) {
+            continue;
+          }
+          const r = resultados[i];
+          const key = batch[i].key;
+          if (r && r.erro) continue; // falha transitória do TMDB no servidor: não grava nada (nem negativo), tenta de novo mais tarde
+          if (r && r.achou) {
+            let capa = typeof r.capa === "string" ? r.capa.trim() : "";
+            if (!capa.startsWith("https://")) capa = "";
+            const sinopse = typeof r.sinopse === "string" ? r.sinopse : "";
+            let nota = null;
+            if (typeof r.nota === "number" && !isNaN(r.nota)) {
+              nota = r.nota;
+            } else if (r.nota && !isNaN(Number(r.nota))) {
+              nota = Number(r.nota);
+            }
+            const meta = { c: capa, s: sinopse, n: nota };
+            metaCacheWrite(localStorage, key, meta, nowMs);
+            metaOnResolved(key, meta);
+          } else {
+            const neg = { c: "", s: "", n: null, x: 1 };
+            metaCacheWrite(localStorage, key, neg, nowMs);
+            metaOnResolved(key, neg);
+          }
+        }
+      })
+      .catch(() => {
+        _metaPausaAte = Date.now() + 60000;
+        _metaQueue = [];
+        _metaQueuedKeys = {};
+      })
+      .finally(() => {
+        _metaActiveRequests--;
+        for (const it of batch) {
+          delete _metaInFlight[it.key];
+        }
+        if (_metaQueue.length > 0 && Date.now() >= _metaPausaAte) {
+          metaFlush();
+        }
+      });
+  }
+}
+
+function metaOnResolved(key, meta) {
+  if (!key || !meta) return;
+  if (meta.c && typeof meta.c === "string" && meta.c.startsWith("https://")) {
+    const cards = document.querySelectorAll(".vod-card[data-meta-key]");
+    for (let i = 0; i < cards.length; i++) {
+      if (cards[i].getAttribute("data-meta-key") === key) {
+        const img = cards[i].querySelector("img");
+        if (img) img.src = meta.c;
+      }
+    }
+  }
+  if (_vodModalItem && _vodModalItem.item) {
+    const modalYear = vodItemYearKey(_vodModalItem.item);
+    const modalKey = metaKey(_vodModalItem.item.name || _vodModalItem.item.title, modalYear, _vodModalItem.contType);
+    if (modalKey === key) {
+      if (meta.c && typeof meta.c === "string" && meta.c.startsWith("https://")) {
+        const bg = document.getElementById("vod-modal-bg");
+        if (bg) bg.src = meta.c;
+        _vodModalItem.item.stream_icon = meta.c;
+        _vodModalItem.item.cover = meta.c;
+        _vodModalItem.item.movie_image = meta.c;
+      }
+      if (meta.s && typeof meta.s === "string" && meta.s.trim()) {
+        const plotEl = document.getElementById("vod-modal-plot");
+        if (plotEl) {
+          const cur = plotEl.textContent ? plotEl.textContent.trim() : "";
+          if (!cur || cur === "Nenhuma sinopse disponível.") {
+            plotEl.textContent = meta.s;
+            _vodModalItem.item.plot = meta.s;
+          }
+        }
+      }
+      if (meta.n !== null && meta.n !== undefined && Number(meta.n) > 0) {
+        const ratingEl = document.getElementById("vod-modal-rating");
+        if (ratingEl && (!ratingEl.textContent || !ratingEl.textContent.trim())) {
+          ratingEl.textContent = "★ " + meta.n;
+          _vodModalItem.item.rating = meta.n;
+        }
+      }
+    }
+  }
+}
+
 // Categorias de filmes ou séries (lança erro se o provedor responder com falha)
 function vodFetchCategories(creds, isSeries) {
   const url = xtreamApiUrl(creds, isSeries ? "get_series_categories" : "get_vod_categories");
@@ -9513,10 +9892,19 @@ function vodCardHtml(item, contType) {
   const id = contType === "series" ? item.series_id : item.stream_id;
   const key = `${contType}-${id}`;
   _vodCardsIndex[key] = item;
-  const poster = escapeHtmlText(sanitizeImageUrl(item.stream_icon || item.cover || ""));
+  const isSeries = contType === "series";
+  const mType = isSeries ? "tv" : "movie";
+  const mKey = metaKey(item.name || item.title, item.year, mType);
+  let posterUrl = item.stream_icon || item.cover || "";
+  if (mKey) {
+    const cached = metaCacheRead(localStorage, mKey, Date.now());
+    if (cached && cached.c) posterUrl = cached.c;
+  }
+  const poster = escapeHtmlText(sanitizeImageUrl(posterUrl));
   const title  = item.name || item.title || "Sem título";
+  scheduleMetaObserve();
   return `
-    <button class="vod-card" data-vod-key="${key}" data-lp="vod" tabindex="0">
+    <button class="vod-card" data-vod-key="${key}" data-meta-key="${escapeHtmlText(mKey)}" data-lp="vod" tabindex="0">
       ${vodProviderBadgeHtml(item.streamingProviders)}
       <img src="${poster}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">
       <p>${escapeHtmlText(title)}</p>
@@ -9872,6 +10260,17 @@ async function openVodModal(item, vodType, creds) {
   const modal = document.getElementById("vod-modal");
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
+
+  const mType = isSeries ? "tv" : "movie";
+  const mKey = metaKey(item.name || item.title, vodItemYearKey(item), mType);
+  if (mKey) {
+    const cached = metaCacheRead(localStorage, mKey, Date.now());
+    if (cached) {
+      item = metaApplyToItem(item, cached);
+      _vodModalItem.item = item;
+    }
+  }
+  metaQueue(item, mType);
 
   const title = item.name || item.title || "Sem título";
   document.getElementById("vod-modal-title").textContent = title;
