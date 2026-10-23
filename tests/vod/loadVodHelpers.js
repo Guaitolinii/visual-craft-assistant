@@ -33,6 +33,7 @@ const PURE_HELPER_NAMES = [
   "webKeyAction", "webUsesPseudoFullscreen", "lsSet", "quickAccessInfo", "carouselKeyTarget",
   "webMemParse", "webMemKey", "webRoute", "webMemMark", "webHlsShouldFallback",
   "isRealFullscreen", "isFullscreenNow",
+  "legendadosDirectExt", "legendadosEnabled", "legendadosParseM3u",
 ];
 
 function toHostRealm(value) {

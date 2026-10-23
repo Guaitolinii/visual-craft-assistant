@@ -3746,7 +3746,7 @@ const OTT_PANEL_URL = "https://sintonizatv.com.br";
 const OTT_CONFIG_URL = OTT_PANEL_URL + "/app-config.json";
 const OTT_KEYS = { TOKEN: "sint_ott_token", LAST_OK: "sint_ott_last_ok", ACCOUNT: "sint_ott_account", CONFIG: "sint_ott_config" };
 // Mesmos valores de LS no script principal (um teste confere)
-const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache" };
+const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache", LEGENDADOS: "sint_legendados_url" };
 const OTT_OFFLINE_GRACE_MS = 48 * 3600 * 1000;
 const OTT_REVALIDATE_MS = 6 * 3600 * 1000;
 const OTT_RPC_TIMEOUT_MS = 15000;
@@ -3813,7 +3813,17 @@ function ottParseDeviceConfig(data) {
       const u = data.user || {};
       const lists = (Array.isArray(data.playlists) ? data.playlists : [])
         .filter((l) => l && ottStr(l.url_m3u))
-        .map((l) => ({ id: ottStr(l.id), nome: ottStr(l.nome) || "Principal", url_m3u: l.url_m3u, url_vod: ottStr(l.url_vod) || null, url_epg: ottStr(l.url_epg) || null }));
+        .map((l) => {
+          const leg = ottStr(l.url_legendados);
+          return {
+            id: ottStr(l.id),
+            nome: ottStr(l.nome) || "Principal",
+            url_m3u: l.url_m3u,
+            url_vod: ottStr(l.url_vod) || null,
+            url_epg: ottStr(l.url_epg) || null,
+            url_legendados: (leg && /^https?:\/\//i.test(leg)) ? leg : null,
+          };
+        });
       return {
         status: "ok",
         account: { nome: ottStr(u.nome), status: ottStr(u.status), trial_fim: ottStr(u.trial_fim) || null, acesso_fim: ottStr(u.acesso_fim) || null },
@@ -3838,18 +3848,25 @@ function ottApplyPlaylist(storage, playlist) {
     [OTT_LIST_KEYS.MODE, playlist ? "url" : null],
     [OTT_LIST_KEYS.VOD, playlist ? playlist.url_vod : null],
     [OTT_LIST_KEYS.EPG, playlist ? playlist.url_epg : null],
+    [OTT_LIST_KEYS.LEGENDADOS, playlist ? playlist.url_legendados : null],
   ];
   let changed = false;
+  let epgInvalidated = false;
   wanted.forEach(([key, value]) => {
     const current = storage.getItem(key);
     if (value) {
-      if (current !== value) { storage.setItem(key, value); changed = true; }
+      if (current !== value) {
+        storage.setItem(key, value);
+        changed = true;
+        if (key !== OTT_LIST_KEYS.LEGENDADOS) epgInvalidated = true;
+      }
     } else if (current !== null) {
       storage.removeItem(key);
       changed = true;
+      if (key !== OTT_LIST_KEYS.LEGENDADOS) epgInvalidated = true;
     }
   });
-  if (changed) storage.removeItem(OTT_LIST_KEYS.EPG_CACHE); // guia antigo não vale para a lista nova
+  if (epgInvalidated) storage.removeItem(OTT_LIST_KEYS.EPG_CACHE); // guia antigo não vale para a lista nova
   return changed;
 }
 
@@ -4865,6 +4882,7 @@ const OTT_WEB_ACCOUNT_KEY_RES = [
   /^sint_p[0-9a-f]{8}_/,
   /^sint_(fav|recents|fav_kind|continue|mylist|favsync|histsync)$/,
   /^sint_web_chosen$/,
+  /^sint_legendados_url$/,
 ];
 
 // Lista as chaves do armazenamento (localStorage tem length/key; um armazenamento sem isso só perde as chaves por perfil)
@@ -4880,7 +4898,7 @@ function ottWebStorageKeys(storage) {
 // Apaga tudo que é da conta (inclusive o "dono" guardado). A sessão do site NÃO é mexida aqui.
 function ottWebWipeAccountData(storage) {
   const fixas = [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, OTT_KEYS.CONFIG, "sint_profile_active", "sint_profiles", "sint_profiles_migrated",
-    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN];
+    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN, "sint_legendados_url"];
   const todas = fixas.concat(ottWebStorageKeys(storage).filter((k) => OTT_WEB_ACCOUNT_KEY_RES.some((re) => re.test(k))));
   todas.forEach((k) => { try { storage.removeItem(k); } catch (e) { /* ignora */ } });
   try { ottApplyPlaylist(storage, null); } catch (e) { /* ignora */ }
@@ -5351,10 +5369,11 @@ function histSyncSave(perfilId, st) {
 function histResumeUrl(item, creds) {
   if (!item) return "";
   if (item.url) return item.url;
+  const v = item.vodItem || {};
+  if (v.direct_url) return v.direct_url;
   if (!creds) return "";
   const m = /^resume-(vod|series)-([A-Za-z0-9_-]{1,50})$/.exec(String(item.id || ""));
   if (!m) return "";
-  const v = item.vodItem || {};
   if (m[1] === "series") return buildSeriesEpisodeUrl(creds, m[2], item.ext || undefined);
   return buildVodStreamUrl(creds, m[2], item.ext || v.container_extension);
 }
@@ -5640,6 +5659,180 @@ function sanitizeVodItem(item) {
   ["name", "title", "plot", "category_name"].forEach(k => { if (out[k] != null) out[k] = sanitizeLabel(out[k]); });
   ["stream_icon", "cover"].forEach(k => { if (out[k] != null) out[k] = sanitizeImageUrl(out[k]); });
   return out;
+}
+
+// ─── Lista extra de filmes Legendados (v8) ───
+function legendadosDirectExt(url) {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!/^https:\/\//i.test(trimmed)) return "";
+  const pathPart = trimmed.split(/[?#]/)[0];
+  const m = pathPart.match(/\.(m3u8|mp4|mkv|ts|m4v|webm|mov)$/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
+function legendadosEnabled(storage) {
+  if (!storage) return false;
+  let val = null;
+  try {
+    val = typeof storage.getItem === "function" ? storage.getItem("sint_legendados_url") : storage["sint_legendados_url"];
+  } catch (e) {
+    return false;
+  }
+  if (typeof val !== "string") return false;
+  const trimmed = val.trim();
+  return /^https?:\/\//i.test(trimmed);
+}
+
+function legendadosParseM3u(text) {
+  if (typeof text !== "string") return [];
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  if (!text.trim()) return [];
+
+  const lines = text.split(/\r?\n/);
+  const items = [];
+  const seenIds = new Set();
+  let pendingExtinf = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.startsWith("#EXTINF:")) {
+      const idMatch = line.match(/\btvg-id="([^"]*)"/i);
+      const tvgId = idMatch ? idMatch[1].trim() : "";
+      // id só com letras, números, _ - . (vai para atributos HTML e para chaves do cache): qualquer outro vira item descartado
+      if (!tvgId || !/^[A-Za-z0-9_.-]{1,40}$/.test(tvgId)) {
+        pendingExtinf = null;
+        continue;
+      }
+
+      const nameMatch = line.match(/\btvg-name="([^"]*)"/i);
+      let rawName = "";
+      if (nameMatch && nameMatch[1].trim()) {
+        rawName = nameMatch[1].trim();
+      } else {
+        let inQuotes = false;
+        let commaIdx = -1;
+        for (let c = 8; c < line.length; c++) {
+          if (line[c] === '"') inQuotes = !inQuotes;
+          else if (line[c] === ',' && !inQuotes) {
+            commaIdx = c;
+            break;
+          }
+        }
+        if (commaIdx >= 0) {
+          rawName = line.slice(commaIdx + 1).trim();
+        } else {
+          const lastComma = line.lastIndexOf(",");
+          rawName = lastComma >= 0 ? line.slice(lastComma + 1).trim() : "";
+        }
+      }
+
+      let year = "";
+      const yearMatch = rawName.match(/\s*\((\d{4})\)$/);
+      if (yearMatch) {
+        year = yearMatch[1];
+        rawName = rawName.slice(0, yearMatch.index).trim();
+      }
+
+      const name = sanitizeLabel(rawName);
+      const logoMatch = line.match(/\btvg-logo="([^"]*)"/i);
+      const stream_icon = logoMatch ? sanitizeImageUrl(logoMatch[1]) : "";
+      const groupMatch = line.match(/\bgroup-title="([^"]*)"/i);
+      const genre = groupMatch ? sanitizeLabel(groupMatch[1]) : "";
+
+      pendingExtinf = {
+        stream_id: "leg-" + tvgId,
+        name,
+        stream_icon,
+        category_name: "Legendados",
+        genre,
+        year,
+      };
+      continue;
+    }
+
+    if (line.startsWith("#")) {
+      continue;
+    }
+
+    if (pendingExtinf) {
+      const directUrl = line;
+      const ext = legendadosDirectExt(directUrl);
+      if (ext && !seenIds.has(pendingExtinf.stream_id)) {
+        seenIds.add(pendingExtinf.stream_id);
+        items.push({
+          stream_id: pendingExtinf.stream_id,
+          name: pendingExtinf.name,
+          stream_icon: pendingExtinf.stream_icon,
+          category_name: "Legendados",
+          genre: pendingExtinf.genre,
+          direct_url: directUrl,
+          container_extension: ext,
+          year: pendingExtinf.year,
+          is_legendado: true,
+        });
+      }
+      pendingExtinf = null;
+    }
+  }
+
+  return items;
+}
+
+let _legendadosCache = null;
+
+async function legendadosFetch(url) {
+  if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return [];
+  if (_legendadosCache !== null) return _legendadosCache;
+
+  const targetUrl = url.trim();
+  let text = null;
+
+  // Tentativa 1: busca direta com timeout de 15 s
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(targetUrl, { signal: ctrl.signal, cache: "no-cache" });
+      if (res && res.ok) {
+        text = await res.text();
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    /* falha na tentativa direta, tenta fallback abaixo */
+  }
+
+  // Tentativa 2: fallback pela mesma estratégia que loadPlaylistFromUrl já usa
+  if (text == null) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15000);
+      try {
+        const res = (typeof isWebApp === "function" && isWebApp())
+          ? await webFetchRouted(targetUrl, { signal: ctrl.signal, cache: "no-cache" })
+          : await fetch(typeof proxyIfInsecure === "function" ? proxyIfInsecure(targetUrl) : targetUrl, { signal: ctrl.signal, cache: "no-cache" });
+        if (res && res.ok) {
+          text = await res.text();
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (e) {
+      /* falha final */
+    }
+  }
+
+  if (!text) return [];
+
+  const items = legendadosParseM3u(text);
+  if (items && items.length > 0) {
+    _legendadosCache = items;
+  }
+  return items;
 }
 
 function parseM3U(text) {
@@ -8837,7 +9030,7 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", DEFAULTS_SEEDED:"sint_defaults_seeded" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", LEGENDADOS_URL:"sint_legendados_url", DEFAULTS_SEEDED:"sint_defaults_seeded" };
 
 // Escrita segura no localStorage: cota estourada ou armazenamento bloqueado (Safari privado, navegador cheio) nunca derruba o app.
 // Se estourar, apaga o guia de programação em cache (o maior item; o EPG segue em memória) e tenta uma vez de novo.
@@ -9489,7 +9682,7 @@ function splitEpisodeTitle(title) {
 
 // Cópia enxuta do item da API (filme ou série), guardada no histórico e
 // na Minha Lista para reabrir o título depois sem refazer a busca.
-const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year"];
+const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year", "direct_url", "is_legendado"];
 function trimVodItem(item) {
   if (!item) return null;
   const out = {};
@@ -10165,6 +10358,19 @@ function vodCategoryDisplayName(cat) {
   return (cat.category_name || "").replace(/^[^|]+\|\s*/, "");
 }
 
+function legendadosRowHtml(items, contType) {
+  if (!items || !items.length) return "";
+  const catItems = attachProviders(items.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap);
+  return `
+    <div class="vod-row" data-cat-id="legendados">
+      <div class="vod-row-header">
+        <h2>Legendados</h2>
+        <button class="vod-see-all" data-cat-id="legendados">Ver todos</button>
+      </div>
+      <div class="vod-carousel" id="vod-carousel-legendados">${catItems.map(item => vodCardHtml(item, contType)).join("")}</div>
+    </div>`;
+}
+
 // Um único ponto de renderização das fileiras de catálogo, usado tanto na
 // carga inicial de loadVodCatalog quanto na troca de modo (badge/agrupar) -
 // troca de modo nunca refaz fetch, só re-renderiza com os mesmos itens já
@@ -10181,6 +10387,8 @@ function renderVodRows(allItems, contType) {
   const rowsEl = document.getElementById("vod-catalog-rows");
   if (!rowsEl) return;
 
+  const legItems = _vodCatalogCache.itemsByCategory["legendados"];
+  const legHtml = (contType === "vod" && legItems && legItems.length) ? legendadosRowHtml(legItems, contType) : "";
   if (vodDisplayMode === "group" && Object.keys(_vodProviderMap).length) {
     if (!_vodCatalogCache.settled) {
       rowsEl.innerHTML = `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
@@ -10190,7 +10398,7 @@ function renderVodRows(allItems, contType) {
     // não pode repetir dentro da mesma fileira de streaming.
     const enriched = attachProviders(dedupeVodItemsByTitle(allItems), _vodProviderMap);
     const groups = groupItemsByProvider(enriched, PROVIDER_ORDER);
-    rowsEl.innerHTML = groups.map(g => {
+    rowsEl.innerHTML = legHtml + groups.map(g => {
       const label = g.providerId === "outros"
         ? (contType === "series" ? "Demais séries" : "Demais filmes")
         : PROVIDERS_BR[g.providerId].label;
@@ -10214,7 +10422,7 @@ function renderVodRows(allItems, contType) {
   // Categoria vazia ou com erro continua com a fileira e a mesma mensagem
   // que o .then/.catch por categoria desenhou ("Vazio" / "Erro ao carregar"),
   // em vez de sumir da tela a cada redesenho.
-  rowsEl.innerHTML = _vodCatalogCache.categories.map(cat => {
+  rowsEl.innerHTML = legHtml + _vodCatalogCache.categories.map(cat => {
     const status = _vodCatalogCache.categoryStatus[cat.category_id];
     let carouselHtml;
     if (status === "ok") {
@@ -10252,6 +10460,19 @@ async function loadVodCatalog(vodType, creds) {
   // Reseta o cache e a busca a cada entrada na view (troca de aba
   // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
   _vodCatalogCache = { vodType, categories: [], itemsByCategory: {}, categoryStatus: {}, settled: false };
+  // Lista extra de filmes legendados (em paralelo, sem bloquear o catálogo)
+  if (vodType === "vod" && legendadosEnabled(localStorage)) {
+    legendadosFetch(localStorage.getItem("sint_legendados_url")).then(items => {
+      if (_vodCatalogCache.vodType !== "vod") return;
+      if (!items || !items.length) return;
+      _vodCatalogCache.itemsByCategory["legendados"] = items;
+      _vodCatalogCache.categoryStatus["legendados"] = "ok";
+      if (_vodCatalogCache.settled) {
+        _vodCatalogCache.flat = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      }
+      renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), "vod");
+    }).catch(() => {});
+  }
   // Mapa de streaming: uma vez por sessão (só tenta de novo se a última
   // tentativa falhou e voltou vazio), em paralelo ao catálogo, sem nunca
   // segurá-lo. Mapa vazio (JSON ainda não publicado / erro de rede) não
@@ -10433,19 +10654,30 @@ async function openVodModal(item, vodType, creds) {
     seriesContent.style.display = "none";
     playBtn.style.display = "inline-flex";
     playBtn.querySelector("span").textContent = "Assistir";
-    playBtn.onclick = () => playVodSelection(
-      buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-      { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: { kind: "vod", item } }
-    );
-    // Assistir na TV: o filme inteiro (a regra .tv-only esconde sem conta ativa)
-    tvBtn.style.display = "";
-    tvBtn.onclick = () => castToTv("vod", item);
-    // Downloads (v8): "Baixar" o filme, só no app instalado.
-    dlBtn.style.display = canDownload() ? "inline-flex" : "none";
-    dlBtn.onclick = () => queueDownloads([buildDownloadEntry({
-      kind: "movie", id: item.stream_id, title, cover: item.stream_icon || item.cover,
-      ext: item.container_extension, url: buildVodStreamUrl(creds, item.stream_id, item.container_extension),
-    }, Date.now())]);
+    if (item.is_legendado) {
+      playBtn.onclick = () => playVodSelection(
+        item.direct_url,
+        { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: null }
+      );
+      tvBtn.style.display = "none";
+      tvBtn.onclick = null;
+      dlBtn.style.display = "none";
+      dlBtn.onclick = null;
+    } else {
+      playBtn.onclick = () => playVodSelection(
+        buildVodStreamUrl(creds, item.stream_id, item.container_extension),
+        { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: { kind: "vod", item } }
+      );
+      // Assistir na TV: o filme inteiro (a regra .tv-only esconde sem conta ativa)
+      tvBtn.style.display = "";
+      tvBtn.onclick = () => castToTv("vod", item);
+      // Downloads (v8): "Baixar" o filme, só no app instalado.
+      dlBtn.style.display = canDownload() ? "inline-flex" : "none";
+      dlBtn.onclick = () => queueDownloads([buildDownloadEntry({
+        kind: "movie", id: item.stream_id, title, cover: item.stream_icon || item.cover,
+        ext: item.container_extension, url: buildVodStreamUrl(creds, item.stream_id, item.container_extension),
+      }, Date.now())]);
+    }
     playBtn.focus();
     return;
   }
@@ -12302,7 +12534,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
-    if (!creds) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
+    if (!creds && !item.is_legendado) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
     // Cartão da Minha Lista diz o próprio tipo (no Início, _state.vodType
     // pode ser de outra aba).
     openVodModal(item, card.dataset.vodType || _state.vodType, creds);
