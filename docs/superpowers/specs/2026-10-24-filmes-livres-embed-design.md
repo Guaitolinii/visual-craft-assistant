@@ -62,7 +62,7 @@ Forma do item no app: `{ stream_id: "liv-<tvg-id>", name, stream_icon, category_
 **6.5 Tela de embed.** Overlay `#embed-screen` em tela cheia, acima do modal de filme:
 - Barra com botão voltar, título do filme e "Abrir no navegador" (link `target="_blank"`, `rel="noopener"`).
 - `<iframe>` com `allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"` e `allowfullscreen`; **sem `sandbox` e sem `referrerpolicy`**.
-- Ao abrir: pausa o player nativo (`stopStream()` se houver reprodução), fecha o modal do filme, faz `history.pushState` e define `src`. Ao fechar: `src = "about:blank"` (para o áudio) e remove o overlay.
+- Ao abrir: pausa o player nativo (`pausePlayerForCast()`, a rotina que já existe para pausar o app quando outra coisa começa a tocar), fecha o modal do filme, faz `history.pushState` e define `src`. Ao fechar: `src = "about:blank"` (para o áudio) e remove o overlay.
 - Fechar: botão voltar, `Escape` e `popstate` (o botão voltar do navegador e o botão físico do Android fecham a tela em vez de sair do app).
 - Mostra um aviso suave após 8 s sem evento `load`, junto do botão "Abrir no navegador".
 - Sem "continuar assistindo" (o app não vê o progresso dentro do iframe), sem Baixar, sem Chromecast, sem "Assistir na TV".
