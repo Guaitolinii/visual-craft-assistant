@@ -96,3 +96,20 @@ test("boot seeds the defaults after ?lista= and before the VOD tabs check and th
   assert.ok(seedAt < boot.indexOf("updateVodTabsVisibility();"), "seed must run before the VOD tabs check");
   assert.ok(seedAt < boot.indexOf("const savedUrl = localStorage.getItem(LS.URL);"), "seed must run before the auto-load");
 });
+
+// A lista de legendados é extra: grava só na própria chave e nunca toca nas listas principais (canais e filmes)
+test("seedInjectedDefaults grava os legendados só em sint_legendados_url, sem substituir a lista principal", () => {
+  const { seedInjectedDefaults } = loadVodHelpers();
+  const LEG = "https://gist.example/raw/legendados.m3u";
+  const s = memoryStorage({ sint_url: "http://mine/list.m3u", sint_vod_url: "http://mine/get.php?username=a&password=b" });
+  seedInjectedDefaults(s, { channels: CH, vod: VOD, legendados: LEG });
+  assert.equal(s.data.sint_legendados_url, LEG);
+  assert.equal(s.data.sint_url, "http://mine/list.m3u");
+  assert.equal(s.data.sint_vod_url, "http://mine/get.php?username=a&password=b");
+  // instalação nova: as três chaves coexistem, cada uma com a sua lista
+  const novo = memoryStorage();
+  seedInjectedDefaults(novo, { channels: CH, vod: VOD, legendados: LEG });
+  assert.equal(novo.data.sint_url, CH);
+  assert.equal(novo.data.sint_vod_url, VOD);
+  assert.equal(novo.data.sint_legendados_url, LEG);
+});

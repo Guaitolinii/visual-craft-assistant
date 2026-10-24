@@ -9055,7 +9055,13 @@ function lsSet(key, value) {
 // vinda do secret (ou por "" num build sem secrets). Aberto sem passar pelo
 // build (npm run dev), o token fica como está e resolveInjectedDefault o
 // trata como "sem padrão". A credencial nunca fica neste arquivo-fonte.
-const INJECTED_DEFAULTS = { channels: "__DEFAULT_CHANNELS_URL__", vod: "__DEFAULT_VOD_URL__" };
+// Lista de legendados é URL pública compartilhada (gist): vai literal em
+// todas as builds, sem depender de secret.
+const INJECTED_DEFAULTS = {
+  channels: "__DEFAULT_CHANNELS_URL__",
+  vod: "__DEFAULT_VOD_URL__",
+  legendados: "https://gist.githubusercontent.com/Guaitolinii/1ff46218da0838a475bb813e5dce815d/raw/filmes_legendados_sintoniza.m3u",
+};
 
 function resolveInjectedDefault(value) {
   const v = String(value || "").trim();
@@ -9073,7 +9079,7 @@ function resolveInjectedDefault(value) {
 function seedInjectedDefaults(storage, defaults) {
   let seeded = {};
   try { seeded = JSON.parse(storage.getItem(LS.DEFAULTS_SEEDED) || "{}") || {}; } catch (e) { seeded = {}; }
-  const targets = [["channels", LS.URL], ["vod", LS.VOD_URL]];
+  const targets = [["channels", LS.URL], ["vod", LS.VOD_URL], ["legendados", LS.LEGENDADOS_URL]];
   let changed = false;
   for (const [name, key] of targets) {
     const value = resolveInjectedDefault(defaults[name]);
