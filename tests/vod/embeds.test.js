@@ -253,3 +253,22 @@ test("ligações: o modal e o cartão roteiam por vodItemPlayKind/vodItemIsExtra
   // os campos novos entram no item enxuto
   assert.match(html, /VOD_ITEM_FIELDS = \[[^\]]*"embed_url"[^\]]*"is_livre"[^\]]*\]/);
 });
+
+// ── Fileira e carga ──
+test("ligações: fileira genérica, Filmes Livres depois dos Legendados e carga em paralelo", () => {
+  const html = readFileSync(LINK_HTML_PATH, "utf8");
+  // fileira genérica com wrappers
+  assert.match(html, /function extraRowHtml\(catId, titulo, items, contType\)/);
+  assert.match(html, /function legendadosRowHtml\(items, contType\) \{\s*return extraRowHtml\("legendados", "Legendados"/);
+  assert.match(html, /function livresRowHtml\(items, contType\) \{\s*return extraRowHtml\("livres", EMBEDS_CATEGORY_NAME/);
+  // renderVodRows: Legendados primeiro, Filmes Livres logo abaixo, nos dois modos de exibição
+  assert.match(html, /const extrasHtml = legHtml \+ livHtml;/);
+  assert.match(html, /rowsEl\.innerHTML = extrasHtml \+ groups\.map/);
+  assert.match(html, /rowsEl\.innerHTML = extrasHtml \+ _vodCatalogCache\.categories\.map/);
+  assert.doesNotMatch(html, /rowsEl\.innerHTML = legHtml \+/);
+  // loadVodCatalog: carga em paralelo só na aba Filmes, categoria "livres" no cache
+  assert.match(html, /vodType === "vod" && embedsEnabled\(localStorage\)/);
+  assert.match(html, /embedsFetch\(localStorage\.getItem\("sint_embeds_url"\)\)/);
+  assert.match(html, /itemsByCategory\["livres"\] = items/);
+  assert.match(html, /categoryStatus\["livres"\] = "ok"/);
+});

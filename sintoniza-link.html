@@ -10457,17 +10457,26 @@ function vodCategoryDisplayName(cat) {
   return (cat.category_name || "").replace(/^[^|]+\|\s*/, "");
 }
 
-function legendadosRowHtml(items, contType) {
+// Fileira de uma lista extra (Legendados, Filmes Livres): mesmo desenho das fileiras do catálogo, com "Ver todos"
+function extraRowHtml(catId, titulo, items, contType) {
   if (!items || !items.length) return "";
   const catItems = attachProviders(items.slice(0, VOD_ROW_INITIAL_COUNT), _vodProviderMap);
   return `
-    <div class="vod-row" data-cat-id="legendados">
+    <div class="vod-row" data-cat-id="${catId}">
       <div class="vod-row-header">
-        <h2>Legendados</h2>
-        <button class="vod-see-all" data-cat-id="legendados">Ver todos</button>
+        <h2>${escapeHtmlText(titulo)}</h2>
+        <button class="vod-see-all" data-cat-id="${catId}">Ver todos</button>
       </div>
-      <div class="vod-carousel" id="vod-carousel-legendados">${catItems.map(item => vodCardHtml(item, contType)).join("")}</div>
+      <div class="vod-carousel" id="vod-carousel-${catId}">${catItems.map(item => vodCardHtml(item, contType)).join("")}</div>
     </div>`;
+}
+
+function legendadosRowHtml(items, contType) {
+  return extraRowHtml("legendados", "Legendados", items, contType);
+}
+
+function livresRowHtml(items, contType) {
+  return extraRowHtml("livres", EMBEDS_CATEGORY_NAME, items, contType);
 }
 
 // Um único ponto de renderização das fileiras de catálogo, usado tanto na
@@ -10486,8 +10495,12 @@ function renderVodRows(allItems, contType) {
   const rowsEl = document.getElementById("vod-catalog-rows");
   if (!rowsEl) return;
 
+  // Fileiras extras no topo de Filmes: Legendados primeiro, Filmes Livres logo abaixo
   const legItems = _vodCatalogCache.itemsByCategory["legendados"];
   const legHtml = (contType === "vod" && legItems && legItems.length) ? legendadosRowHtml(legItems, contType) : "";
+  const livItems = _vodCatalogCache.itemsByCategory["livres"];
+  const livHtml = (contType === "vod" && livItems && livItems.length) ? livresRowHtml(livItems, contType) : "";
+  const extrasHtml = legHtml + livHtml;
   if (vodDisplayMode === "group" && Object.keys(_vodProviderMap).length) {
     if (!_vodCatalogCache.settled) {
       rowsEl.innerHTML = `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
@@ -10497,7 +10510,7 @@ function renderVodRows(allItems, contType) {
     // não pode repetir dentro da mesma fileira de streaming.
     const enriched = attachProviders(dedupeVodItemsByTitle(allItems), _vodProviderMap);
     const groups = groupItemsByProvider(enriched, PROVIDER_ORDER);
-    rowsEl.innerHTML = legHtml + groups.map(g => {
+    rowsEl.innerHTML = extrasHtml + groups.map(g => {
       const label = g.providerId === "outros"
         ? (contType === "series" ? "Demais séries" : "Demais filmes")
         : PROVIDERS_BR[g.providerId].label;
@@ -10521,7 +10534,7 @@ function renderVodRows(allItems, contType) {
   // Categoria vazia ou com erro continua com a fileira e a mesma mensagem
   // que o .then/.catch por categoria desenhou ("Vazio" / "Erro ao carregar"),
   // em vez de sumir da tela a cada redesenho.
-  rowsEl.innerHTML = legHtml + _vodCatalogCache.categories.map(cat => {
+  rowsEl.innerHTML = extrasHtml + _vodCatalogCache.categories.map(cat => {
     const status = _vodCatalogCache.categoryStatus[cat.category_id];
     let carouselHtml;
     if (status === "ok") {
@@ -10566,6 +10579,19 @@ async function loadVodCatalog(vodType, creds) {
       if (!items || !items.length) return;
       _vodCatalogCache.itemsByCategory["legendados"] = items;
       _vodCatalogCache.categoryStatus["legendados"] = "ok";
+      if (_vodCatalogCache.settled) {
+        _vodCatalogCache.flat = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      }
+      renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), "vod");
+    }).catch(() => {});
+  }
+  // Filmes Livres (embeds oficiais): em paralelo, sem bloquear o catálogo; independente dos Legendados
+  if (vodType === "vod" && embedsEnabled(localStorage)) {
+    embedsFetch(localStorage.getItem("sint_embeds_url")).then(items => {
+      if (_vodCatalogCache.vodType !== "vod") return;
+      if (!items || !items.length) return;
+      _vodCatalogCache.itemsByCategory["livres"] = items;
+      _vodCatalogCache.categoryStatus["livres"] = "ok";
       if (_vodCatalogCache.settled) {
         _vodCatalogCache.flat = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
       }

@@ -389,7 +389,8 @@ test("ligações no sintoniza-link.html: categoria Legendados, modal e busca", (
   assert.match(html, /legendadosFetch\(/);
 
   // Categoria "legendados" no topo das fileiras
-  assert.match(html, /vod-carousel-legendados/);
+  assert.match(html, /extraRowHtml\("legendados"/);
+  assert.match(html, /id="vod-carousel-\$\{catId\}"/);
 
   // openVodModal esconde Baixar e TV para itens extras e chama playVodSelection com direct_url (via vodItemPlayKind)
   assert.match(html, /vodItemPlayKind\(item\)[\s\S]*?playVodSelection\(\s*item\.direct_url/);
