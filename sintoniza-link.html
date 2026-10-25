@@ -5671,23 +5671,33 @@ function legendadosDirectExt(url) {
   return m ? m[1].toLowerCase() : "";
 }
 
-function legendadosEnabled(storage) {
+// true se a chave do armazenamento guarda um link http(s) (usado pelas listas extras: Legendados e Filmes Livres)
+function extraListEnabled(storage, key) {
   if (!storage) return false;
   let val = null;
   try {
-    val = typeof storage.getItem === "function" ? storage.getItem("sint_legendados_url") : storage["sint_legendados_url"];
+    val = typeof storage.getItem === "function" ? storage.getItem(key) : storage[key];
   } catch (e) {
     return false;
   }
   if (typeof val !== "string") return false;
-  const trimmed = val.trim();
-  return /^https?:\/\//i.test(trimmed);
+  return /^https?:\/\//i.test(val.trim());
 }
 
-function legendadosParseM3u(text) {
+function legendadosEnabled(storage) {
+  return extraListEnabled(storage, "sint_legendados_url");
+}
+
+// Leitor comum das listas extras: pares #EXTINF + link → itens já saneados.
+// opts.idPrefix  prefixo do stream_id ("leg-", "liv-")
+// opts.category  nome da categoria
+// opts.classify  (link) => campos extras do item (direct_url, embed_url, flags…) ou null para descartar o item
+// opts.max       teto de itens (0 ou ausente = sem teto)
+function m3uExtraParse(text, opts) {
   if (typeof text !== "string") return [];
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   if (!text.trim()) return [];
+  const max = Number(opts.max) > 0 ? Number(opts.max) : 0;
 
   const lines = text.split(/\r?\n/);
   const items = [];
@@ -5742,14 +5752,7 @@ function legendadosParseM3u(text) {
       const groupMatch = line.match(/\bgroup-title="([^"]*)"/i);
       const genre = groupMatch ? sanitizeLabel(groupMatch[1]) : "";
 
-      pendingExtinf = {
-        stream_id: "leg-" + tvgId,
-        name,
-        stream_icon,
-        category_name: "Legendados",
-        genre,
-        year,
-      };
+      pendingExtinf = { stream_id: opts.idPrefix + tvgId, name, stream_icon, genre, year };
       continue;
     }
 
@@ -5758,21 +5761,19 @@ function legendadosParseM3u(text) {
     }
 
     if (pendingExtinf) {
-      const directUrl = line;
-      const ext = legendadosDirectExt(directUrl);
-      if (ext && !seenIds.has(pendingExtinf.stream_id)) {
+      const extra = opts.classify(line);
+      if (extra && !seenIds.has(pendingExtinf.stream_id)) {
         seenIds.add(pendingExtinf.stream_id);
         items.push({
           stream_id: pendingExtinf.stream_id,
           name: pendingExtinf.name,
           stream_icon: pendingExtinf.stream_icon,
-          category_name: "Legendados",
+          category_name: opts.category,
           genre: pendingExtinf.genre,
-          direct_url: directUrl,
-          container_extension: ext,
           year: pendingExtinf.year,
-          is_legendado: true,
+          ...extra,
         });
+        if (max && items.length >= max) return items;
       }
       pendingExtinf = null;
     }
@@ -5781,12 +5782,21 @@ function legendadosParseM3u(text) {
   return items;
 }
 
-let _legendadosCache = null;
+function legendadosParseM3u(text) {
+  return m3uExtraParse(text, {
+    idPrefix: "leg-",
+    category: "Legendados",
+    // Legendados só aceita link direto de vídeo (https + extensão de mídia)
+    classify: (url) => {
+      const ext = legendadosDirectExt(url);
+      return ext ? { direct_url: url, container_extension: ext, is_legendado: true } : null;
+    },
+  });
+}
 
-async function legendadosFetch(url) {
-  if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return [];
-  if (_legendadosCache !== null) return _legendadosCache;
-
+// Baixa o texto de uma lista extra: busca direta (15 s) e, se falhar, a mesma estratégia de fallback do loadPlaylistFromUrl.
+// Devolve o texto ou null se as duas tentativas falharem.
+async function extraListFetchText(url) {
   const targetUrl = url.trim();
   let text = null;
 
@@ -5826,6 +5836,16 @@ async function legendadosFetch(url) {
     }
   }
 
+  return text;
+}
+
+let _legendadosCache = null;
+
+async function legendadosFetch(url) {
+  if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return [];
+  if (_legendadosCache !== null) return _legendadosCache;
+
+  const text = await extraListFetchText(url);
   if (!text) return [];
 
   const items = legendadosParseM3u(text);
