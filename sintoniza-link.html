@@ -971,6 +971,7 @@
       font-size: .85rem; text-decoration: none; cursor: pointer;
     }
     .embed-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .embed-btn[aria-pressed="false"] { border-color: var(--error); color: var(--error); }
     .embed-hint { margin: 0; padding: .5rem .75rem; font-size: .85rem; flex-shrink: 0; background: oklch(0.2 0.02 65); color: var(--foreground); }
     .embed-hint.hidden { display: none; }
     #embed-frame-host { flex: 1; min-height: 0; }
@@ -2294,14 +2295,15 @@
   </div>
 </div>
 
-<!-- EMBED: tela do player incorporado (categoria Filmes Livres). O iframe não usa sandbox por decisão do produto: só entram fontes autorizadas -->
+<!-- EMBED: tela do player incorporado (categoria Filmes Livres). O iframe sobe com sandbox anti-popup; o botão de proteção liga/desliga por site -->
 <div id="embed-screen" class="hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="embed-title">
   <div class="embed-bar">
     <button type="button" id="embed-back" class="embed-btn" aria-label="Voltar"><i data-lucide="arrow-left" style="width:20px;height:20px"></i></button>
     <h2 id="embed-title">Filme</h2>
+    <button type="button" id="embed-shield" class="embed-btn" aria-pressed="true" title="Bloqueia popups e redirecionamentos do player">Proteção: ligada</button>
     <a id="embed-external" class="embed-btn" href="#" target="_blank" rel="noopener">Abrir no navegador</a>
   </div>
-  <p id="embed-hint" class="embed-hint hidden">O player não carregou? Alguns sites não permitem abrir aqui. Use “Abrir no navegador”.</p>
+  <p id="embed-hint" class="embed-hint hidden">O player não carregou? Alguns players recusam tocar com a proteção ligada: toque em “Proteção: ligada” para desligar só para este site. Se ainda assim não abrir, use “Abrir no navegador”.</p>
   <div id="embed-frame-host"></div>
 </div>
 
@@ -3781,7 +3783,7 @@ const OTT_PANEL_URL = "https://sintonizatv.com.br";
 const OTT_CONFIG_URL = OTT_PANEL_URL + "/app-config.json";
 const OTT_KEYS = { TOKEN: "sint_ott_token", LAST_OK: "sint_ott_last_ok", ACCOUNT: "sint_ott_account", CONFIG: "sint_ott_config" };
 // Mesmos valores de LS no script principal (um teste confere)
-const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache", LEGENDADOS: "sint_legendados_url", EMBEDS: "sint_embeds_url" };
+const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache", LEGENDADOS: "sint_legendados_url", EMBEDS: "sint_embeds_url", EMBEDS_SERIES: "sint_embeds_series_url" };
 const OTT_OFFLINE_GRACE_MS = 48 * 3600 * 1000;
 const OTT_REVALIDATE_MS = 6 * 3600 * 1000;
 const OTT_RPC_TIMEOUT_MS = 15000;
@@ -3851,6 +3853,7 @@ function ottParseDeviceConfig(data) {
         .map((l) => {
           const leg = ottStr(l.url_legendados);
           const emb = ottStr(l.url_embeds);
+          const embS = ottStr(l.url_embeds_series);
           return {
             id: ottStr(l.id),
             nome: ottStr(l.nome) || "Principal",
@@ -3859,6 +3862,7 @@ function ottParseDeviceConfig(data) {
             url_epg: ottStr(l.url_epg) || null,
             url_legendados: (leg && /^https?:\/\//i.test(leg)) ? leg : null,
             url_embeds: (emb && /^https?:\/\//i.test(emb)) ? emb : null,
+            url_embeds_series: (embS && /^https?:\/\//i.test(embS)) ? embS : null,
           };
         });
       return {
@@ -3887,12 +3891,13 @@ function ottApplyPlaylist(storage, playlist) {
     [OTT_LIST_KEYS.EPG, playlist ? playlist.url_epg : null],
     [OTT_LIST_KEYS.LEGENDADOS, playlist ? playlist.url_legendados : null],
     [OTT_LIST_KEYS.EMBEDS, playlist ? playlist.url_embeds : null],
+    [OTT_LIST_KEYS.EMBEDS_SERIES, playlist ? playlist.url_embeds_series : null],
   ];
   let changed = false;
   let epgInvalidated = false;
   wanted.forEach(([key, value]) => {
-    // Listas extras (Legendados e Filmes Livres) não têm relação com o guia: mexer nelas não invalida o cache do EPG
-    const extra = key === OTT_LIST_KEYS.LEGENDADOS || key === OTT_LIST_KEYS.EMBEDS;
+    // Listas extras (Legendados, Filmes Livres e Séries Livres) não têm relação com o guia: mexer nelas não invalida o cache do EPG
+    const extra = key === OTT_LIST_KEYS.LEGENDADOS || key === OTT_LIST_KEYS.EMBEDS || key === OTT_LIST_KEYS.EMBEDS_SERIES;
     const current = storage.getItem(key);
     if (value) {
       if (current !== value) {
@@ -4924,6 +4929,7 @@ const OTT_WEB_ACCOUNT_KEY_RES = [
   /^sint_web_chosen$/,
   /^sint_legendados_url$/,
   /^sint_embeds_url$/,
+  /^sint_embeds_series_url$/,
 ];
 
 // Lista as chaves do armazenamento (localStorage tem length/key; um armazenamento sem isso só perde as chaves por perfil)
@@ -4939,7 +4945,7 @@ function ottWebStorageKeys(storage) {
 // Apaga tudo que é da conta (inclusive o "dono" guardado). A sessão do site NÃO é mexida aqui.
 function ottWebWipeAccountData(storage) {
   const fixas = [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, OTT_KEYS.CONFIG, "sint_profile_active", "sint_profiles", "sint_profiles_migrated",
-    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN, "sint_legendados_url", "sint_embeds_url"];
+    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN, "sint_legendados_url", "sint_embeds_url", "sint_embeds_series_url"];
   const todas = fixas.concat(ottWebStorageKeys(storage).filter((k) => OTT_WEB_ACCOUNT_KEY_RES.some((re) => re.test(k))));
   todas.forEach((k) => { try { storage.removeItem(k); } catch (e) { /* ignora */ } });
   try { ottApplyPlaylist(storage, null); } catch (e) { /* ignora */ }
@@ -5793,7 +5799,16 @@ function m3uExtraParse(text, opts) {
       const groupMatch = line.match(/\bgroup-title="([^"]*)"/i);
       const genre = groupMatch ? sanitizeLabel(groupMatch[1]) : "";
 
-      pendingExtinf = { stream_id: opts.idPrefix + tvgId, name, stream_icon, genre, year };
+      // Episódio de série (usado só pelos Embeds): tvg-serie / tvg-season / tvg-episode
+      const serieMatch = line.match(/\btvg-series?="([^"]*)"/i);
+      const seasonMatch = line.match(/\btvg-season="([^"]*)"/i);
+      const episodeMatch = line.match(/\btvg-episode="([^"]*)"/i);
+      const epFields = {};
+      if (serieMatch && sanitizeLabel(serieMatch[1])) epFields.serie_nome = sanitizeLabel(serieMatch[1]);
+      if (seasonMatch && seasonMatch[1].trim()) epFields.temporada = seasonMatch[1].trim();
+      if (episodeMatch && episodeMatch[1].trim()) epFields.episodio = episodeMatch[1].trim();
+
+      pendingExtinf = { stream_id: opts.idPrefix + tvgId, name, stream_icon, genre, year, ...epFields };
       continue;
     }
 
@@ -5812,6 +5827,9 @@ function m3uExtraParse(text, opts) {
           category_name: opts.category,
           genre: pendingExtinf.genre,
           year: pendingExtinf.year,
+          ...(pendingExtinf.serie_nome ? { serie_nome: pendingExtinf.serie_nome } : {}),
+          ...(pendingExtinf.temporada ? { temporada: pendingExtinf.temporada } : {}),
+          ...(pendingExtinf.episodio ? { episodio: pendingExtinf.episodio } : {}),
           ...extra,
         });
         if (max && items.length >= max) return items;
@@ -5905,6 +5923,11 @@ function embedsEnabled(storage) {
   return extraListEnabled(storage, "sint_embeds_url");
 }
 
+// Séries Livres tem lista própria (link diferente do dos Filmes Livres)
+function embedsSeriesEnabled(storage) {
+  return extraListEnabled(storage, "sint_embeds_series_url");
+}
+
 // Decide o tipo do link: https com extensão de vídeo = player nativo; qualquer outro https = embed (tela própria).
 function embedsClassifyUrl(url) {
   const u = typeof url === "string" ? url.trim() : "";
@@ -5916,6 +5939,7 @@ function embedsClassifyUrl(url) {
     : { embed_url: u, is_livre: true };
 }
 
+// Filmes Livres: todo item da lista é um filme
 function embedsParseM3u(text) {
   return m3uExtraParse(text, {
     idPrefix: "liv-",
@@ -5943,6 +5967,114 @@ async function embedsFetch(url) {
   return items;
 }
 
+// ─── Séries Livres: lista PRÓPRIA (sint_embeds_series_url), diferente da dos Filmes Livres; todo item é um episódio ───
+const EMBEDS_SERIES_CATEGORY_NAME = "Séries Livres";
+
+// Texto -> identificador seguro para atributos HTML e chaves do cache (sem acento, minúsculas, a-z 0-9 e hífen)
+function embedsSlug(text) {
+  const slug = String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+  return slug || "serie";
+}
+
+// Lê a série, a temporada e o episódio de um item da lista. Devolve { serie, season, episode, title } ou null (item descartado).
+// Vale o que vier nos atributos tvg-serie, tvg-season e tvg-episode; o que faltar é lido do nome ("Série S01E03 - Título").
+function embedsEpisodeInfo(item) {
+  if (!item) return null;
+  const name = item.name || "";
+  let serie = item.serie_nome || "";
+  let season = parseInt(item.temporada, 10);
+  let episode = parseInt(item.episodio, 10);
+  let title = name;
+  const m = name.match(/^(.*?)[\s._-]*S(\d{1,2})[\s._-]*E(\d{1,3})(?:[\s._:–—-]+(.*))?$/i);
+  if (m) {
+    if (!serie) serie = sanitizeLabel(m[1]);
+    if (!(season > 0)) season = parseInt(m[2], 10);
+    if (!(episode > 0)) episode = parseInt(m[3], 10);
+    if (m[4] && m[4].trim()) title = m[4].trim();
+  }
+  if (!serie || !(season > 0) || !(episode > 0)) return null;
+  return { serie, season, episode, title: title || `Episódio ${episode}` };
+}
+
+// Agrupa os episódios em séries. Série: { series_id: "livs-<nome>", name, stream_icon, ... } (um cartão por série);
+// episodes[series_id] = episódios ordenados por temporada e número, no formato que o modal de séries já usa.
+// Item sem série, temporada ou episódio não entra (não há como encaixá-lo).
+function embedsGroupSeries(items) {
+  const seriesMap = new Map();
+  const episodes = {};
+  (items || []).forEach(item => {
+    const info = embedsEpisodeInfo(item);
+    if (!info) return;
+    const sid = "livs-" + embedsSlug(info.serie);
+    let serie = seriesMap.get(sid);
+    if (!serie) {
+      serie = {
+        series_id: sid, name: info.serie, stream_icon: item.stream_icon || "", category_name: EMBEDS_SERIES_CATEGORY_NAME,
+        genre: item.genre || "", year: item.year || "", is_livre: true,
+      };
+      seriesMap.set(sid, serie);
+      episodes[sid] = [];
+    }
+    if (!serie.stream_icon && item.stream_icon) serie.stream_icon = item.stream_icon;
+    // a mesma temporada e episódio repetidos: vale o primeiro da lista
+    if (episodes[sid].some(e => e.season === info.season && Number(e.episode_num) === info.episode)) return;
+    const ep = { id: item.stream_id, season: info.season, episode_num: info.episode, title: info.title };
+    if (item.embed_url) ep.embed_url = item.embed_url;
+    if (item.direct_url) { ep.direct_url = item.direct_url; ep.container_extension = item.container_extension || "mp4"; }
+    episodes[sid].push(ep);
+  });
+  Object.keys(episodes).forEach(sid => episodes[sid].sort((a, b) => a.season - b.season || a.episode_num - b.episode_num));
+  return { series: [...seriesMap.values()], episodes };
+}
+
+// Lê a lista das Séries Livres: { series, episodes }
+function embedsParseSeries(text) {
+  const items = m3uExtraParse(text, {
+    idPrefix: "lie-",
+    category: EMBEDS_SERIES_CATEGORY_NAME,
+    classify: embedsClassifyUrl,
+    max: EMBEDS_MAX_ITEMS,
+  });
+  return embedsGroupSeries(items);
+}
+
+const _embedsSeriesCache = new Map();   // link -> { series, episodes }
+const _embedsSeriesPending = new Map(); // downloads em andamento: pedidos simultâneos (fileira e modal) dividem o mesmo
+
+// Baixa e lê a lista de séries uma vez por link
+async function embedsSeriesLoad(url) {
+  const vazio = { series: [], episodes: {} };
+  if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return vazio;
+  const key = url.trim();
+  if (_embedsSeriesCache.has(key)) return _embedsSeriesCache.get(key);
+  if (_embedsSeriesPending.has(key)) return _embedsSeriesPending.get(key);
+
+  const pedido = (async () => {
+    const text = await extraListFetchText(key);
+    if (!text) return vazio;
+    const all = embedsParseSeries(text);
+    if (all.series.length > 0) _embedsSeriesCache.set(key, all);
+    return all;
+  })();
+  _embedsSeriesPending.set(key, pedido);
+  try { return await pedido; } finally { _embedsSeriesPending.delete(key); }
+}
+
+async function embedsSeriesFetch(url) {
+  return (await embedsSeriesLoad(url)).series;
+}
+
+// Episódios de uma série livre (a Minha Lista e o histórico guardam só o cartão; os episódios voltam da lista)
+async function embedsEpisodesOf(url, seriesId) {
+  return (await embedsSeriesLoad(url)).episodes[seriesId] || [];
+}
+
+// Cartão de série vindo da lista de embeds (e não do catálogo Xtream)
+function vodItemIsLivreSerie(item) {
+  return !!item && item.is_livre === true && typeof item.series_id === "string" && item.series_id.startsWith("livs-");
+}
+
 // Como tocar um item: "embed" (tela própria com iframe), "direct" (player nativo, link direto) ou "xtream" (catálogo do provedor)
 function vodItemPlayKind(item) {
   if (item && typeof item.embed_url === "string" && item.embed_url) return "embed";
@@ -5955,12 +6087,48 @@ function vodItemIsExtra(item) {
   return !!item && (item.is_legendado === true || item.is_livre === true);
 }
 
-// Iframe do embed. Sem sandbox e sem referrerpolicy por decisão do produto: só entram sites autorizados, e alguns
-// conferem o referenciador ou abrem popups do próprio player. Devolve "" se o link não for https seguro.
-function embedFrameHtml(url) {
+// Proteção anti-popup do embed: o iframe vai com sandbox SEM allow-popups e SEM allow-top-navigation, então o navegador
+// bloqueia janelas novas, abas "popunder" e redirecionamento da página inteira feitos pelo player. O player continua com
+// scripts, mesma origem (cookies/armazenamento próprios), formulários e apresentação (tela cheia). Alguns players recusam
+// tocar dentro de sandbox: para esses a proteção é desligada por site (EMBED_OPEN_HOSTS_KEY) e o iframe sobe sem sandbox.
+const EMBED_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
+const EMBED_OPEN_HOSTS_KEY = "sint_embed_open_hosts";
+
+// Host do link do embed em minúsculas ("" se o link não for válido)
+function embedHostOf(url) {
+  try { return new URL(String(url || "").trim()).hostname.toLowerCase(); } catch (e) { return ""; }
+}
+
+// Hosts em que o usuário desligou a proteção (lista guardada no aparelho; qualquer falha de leitura = lista vazia)
+function embedOpenHosts(storage) {
+  try {
+    const list = JSON.parse(storage.getItem(EMBED_OPEN_HOSTS_KEY) || "[]");
+    return Array.isArray(list) ? list.filter(h => typeof h === "string" && h) : [];
+  } catch (e) { return []; }
+}
+
+// true = o iframe deste link usa sandbox (padrão). Só fica false se o usuário desligou a proteção para o host.
+function embedProtectionOn(url, storage) {
+  const host = embedHostOf(url);
+  return !host || !embedOpenHosts(storage).includes(host);
+}
+
+// Liga/desliga a proteção de um host e lembra a escolha
+function embedSetProtection(url, on, storage) {
+  const host = embedHostOf(url);
+  if (!host) return;
+  const rest = embedOpenHosts(storage).filter(h => h !== host);
+  if (!on) rest.push(host);
+  try { storage.setItem(EMBED_OPEN_HOSTS_KEY, JSON.stringify(rest.slice(-50))); } catch (e) { /* sem armazenamento: vale só para esta tela */ }
+}
+
+// Iframe do embed. Sem referrerpolicy por decisão do produto (alguns players conferem o referenciador).
+// protect !== false => com sandbox anti-popup. Devolve "" se o link não for https seguro.
+function embedFrameHtml(url, protect) {
   const u = typeof url === "string" ? url.trim() : "";
   if (!/^https:\/\/[^\s"'<>]+$/i.test(u)) return "";
-  return `<iframe id="embed-frame" src="${escapeHtmlText(u)}" title="Player" allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write" allowfullscreen></iframe>`;
+  const sandbox = protect === false ? "" : ` sandbox="${EMBED_SANDBOX}"`;
+  return `<iframe id="embed-frame" src="${escapeHtmlText(u)}" title="Player"${sandbox} allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write" allowfullscreen></iframe>`;
 }
 
 function parseM3U(text) {
@@ -10535,7 +10703,10 @@ function renderVodRows(allItems, contType) {
   const legHtml = (contType === "vod" && legItems && legItems.length) ? legendadosRowHtml(legItems, contType) : "";
   const livItems = _vodCatalogCache.itemsByCategory["livres"];
   const livHtml = (contType === "vod" && livItems && livItems.length) ? livresRowHtml(livItems, contType) : "";
-  const extrasHtml = legHtml + livHtml;
+  const serLivItems = _vodCatalogCache.itemsByCategory["series-livres"];
+  const serLivHtml = (contType === "series" && serLivItems && serLivItems.length)
+    ? extraRowHtml("series-livres", EMBEDS_SERIES_CATEGORY_NAME, serLivItems, contType) : "";
+  const extrasHtml = legHtml + livHtml + serLivHtml;
   if (vodDisplayMode === "group" && Object.keys(_vodProviderMap).length) {
     if (!_vodCatalogCache.settled) {
       rowsEl.innerHTML = `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando catálogo...</div>`;
@@ -10631,6 +10802,19 @@ async function loadVodCatalog(vodType, creds) {
         _vodCatalogCache.flat = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
       }
       renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), "vod");
+    }).catch(() => {});
+  }
+  // Séries Livres (lista própria): em paralelo, sem bloquear o catálogo
+  if (vodType === "series" && embedsSeriesEnabled(localStorage)) {
+    embedsSeriesFetch(localStorage.getItem("sint_embeds_series_url")).then(items => {
+      if (_vodCatalogCache.vodType !== "series") return;
+      if (!items || !items.length) return;
+      _vodCatalogCache.itemsByCategory["series-livres"] = items;
+      _vodCatalogCache.categoryStatus["series-livres"] = "ok";
+      if (_vodCatalogCache.settled) {
+        _vodCatalogCache.flat = dedupeVodItemsByTitle(Object.values(_vodCatalogCache.itemsByCategory).flat());
+      }
+      renderVodRows(Object.values(_vodCatalogCache.itemsByCategory).flat(), "series");
     }).catch(() => {});
   }
   // Mapa de streaming: uma vez por sessão (só tenta de novo se a última
@@ -10858,6 +11042,21 @@ async function openVodModal(item, vodType, creds) {
   const epsContainer = document.getElementById("vod-modal-episodes");
   epsContainer.innerHTML = `<div class="spinner" style="margin:1rem"></div>`;
 
+  // Série da lista de embeds: episódios vêm da lista (sem credenciais Xtream, sem baixar, sem enviar à TV)
+  if (vodItemIsLivreSerie(item)) {
+    try {
+      const eps = await embedsEpisodesOf(localStorage.getItem("sint_embeds_series_url"), item.series_id);
+      _vodModalEpisodes = eps;
+      epsContainer.innerHTML = eps.length
+        ? eps.map(livreEpisodeRowHtml).join("")
+        : `<p class="vod-empty">Nenhum episódio encontrado.</p>`;
+      lucide.createIcons();
+    } catch (err) {
+      epsContainer.innerHTML = `<p class="vod-error">Erro ao carregar episódios: ${escapeHtmlText(err.message)}</p>`;
+    }
+    return;
+  }
+
   try {
     const res = await vodApiFetch(xtreamApiUrl(creds, "get_series_info", { series_id: item.series_id }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -10897,6 +11096,27 @@ async function openVodModal(item, vodType, creds) {
   }
 }
 
+// Linha de episódio de série livre: só o botão de tocar (sem baixar, sem TV)
+function livreEpisodeRowHtml(ep) {
+  const num = escapeHtmlText(ep.episode_num);
+  return `<div class="ep-row"><button class="ep-btn" data-ep-livre="${escapeHtmlText(ep.id)}">
+        <span>T${Number(ep.season) || 1} E${num} — ${escapeHtmlText(ep.title)}</span>
+        <i data-lucide="play" style="width:18px;height:18px"></i>
+      </button></div>`;
+}
+
+// Toca um episódio de série livre: embed abre a tela do player; link direto toca no player nativo
+function playLivreEpisode(epId) {
+  const ep = _vodModalEpisodes.find(x => String(x.id) === String(epId));
+  const serie = _vodModalItem ? _vodModalItem.item : null;
+  if (!ep || !serie) return;
+  const title = formatEpisodeTitle(serie.name || serie.title, ep.season, ep.episode_num);
+  if (ep.embed_url) { openEmbedScreen({ name: title, embed_url: ep.embed_url }); return; }
+  playVodSelection(ep.direct_url, {
+    id: ep.id, contType: "series", title, cover: serie.stream_icon || serie.cover || null, vodItem: serie, castInfo: null,
+  });
+}
+
 function closeVodModal() {
   const modal = document.getElementById("vod-modal");
   modal.classList.add("hidden");
@@ -10906,24 +11126,54 @@ function closeVodModal() {
 // ─── Tela de embed (Filmes Livres) ───
 let _embedOpen = false;
 let _embedHintTimer = 0;
+let _embedUrl = ""; // link do player aberto agora (a proteção é decidida por host)
 
-// Abre o player da fonte em tela cheia. O histórico ganha uma entrada para o botão voltar do navegador e o botão
-// físico do Android fecharem a tela em vez de sair do app (ver o listener de popstate).
-function openEmbedScreen(item) {
-  const frameHtml = embedFrameHtml(item && item.embed_url);
-  if (!frameHtml) { showToast("Link do player inválido."); return; }
-  pausePlayerForCast(); // se o player nativo estiver tocando, pausa para não tocar nos dois
-  closeVodModal();
-  document.getElementById("embed-title").textContent = item.name || item.title || "Filme";
-  document.getElementById("embed-external").href = item.embed_url;
+// Guarda nativa do Android (plugin SintonizaEmbed): enquanto o embed está aberto, o app bloqueia janelas novas, redirecionamento
+// da tela inteira e domínios de anúncio. Fora do app Android (navegador, iOS) a chamada simplesmente não existe.
+function setNativeEmbedGuard(active, allowUrl) {
+  callNativePlugin("SintonizaEmbed", "setGuard", { active: !!active, allowUrl: allowUrl || "" });
+}
+
+// Atualiza o texto e o estado do botão de proteção conforme o host aberto
+function updateEmbedShieldButton() {
+  const on = embedProtectionOn(_embedUrl, localStorage);
+  const btn = document.getElementById("embed-shield");
+  btn.textContent = on ? "Proteção: ligada" : "Proteção: desligada";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+// (Re)monta o iframe com ou sem sandbox e rearma o aviso de carga lenta (8 s)
+function mountEmbedFrame() {
+  const frameHtml = embedFrameHtml(_embedUrl, embedProtectionOn(_embedUrl, localStorage));
   document.getElementById("embed-frame-host").innerHTML = frameHtml;
   const hint = document.getElementById("embed-hint");
   hint.classList.add("hidden");
   clearTimeout(_embedHintTimer);
-  // Se o quadro não terminar de carregar em 8 s, lembra do "Abrir no navegador" (o app não detecta bloqueio de iframe)
+  // Se o quadro não terminar de carregar em 8 s, explica a proteção e lembra do "Abrir no navegador" (o app não detecta bloqueio de iframe)
   const frame = document.getElementById("embed-frame");
   if (frame) frame.addEventListener("load", () => clearTimeout(_embedHintTimer));
   _embedHintTimer = setTimeout(() => hint.classList.remove("hidden"), 8000);
+  updateEmbedShieldButton();
+}
+
+// Liga/desliga a proteção só para o host aberto, lembra a escolha e recarrega o player
+function toggleEmbedProtection() {
+  if (!_embedOpen) return;
+  embedSetProtection(_embedUrl, !embedProtectionOn(_embedUrl, localStorage), localStorage);
+  mountEmbedFrame();
+}
+
+// Abre o player da fonte em tela cheia. O histórico ganha uma entrada para o botão voltar do navegador e o botão
+// físico do Android fecharem a tela em vez de sair do app (ver o listener de popstate).
+function openEmbedScreen(item) {
+  if (!embedFrameHtml(item && item.embed_url)) { showToast("Link do player inválido."); return; }
+  pausePlayerForCast(); // se o player nativo estiver tocando, pausa para não tocar nos dois
+  closeVodModal();
+  _embedUrl = String(item.embed_url).trim();
+  document.getElementById("embed-title").textContent = item.name || item.title || "Filme";
+  document.getElementById("embed-external").href = _embedUrl;
+  setNativeEmbedGuard(true, _embedUrl); // o "Abrir no navegador" continua liberado (é o link do próprio player)
+  mountEmbedFrame();
   const screen = document.getElementById("embed-screen");
   screen.classList.remove("hidden");
   screen.setAttribute("aria-hidden", "false");
@@ -10938,8 +11188,10 @@ function openEmbedScreen(item) {
 function closeEmbedScreen(fromPopState) {
   if (!_embedOpen) return;
   _embedOpen = false;
+  _embedUrl = "";
   clearTimeout(_embedHintTimer);
   document.getElementById("embed-frame-host").innerHTML = ""; // remove o iframe: o vídeo e o áudio param
+  setNativeEmbedGuard(false);
   const screen = document.getElementById("embed-screen");
   screen.classList.add("hidden");
   screen.setAttribute("aria-hidden", "true");
@@ -12722,6 +12974,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
   document.getElementById("embed-back").addEventListener("click", () => closeEmbedScreen());
+  document.getElementById("embed-shield").addEventListener("click", toggleEmbedProtection);
   window.addEventListener("popstate", () => closeEmbedScreen(true)); // voltar do navegador e botão físico do Android
   document.getElementById("vod-modal").addEventListener("click", e => {
     if (e.target.id === "vod-modal") closeVodModal(); // clique fora do card fecha
@@ -12977,6 +13230,8 @@ document.addEventListener("DOMContentLoaded", () => {
       queueDownloads(_vodModalEpisodes.map(episodeDownloadEntry));
       return;
     }
+    const livreBtn = e.target.closest("[data-ep-livre]");
+    if (livreBtn) { playLivreEpisode(livreBtn.dataset.epLivre); return; }
     const btn = e.target.closest(".ep-btn");
     if (!btn) return;
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));

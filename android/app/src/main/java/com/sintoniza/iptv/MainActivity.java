@@ -17,7 +17,10 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Plugins locais precisam ser registrados antes do super.onCreate
         registerPlugin(SintonizaPipPlugin.class);
+        registerPlugin(SintonizaEmbedPlugin.class);
         super.onCreate(savedInstanceState);
+        // Guarda do player incorporado: bloqueia popups, redirecionamentos e domínios de anúncio enquanto o embed está aberto
+        getBridge().setWebViewClient(new GuardedWebViewClient(getBridge()));
         // Reaplica a faixa de exclusão do gesto de voltar sempre que o layout muda (rotação, teclado, etc.)
         getWindow().getDecorView().addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override

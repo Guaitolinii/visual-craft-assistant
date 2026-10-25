@@ -137,16 +137,55 @@ test("vodItemPlayKind: embed, direct ou xtream; vodItemIsExtra: legendado ou liv
 });
 
 // ── HTML do iframe ──
-test("embedFrameHtml: iframe com allow e allowfullscreen, URL escapada, SEM sandbox e SEM referrerpolicy (decisão do produto)", () => {
+test("embedFrameHtml: iframe com allow, allowfullscreen, URL escapada e sandbox anti-popup por padrão (sem referrerpolicy)", () => {
   const ctx = loadVodHelpers();
   const html = ctx.embedFrameHtml("https://fonte.test/embed/1?a=1&b=2");
   assert.match(html, /^<iframe /);
   assert.match(html, /src="https:\/\/fonte\.test\/embed\/1\?a=1&amp;b=2"/);
   assert.match(html, /allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"/);
   assert.match(html, /\ballowfullscreen\b/);
-  assert.doesNotMatch(html, /sandbox/i);
   assert.doesNotMatch(html, /referrerpolicy/i);
   assert.match(html, /id="embed-frame"/);
+  // sandbox deixa o player rodar (scripts, mesma origem, formulários, tela cheia) mas NÃO libera popups nem navegação do topo
+  const sb = html.match(/ sandbox="([^"]*)"/);
+  assert.ok(sb, "protegido por padrão");
+  const flags = sb[1].split(/\s+/);
+  assert.deepEqual(flags.sort(), ["allow-forms", "allow-presentation", "allow-same-origin", "allow-scripts"]);
+  assert.ok(!flags.some(f => /popups|top-navigation|modals|downloads/.test(f)));
+  // protect === false (usuário desligou a proteção do host) sobe sem sandbox; protect === true ou omitido mantém
+  assert.doesNotMatch(ctx.embedFrameHtml("https://fonte.test/e", false), /sandbox/i);
+  assert.match(ctx.embedFrameHtml("https://fonte.test/e", true), / sandbox="/);
+});
+
+// ── Proteção por host ──
+test("embedHostOf: host em minúsculas, vazio para link inválido", () => {
+  const ctx = loadVodHelpers();
+  assert.equal(ctx.embedHostOf("https://Fonte.TEST/embed/1"), "fonte.test");
+  assert.equal(ctx.embedHostOf("  https://a.b.c:8443/x "), "a.b.c");
+  assert.equal(ctx.embedHostOf("nao e link"), "");
+  assert.equal(ctx.embedHostOf(null), "");
+});
+
+test("proteção por host: ligada por padrão, desligar lembra só aquele host, religar remove, lista corrompida vale como vazia", () => {
+  const ctx = loadVodHelpers();
+  const dados = {};
+  const st = { getItem: k => (k in dados ? dados[k] : null), setItem: (k, v) => { dados[k] = String(v); } };
+  const a = "https://fonte-a.test/embed/1", b = "https://fonte-b.test/e/9";
+  assert.equal(ctx.embedProtectionOn(a, st), true);
+  ctx.embedSetProtection(a, false, st);
+  assert.equal(ctx.embedProtectionOn(a, st), false);
+  assert.equal(ctx.embedProtectionOn("https://fonte-a.test/outro/caminho", st), false); // mesmo host, outro filme: continua desligada
+  assert.equal(ctx.embedProtectionOn(b, st), true);
+  ctx.embedSetProtection(a, true, st);
+  assert.equal(ctx.embedProtectionOn(a, st), true);
+  assert.deepEqual(JSON.parse(dados.sint_embed_open_hosts), []);
+  dados.sint_embed_open_hosts = "{lixo";
+  assert.equal(ctx.embedProtectionOn(a, st), true);
+  dados.sint_embed_open_hosts = '{"a":1}';
+  assert.equal(ctx.embedProtectionOn(a, st), true);
+  // link sem host válido nunca derruba a proteção
+  ctx.embedSetProtection("lixo", false, st);
+  assert.equal(ctx.embedProtectionOn("lixo", st), true);
 });
 
 test("embedFrameHtml: só https sem espaço nem aspas; qualquer outra coisa devolve string vazia", () => {
@@ -262,7 +301,7 @@ test("ligações: fileira genérica, Filmes Livres depois dos Legendados e carga
   assert.match(html, /function legendadosRowHtml\(items, contType\) \{\s*return extraRowHtml\("legendados", "Legendados"/);
   assert.match(html, /function livresRowHtml\(items, contType\) \{\s*return extraRowHtml\("livres", EMBEDS_CATEGORY_NAME/);
   // renderVodRows: Legendados primeiro, Filmes Livres logo abaixo, nos dois modos de exibição
-  assert.match(html, /const extrasHtml = legHtml \+ livHtml;/);
+  assert.match(html, /const extrasHtml = legHtml \+ livHtml \+ serLivHtml;/); // Séries Livres só aparece na aba Séries
   assert.match(html, /rowsEl\.innerHTML = extrasHtml \+ groups\.map/);
   assert.match(html, /rowsEl\.innerHTML = extrasHtml \+ _vodCatalogCache\.categories\.map/);
   assert.doesNotMatch(html, /rowsEl\.innerHTML = legHtml \+/);
@@ -277,7 +316,7 @@ test("ligações: fileira genérica, Filmes Livres depois dos Legendados e carga
 });
 
 // ── Tela de embed ──
-test("ligações: tela de embed com voltar, Abrir no navegador, popstate e Escape; iframe nunca com sandbox", () => {
+test("ligações: tela de embed com voltar, Abrir no navegador, proteção, guarda nativa, popstate e Escape", () => {
   const html = readFileSync(LINK_HTML_PATH, "utf8");
   // marcação
   assert.match(html, /<div id="embed-screen" class="hidden" role="dialog" aria-modal="true" aria-hidden="true"/);
@@ -292,6 +331,6 @@ test("ligações: tela de embed com voltar, Abrir no navegador, popstate e Escap
   assert.match(html, /addEventListener\("popstate", \(\) => closeEmbedScreen\(true\)\)/);
   assert.match(html, /if \(_embedOpen\) closeEmbedScreen\(\)/);
   // decisão do produto: nenhum iframe do app usa sandbox
-  assert.doesNotMatch(html, /<iframe[^>]*sandbox/i);
+  assert.doesNotMatch(html, /<iframe[^>]*ssandbox=/i); // nenhum iframe literal no HTML do app
   assert.doesNotMatch(html, /\.sandbox\s*=/);
 });

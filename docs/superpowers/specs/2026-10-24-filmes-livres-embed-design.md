@@ -16,6 +16,7 @@ Fica fora de escopo: qualquer extração, proxy ou conversão do fluxo de vídeo
 | Categoria nova e separada da Legendados; as duas coexistem | Gustavo, 2026-10-24 |
 | **Sem lista fixa de domínios**: qualquer URL `https` da lista vira item | Gustavo |
 | **Iframe sem restrições**: sem `sandbox`, sem `referrerpolicy` (fontes autorizadas podem exigir referência e popups) | Gustavo |
+| **Revisão 2026-10-25 (pedido do Gustavo, popups e anúncios)**: o iframe passa a subir COM `sandbox` anti-popup por padrão (`allow-scripts allow-same-origin allow-forms allow-presentation`, sem `allow-popups` nem `allow-top-navigation`); o botão "Proteção" desliga por site (guardado em `sint_embed_open_hosts`) para players que recusam sandbox. No app Android, a guarda nativa (`EmbedGuard`, `GuardedWebViewClient`, plugin `SintonizaEmbed`) bloqueia popup, redirecionamento do topo e domínios de anúncio enquanto o embed está aberto. Segue sem `referrerpolicy` e sem lista de domínios de fontes. | Gustavo |
 | Quem cura o que entra é o dono da lista (Gist); o app não julga licença | Gustavo |
 | Nome da categoria: "Filmes Livres" (constante fácil de trocar) | proposta aceita implicitamente |
 | TV LG fica fora desta versão | proposta aceita implicitamente |
@@ -107,3 +108,12 @@ Manual (Playwright, depois de publicar um branch de teste): item de embed abre, 
 ## 11. Pontos em aberto
 
 Nenhum que bloqueie. Ajustes de rótulo ("Filmes Livres") e do teto de 5000 itens podem ser trocados depois sem mudar o desenho.
+
+## Adendo 2026-10-25: Séries Livres
+
+A aba Séries ganhou a fileira **Séries Livres**, uma categoria especial com **lista própria por conta** (decisão do Gustavo: cada categoria recebe a sua lista, diferente da dos Filmes Livres). Chave `sint_embeds_series_url` (`OTT_LIST_KEYS.EMBEDS_SERIES`); `device_config` devolve `url_embeds_series`; a coluna `profiles.url_embeds_series` é criada na própria migração 0017 (ainda não aplicada); `npm run ott:embeds -- --email=... --tipo=series [--remover]` grava com `OTT_CONTA_EMBEDS_SERIES` (sem `--tipo`, continua nos filmes). Na lista de séries todo item é um episódio; item sem série, temporada e episódio é descartado. A lista dos filmes não muda: todo item é um filme. A limpeza de conta e a troca de dono também apagam a chave das séries.
+
+- Atributos do #EXTINF: `tvg-serie="Nome"`, `tvg-season="1"`, `tvg-episode="3"` (o título do item é o título do episódio). Sem atributos, vale o nome no formato `Série S01E03 - Título`. Atributos têm prioridade sobre o nome.
+- `tvg-id` único por episódio (regra de sempre). A capa do cartão é a primeira capa encontrada entre os episódios da série.
+- Um cartão por série (id `livs-<nome sem acento>`; episódios com id `lie-<tvg-id>`); episódios ordenados por temporada e número; repetido (mesma temporada e episódio) vale o primeiro.
+- Episódio com link de página abre a tela de embed; com link direto de vídeo toca no player nativo. Sem Baixar nem Assistir na TV. Minha Lista e histórico guardam só o cartão; os episódios voltam da lista.

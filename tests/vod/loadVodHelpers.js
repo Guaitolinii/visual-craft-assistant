@@ -35,6 +35,8 @@ const PURE_HELPER_NAMES = [
   "isRealFullscreen", "isFullscreenNow",
   "legendadosDirectExt", "legendadosEnabled", "legendadosParseM3u",
   "embedsEnabled", "embedsClassifyUrl", "embedsParseM3u", "vodItemPlayKind", "vodItemIsExtra", "embedFrameHtml",
+  "embedHostOf", "embedOpenHosts", "embedProtectionOn", "embedSetProtection",
+  "embedsSlug", "embedsEpisodeInfo", "embedsGroupSeries", "embedsParseSeries", "embedsSeriesEnabled", "vodItemIsLivreSerie", "livreEpisodeRowHtml",
 ];
 
 function toHostRealm(value) {
