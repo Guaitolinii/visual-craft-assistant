@@ -395,3 +395,10 @@ test("ligações no sintoniza-link.html: categoria Legendados, modal e busca", (
   // openVodModal esconde Baixar e TV para itens extras e chama playVodSelection com direct_url (via vodItemPlayKind)
   assert.match(html, /vodItemPlayKind\(item\)[\s\S]*?playVodSelection\(\s*item\.direct_url/);
 });
+
+test("loadVodCatalog: a fileira Legendados carrega na aba Filmes (o estado usa \"movies\", nunca \"vod\")", () => {
+  const html = readFileSync(LINK_HTML_PATH, "utf8");
+  // O estado do app chama a aba Filmes de "movies" ("vod" é só o contType dos cartões): comparar com "vod" fazia a fileira nunca carregar
+  assert.match(html, /if \(vodType === "movies" && legendadosEnabled\(localStorage\)\)/);
+  assert.match(html, /legendadosFetch\(localStorage\.getItem\("sint_legendados_url"\)\)\.then\(items => \{\s+if \(_vodCatalogCache\.vodType !== "movies"\) return;/);
+});

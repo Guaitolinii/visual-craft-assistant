@@ -10608,9 +10608,9 @@ async function loadVodCatalog(vodType, creds) {
   // Filmes/Séries ou reentrada) - evita misturar dados da aba anterior.
   _vodCatalogCache = { vodType, categories: [], itemsByCategory: {}, categoryStatus: {}, settled: false };
   // Lista extra de filmes legendados (em paralelo, sem bloquear o catálogo)
-  if (vodType === "vod" && legendadosEnabled(localStorage)) {
+  if (vodType === "movies" && legendadosEnabled(localStorage)) {
     legendadosFetch(localStorage.getItem("sint_legendados_url")).then(items => {
-      if (_vodCatalogCache.vodType !== "vod") return;
+      if (_vodCatalogCache.vodType !== "movies") return;
       if (!items || !items.length) return;
       _vodCatalogCache.itemsByCategory["legendados"] = items;
       _vodCatalogCache.categoryStatus["legendados"] = "ok";
