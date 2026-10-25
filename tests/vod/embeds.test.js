@@ -272,3 +272,23 @@ test("ligações: fileira genérica, Filmes Livres depois dos Legendados e carga
   assert.match(html, /itemsByCategory\["livres"\] = items/);
   assert.match(html, /categoryStatus\["livres"\] = "ok"/);
 });
+
+// ── Tela de embed ──
+test("ligações: tela de embed com voltar, Abrir no navegador, popstate e Escape; iframe nunca com sandbox", () => {
+  const html = readFileSync(LINK_HTML_PATH, "utf8");
+  // marcação
+  assert.match(html, /<div id="embed-screen" class="hidden" role="dialog" aria-modal="true" aria-hidden="true"/);
+  assert.match(html, /id="embed-back"/);
+  assert.match(html, /id="embed-external"[^>]*target="_blank"[^>]*rel="noopener"/);
+  assert.match(html, /id="embed-hint"/);
+  assert.match(html, /id="embed-frame-host"/);
+  // abrir: pausa o player nativo, fecha o modal, cria a entrada de histórico e monta o iframe
+  assert.match(html, /function openEmbedScreen\(item\)[\s\S]*?embedFrameHtml\([\s\S]*?pausePlayerForCast\(\)[\s\S]*?closeVodModal\(\)[\s\S]*?history\.pushState/);
+  // fechar: remove o iframe (para o áudio); popstate (voltar do navegador e do Android) e Escape fecham a tela
+  assert.match(html, /function closeEmbedScreen\(fromPopState\)[\s\S]*?\.innerHTML = ""/);
+  assert.match(html, /addEventListener\("popstate", \(\) => closeEmbedScreen\(true\)\)/);
+  assert.match(html, /if \(_embedOpen\) closeEmbedScreen\(\)/);
+  // decisão do produto: nenhum iframe do app usa sandbox
+  assert.doesNotMatch(html, /<iframe[^>]*sandbox/i);
+  assert.doesNotMatch(html, /\.sandbox\s*=/);
+});

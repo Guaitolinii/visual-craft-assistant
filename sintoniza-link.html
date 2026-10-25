@@ -952,6 +952,30 @@
     .vod-empty { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
     .vod-error { color: var(--error); padding: 1rem 0; }
 
+    /* ════════════ TELA DE EMBED (Filmes Livres) ════════════ */
+    /* Acima do modal de filme (9999) e abaixo do menu da TV (10001) e do aviso (10002). */
+    #embed-screen {
+      position: fixed; inset: 0; z-index: 10000; background: #000;
+      display: flex; flex-direction: column;
+      padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+    }
+    #embed-screen.hidden { display: none !important; }
+    .embed-bar {
+      display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; flex-shrink: 0;
+      background: var(--background); border-bottom: 1px solid var(--border);
+    }
+    .embed-bar h2 { flex: 1; min-width: 0; margin: 0; font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .embed-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-width: 2.5rem; min-height: 2.5rem; padding: 0 .75rem;
+      border-radius: .6rem; border: 1px solid var(--border); background: transparent; color: var(--foreground);
+      font-size: .85rem; text-decoration: none; cursor: pointer;
+    }
+    .embed-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .embed-hint { margin: 0; padding: .5rem .75rem; font-size: .85rem; flex-shrink: 0; background: oklch(0.2 0.02 65); color: var(--foreground); }
+    .embed-hint.hidden { display: none; }
+    #embed-frame-host { flex: 1; min-height: 0; }
+    #embed-frame-host iframe { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+
     /* ════════════ VOD MODAL ════════════ */
     #vod-modal {
       position: fixed; inset: 0; z-index: 9999; padding: 1rem;
@@ -2268,6 +2292,17 @@
     <div id="tv-sheet-list"></div>
     <button type="button" class="action-sheet-cancel" id="tv-sheet-cancel">Cancelar</button>
   </div>
+</div>
+
+<!-- EMBED: tela do player incorporado (categoria Filmes Livres). O iframe não usa sandbox por decisão do produto: só entram fontes autorizadas -->
+<div id="embed-screen" class="hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="embed-title">
+  <div class="embed-bar">
+    <button type="button" id="embed-back" class="embed-btn" aria-label="Voltar"><i data-lucide="arrow-left" style="width:20px;height:20px"></i></button>
+    <h2 id="embed-title">Filme</h2>
+    <a id="embed-external" class="embed-btn" href="#" target="_blank" rel="noopener">Abrir no navegador</a>
+  </div>
+  <p id="embed-hint" class="embed-hint hidden">O player não carregou? Alguns sites não permitem abrir aqui. Use “Abrir no navegador”.</p>
+  <div id="embed-frame-host"></div>
 </div>
 
 <!-- VOD MODAL: detalhes de um filme/série + lista de episódios -->
@@ -10868,6 +10903,51 @@ function closeVodModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
+// ─── Tela de embed (Filmes Livres) ───
+let _embedOpen = false;
+let _embedHintTimer = 0;
+
+// Abre o player da fonte em tela cheia. O histórico ganha uma entrada para o botão voltar do navegador e o botão
+// físico do Android fecharem a tela em vez de sair do app (ver o listener de popstate).
+function openEmbedScreen(item) {
+  const frameHtml = embedFrameHtml(item && item.embed_url);
+  if (!frameHtml) { showToast("Link do player inválido."); return; }
+  pausePlayerForCast(); // se o player nativo estiver tocando, pausa para não tocar nos dois
+  closeVodModal();
+  document.getElementById("embed-title").textContent = item.name || item.title || "Filme";
+  document.getElementById("embed-external").href = item.embed_url;
+  document.getElementById("embed-frame-host").innerHTML = frameHtml;
+  const hint = document.getElementById("embed-hint");
+  hint.classList.add("hidden");
+  clearTimeout(_embedHintTimer);
+  // Se o quadro não terminar de carregar em 8 s, lembra do "Abrir no navegador" (o app não detecta bloqueio de iframe)
+  const frame = document.getElementById("embed-frame");
+  if (frame) frame.addEventListener("load", () => clearTimeout(_embedHintTimer));
+  _embedHintTimer = setTimeout(() => hint.classList.remove("hidden"), 8000);
+  const screen = document.getElementById("embed-screen");
+  screen.classList.remove("hidden");
+  screen.setAttribute("aria-hidden", "false");
+  if (!_embedOpen) {
+    try { history.pushState({ embed: 1 }, ""); } catch (e) { /* sem histórico: o botão Voltar da tela continua fechando */ }
+  }
+  _embedOpen = true;
+  document.getElementById("embed-back").focus();
+}
+
+// fromPopState = true quando o fechamento veio do botão voltar do navegador/Android (a entrada de histórico já foi consumida)
+function closeEmbedScreen(fromPopState) {
+  if (!_embedOpen) return;
+  _embedOpen = false;
+  clearTimeout(_embedHintTimer);
+  document.getElementById("embed-frame-host").innerHTML = ""; // remove o iframe: o vídeo e o áudio param
+  const screen = document.getElementById("embed-screen");
+  screen.classList.add("hidden");
+  screen.setAttribute("aria-hidden", "true");
+  if (!fromPopState) {
+    try { history.back(); } catch (e) { /* ignora */ } // consome a entrada criada na abertura (o popstate seguinte não faz nada)
+  }
+}
+
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
@@ -12395,6 +12475,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape") {
       hideEpgPopover();
       closeCardActions();
+      if (_embedOpen) closeEmbedScreen();
       if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
     }
   });
@@ -12640,6 +12721,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
+  document.getElementById("embed-back").addEventListener("click", () => closeEmbedScreen());
+  window.addEventListener("popstate", () => closeEmbedScreen(true)); // voltar do navegador e botão físico do Android
   document.getElementById("vod-modal").addEventListener("click", e => {
     if (e.target.id === "vod-modal") closeVodModal(); // clique fora do card fecha
   });
