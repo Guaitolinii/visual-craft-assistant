@@ -225,3 +225,31 @@ test("troca de conta e ottWebWipeAccountData limpam sint_embeds_url", () => {
   assert.equal(o.ottWebOwnerSwitch(s, "user-2"), true);
   assert.equal(s.getItem("sint_embeds_url"), null, "troca de dono");
 });
+
+// ── Campos guardados na Minha Lista e roteamento ──
+test("trimVodItem e buildMyListEntry guardam embed_url e is_livre", () => {
+  const ctx = loadVodHelpers();
+  const item = {
+    stream_id: "liv-nosferatu", name: "Nosferatu", stream_icon: "https://exemplo.test/n.jpg", category_name: "Filmes Livres",
+    genre: "Terror", year: "1922", embed_url: "https://fonte.test/embed/nosferatu", is_livre: true,
+  };
+  const trimmed = ctx.trimVodItem(item);
+  assert.equal(trimmed.embed_url, "https://fonte.test/embed/nosferatu");
+  assert.equal(trimmed.is_livre, true);
+  const entry = ctx.buildMyListEntry(item, "vod");
+  assert.equal(entry.id, "liv-nosferatu");
+  assert.equal(entry.item.embed_url, "https://fonte.test/embed/nosferatu");
+  // o item guardado ainda é reconhecido como embed
+  assert.equal(ctx.vodItemPlayKind(entry.item), "embed");
+  assert.equal(ctx.vodItemIsExtra(entry.item), true);
+});
+
+test("ligações: o modal e o cartão roteiam por vodItemPlayKind/vodItemIsExtra", () => {
+  const html = readFileSync(LINK_HTML_PATH, "utf8");
+  // modal: embed abre a tela de embed, direct toca por playVodSelection(item.direct_url…)
+  assert.match(html, /vodItemPlayKind\(item\)[\s\S]*?openEmbedScreen\(item\)[\s\S]*?playVodSelection\(\s*item\.direct_url/);
+  // cartão: item extra não exige credenciais Xtream
+  assert.match(html, /!creds && !vodItemIsExtra\(item\)/);
+  // os campos novos entram no item enxuto
+  assert.match(html, /VOD_ITEM_FIELDS = \[[^\]]*"embed_url"[^\]]*"is_livre"[^\]]*\]/);
+});

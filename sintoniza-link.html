@@ -9781,7 +9781,7 @@ function splitEpisodeTitle(title) {
 
 // Cópia enxuta do item da API (filme ou série), guardada no histórico e
 // na Minha Lista para reabrir o título depois sem refazer a busca.
-const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year", "direct_url", "is_legendado"];
+const VOD_ITEM_FIELDS = ["stream_id", "series_id", "name", "title", "stream_icon", "cover", "container_extension", "plot", "rating", "releaseDate", "year", "direct_url", "is_legendado", "embed_url", "is_livre"];
 function trimVodItem(item) {
   if (!item) return null;
   const out = {};
@@ -10753,11 +10753,16 @@ async function openVodModal(item, vodType, creds) {
     seriesContent.style.display = "none";
     playBtn.style.display = "inline-flex";
     playBtn.querySelector("span").textContent = "Assistir";
-    if (item.is_legendado) {
-      playBtn.onclick = () => playVodSelection(
-        item.direct_url,
-        { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: null }
-      );
+    const kind = vodItemPlayKind(item);
+    if (kind !== "xtream") {
+      // Item de lista extra: "embed" abre a tela própria do player da fonte; "direct" toca no player nativo.
+      // Nenhum dos dois usa as credenciais Xtream, e não há Baixar nem Assistir na TV.
+      playBtn.onclick = kind === "embed"
+        ? () => openEmbedScreen(item)
+        : () => playVodSelection(
+            item.direct_url,
+            { id: item.stream_id, contType: "vod", title, cover: item.stream_icon, vodItem: item, castInfo: null }
+          );
       tvBtn.style.display = "none";
       tvBtn.onclick = null;
       dlBtn.style.display = "none";
@@ -12633,7 +12638,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const creds = parseXtreamCredentials(localStorage.getItem(LS.VOD_URL));
-    if (!creds && !item.is_legendado) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
+    if (!creds && !vodItemIsExtra(item)) { showToast("Configure suas credenciais Xtream em Configurações."); return; }
     // Cartão da Minha Lista diz o próprio tipo (no Início, _state.vodType
     // pode ser de outra aba).
     openVodModal(item, card.dataset.vodType || _state.vodType, creds);
