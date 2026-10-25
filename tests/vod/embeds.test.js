@@ -155,3 +155,73 @@ test("embedFrameHtml: só https sem espaço nem aspas; qualquer outra coisa devo
     assert.equal(ctx.embedFrameHtml(u), "", String(u));
   }
 });
+
+// ── Contrato da conta: url_embeds ──
+test("OTT_LIST_KEYS.EMBEDS guarda o link em sint_embeds_url, ao lado de LEGENDADOS", () => {
+  const o = loadOtt();
+  assert.equal(plain(o.OTT_LIST_KEYS).EMBEDS, "sint_embeds_url");
+  assert.equal(plain(o.OTT_LIST_KEYS).LEGENDADOS, "sint_legendados_url");
+});
+
+test("ottParseDeviceConfig: propaga url_embeds só se começar com http(s); url_legendados segue independente", () => {
+  const o = loadOtt();
+  const base = { id: "1", nome: "P", url_m3u: "http://exemplo.test/m3u" };
+  const cfg = plain(o.ottParseDeviceConfig({
+    status: "ok",
+    playlists: [
+      { ...base, url_embeds: "https://exemplo.test/livres.m3u", url_legendados: "https://exemplo.test/leg.m3u" },
+      { ...base, url_embeds: "http://exemplo.test/livres.m3u" },
+      { ...base, url_embeds: "javascript:alert(1)" },
+      { ...base, url_embeds: "ftp://exemplo.test/livres.m3u" },
+      { ...base, url_embeds: null },
+      { ...base },
+    ],
+  }));
+  assert.equal(cfg.playlists[0].url_embeds, "https://exemplo.test/livres.m3u");
+  assert.equal(cfg.playlists[0].url_legendados, "https://exemplo.test/leg.m3u");
+  assert.equal(cfg.playlists[1].url_embeds, "http://exemplo.test/livres.m3u");
+  for (const i of [2, 3, 4, 5]) assert.equal(cfg.playlists[i].url_embeds, null, `lista ${i}`);
+});
+
+test("ottApplyPlaylist: grava e remove sint_embeds_url sem apagar o cache do guia (EPG)", () => {
+  const o = loadOtt();
+  const s = fakeStorage();
+  const pl = { url_m3u: "http://exemplo.test/m3u", url_vod: "http://exemplo.test/vod", url_epg: "http://exemplo.test/epg", url_embeds: "https://exemplo.test/livres.m3u" };
+
+  assert.equal(o.ottApplyPlaylist(s, pl), true);
+  assert.equal(s.getItem("sint_embeds_url"), "https://exemplo.test/livres.m3u");
+
+  s.setItem("sint_epg_cache", "cache-epg-valido");
+  assert.equal(o.ottApplyPlaylist(s, pl), false, "chamada idêntica não muda nada");
+
+  // trocar só o link dos Filmes Livres muda, mas o cache do guia fica
+  assert.equal(o.ottApplyPlaylist(s, { ...pl, url_embeds: "https://exemplo.test/livres2.m3u" }), true);
+  assert.equal(s.getItem("sint_embeds_url"), "https://exemplo.test/livres2.m3u");
+  assert.equal(s.getItem("sint_epg_cache"), "cache-epg-valido");
+
+  // sem url_embeds a chave some, também sem mexer no guia
+  assert.equal(o.ottApplyPlaylist(s, { ...pl, url_embeds: null }), true);
+  assert.equal(s.getItem("sint_embeds_url"), null);
+  assert.equal(s.getItem("sint_epg_cache"), "cache-epg-valido");
+
+  // trocar a lista de canais continua apagando o guia
+  assert.equal(o.ottApplyPlaylist(s, { ...pl, url_m3u: "http://exemplo.test/m3u_novo", url_embeds: null }), true);
+  assert.equal(s.getItem("sint_epg_cache"), null);
+
+  // limpeza completa
+  o.ottApplyPlaylist(s, pl);
+  o.ottApplyPlaylist(s, null);
+  assert.equal(s.getItem("sint_embeds_url"), null);
+});
+
+test("troca de conta e ottWebWipeAccountData limpam sint_embeds_url", () => {
+  const o = loadOtt();
+  const s = fakeStorage({ sint_web_owner: "user-1", sint_embeds_url: "https://exemplo.test/livres.m3u", sint_url: "http://exemplo.test/m3u" });
+  o.ottWebWipeAccountData(s);
+  assert.equal(s.getItem("sint_embeds_url"), null, "wipe de conta");
+
+  s.setItem("sint_web_owner", "user-1");
+  s.setItem("sint_embeds_url", "https://exemplo.test/livres.m3u");
+  assert.equal(o.ottWebOwnerSwitch(s, "user-2"), true);
+  assert.equal(s.getItem("sint_embeds_url"), null, "troca de dono");
+});

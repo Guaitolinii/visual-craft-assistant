@@ -3746,7 +3746,7 @@ const OTT_PANEL_URL = "https://sintonizatv.com.br";
 const OTT_CONFIG_URL = OTT_PANEL_URL + "/app-config.json";
 const OTT_KEYS = { TOKEN: "sint_ott_token", LAST_OK: "sint_ott_last_ok", ACCOUNT: "sint_ott_account", CONFIG: "sint_ott_config" };
 // Mesmos valores de LS no script principal (um teste confere)
-const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache", LEGENDADOS: "sint_legendados_url" };
+const OTT_LIST_KEYS = { URL: "sint_url", MODE: "sint_mode", VOD: "sint_vod_url", EPG: "sint_epg_url", EPG_CACHE: "sint_epg_cache", LEGENDADOS: "sint_legendados_url", EMBEDS: "sint_embeds_url" };
 const OTT_OFFLINE_GRACE_MS = 48 * 3600 * 1000;
 const OTT_REVALIDATE_MS = 6 * 3600 * 1000;
 const OTT_RPC_TIMEOUT_MS = 15000;
@@ -3815,6 +3815,7 @@ function ottParseDeviceConfig(data) {
         .filter((l) => l && ottStr(l.url_m3u))
         .map((l) => {
           const leg = ottStr(l.url_legendados);
+          const emb = ottStr(l.url_embeds);
           return {
             id: ottStr(l.id),
             nome: ottStr(l.nome) || "Principal",
@@ -3822,6 +3823,7 @@ function ottParseDeviceConfig(data) {
             url_vod: ottStr(l.url_vod) || null,
             url_epg: ottStr(l.url_epg) || null,
             url_legendados: (leg && /^https?:\/\//i.test(leg)) ? leg : null,
+            url_embeds: (emb && /^https?:\/\//i.test(emb)) ? emb : null,
           };
         });
       return {
@@ -3849,21 +3851,24 @@ function ottApplyPlaylist(storage, playlist) {
     [OTT_LIST_KEYS.VOD, playlist ? playlist.url_vod : null],
     [OTT_LIST_KEYS.EPG, playlist ? playlist.url_epg : null],
     [OTT_LIST_KEYS.LEGENDADOS, playlist ? playlist.url_legendados : null],
+    [OTT_LIST_KEYS.EMBEDS, playlist ? playlist.url_embeds : null],
   ];
   let changed = false;
   let epgInvalidated = false;
   wanted.forEach(([key, value]) => {
+    // Listas extras (Legendados e Filmes Livres) não têm relação com o guia: mexer nelas não invalida o cache do EPG
+    const extra = key === OTT_LIST_KEYS.LEGENDADOS || key === OTT_LIST_KEYS.EMBEDS;
     const current = storage.getItem(key);
     if (value) {
       if (current !== value) {
         storage.setItem(key, value);
         changed = true;
-        if (key !== OTT_LIST_KEYS.LEGENDADOS) epgInvalidated = true;
+        if (!extra) epgInvalidated = true;
       }
     } else if (current !== null) {
       storage.removeItem(key);
       changed = true;
-      if (key !== OTT_LIST_KEYS.LEGENDADOS) epgInvalidated = true;
+      if (!extra) epgInvalidated = true;
     }
   });
   if (epgInvalidated) storage.removeItem(OTT_LIST_KEYS.EPG_CACHE); // guia antigo não vale para a lista nova
@@ -4883,6 +4888,7 @@ const OTT_WEB_ACCOUNT_KEY_RES = [
   /^sint_(fav|recents|fav_kind|continue|mylist|favsync|histsync)$/,
   /^sint_web_chosen$/,
   /^sint_legendados_url$/,
+  /^sint_embeds_url$/,
 ];
 
 // Lista as chaves do armazenamento (localStorage tem length/key; um armazenamento sem isso só perde as chaves por perfil)
@@ -4898,7 +4904,7 @@ function ottWebStorageKeys(storage) {
 // Apaga tudo que é da conta (inclusive o "dono" guardado). A sessão do site NÃO é mexida aqui.
 function ottWebWipeAccountData(storage) {
   const fixas = [OTT_KEYS.TOKEN, OTT_KEYS.LAST_OK, OTT_KEYS.ACCOUNT, OTT_KEYS.CONFIG, "sint_profile_active", "sint_profiles", "sint_profiles_migrated",
-    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN, "sint_legendados_url"];
+    "sint_fav", "sint_recents", "sint_fav_kind", "sint_continue", "sint_mylist", "sint_favsync", "sint_histsync", OTT_WEB_KEYS.CHOSEN, "sint_legendados_url", "sint_embeds_url"];
   const todas = fixas.concat(ottWebStorageKeys(storage).filter((k) => OTT_WEB_ACCOUNT_KEY_RES.some((re) => re.test(k))));
   todas.forEach((k) => { try { storage.removeItem(k); } catch (e) { /* ignora */ } });
   try { ottApplyPlaylist(storage, null); } catch (e) { /* ignora */ }
