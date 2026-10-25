@@ -267,7 +267,10 @@ test("ligações: fileira genérica, Filmes Livres depois dos Legendados e carga
   assert.match(html, /rowsEl\.innerHTML = extrasHtml \+ _vodCatalogCache\.categories\.map/);
   assert.doesNotMatch(html, /rowsEl\.innerHTML = legHtml \+/);
   // loadVodCatalog: carga em paralelo só na aba Filmes, categoria "livres" no cache
-  assert.match(html, /vodType === "vod" && embedsEnabled\(localStorage\)/);
+  // O estado do app chama a aba Filmes de "movies" ("vod" é só o contType dos cartões): comparar com "vod" faria a fileira nunca carregar
+  assert.match(html, /vodType:\s+"movies",\s+\/\/ "movies" \| "series"/);
+  assert.match(html, /if \(vodType === "movies" && embedsEnabled\(localStorage\)\)/);
+  assert.match(html, /embedsFetch\(localStorage\.getItem\("sint_embeds_url"\)\)\.then\(items => \{\s+if \(_vodCatalogCache\.vodType !== "movies"\) return;/);
   assert.match(html, /embedsFetch\(localStorage\.getItem\("sint_embeds_url"\)\)/);
   assert.match(html, /itemsByCategory\["livres"\] = items/);
   assert.match(html, /categoryStatus\["livres"\] = "ok"/);

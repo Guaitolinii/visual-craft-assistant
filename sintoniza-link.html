@@ -10621,9 +10621,9 @@ async function loadVodCatalog(vodType, creds) {
     }).catch(() => {});
   }
   // Filmes Livres (embeds oficiais): em paralelo, sem bloquear o catálogo; independente dos Legendados
-  if (vodType === "vod" && embedsEnabled(localStorage)) {
+  if (vodType === "movies" && embedsEnabled(localStorage)) {
     embedsFetch(localStorage.getItem("sint_embeds_url")).then(items => {
-      if (_vodCatalogCache.vodType !== "vod") return;
+      if (_vodCatalogCache.vodType !== "movies") return;
       if (!items || !items.length) return;
       _vodCatalogCache.itemsByCategory["livres"] = items;
       _vodCatalogCache.categoryStatus["livres"] = "ok";
