@@ -34,6 +34,7 @@ const PURE_HELPER_NAMES = [
   "webMemParse", "webMemKey", "webRoute", "webMemMark", "webHlsShouldFallback",
   "isRealFullscreen", "isFullscreenNow",
   "legendadosDirectExt", "legendadosEnabled", "legendadosParseM3u",
+  "embedsEnabled", "embedsClassifyUrl", "embedsParseM3u", "vodItemPlayKind", "vodItemIsExtra", "embedFrameHtml",
 ];
 
 function toHostRealm(value) {
