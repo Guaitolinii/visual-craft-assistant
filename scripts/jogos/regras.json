@@ -1,5 +1,11 @@
 {
   "fontes": { "espn": true, "ge": true, "guia": true },
+  "canaisEsporte": [
+    "^espn( [0-9])?$", "^sportv( [0-9])?$", "^premiere", "^band sports$", "^combate$",
+    "^conmebol tv", "^caze", "^tnt sports", "^dazn", "^nsports", "^paramount",
+    "^fifa", "^eleven", "^nba league pass", "^canal goat", "^ge tv$", "^sportynet$",
+    "^xsports$", "^nosso futebol", "^ufc", "^red bull"
+  ],
   "duracaoHoras": {
     "futebol": 2, "nfl": 3.5, "ncaaf": 3.5, "nba": 2.5, "nhl": 2.5,
     "volei": 2, "futsal": 2, "basquete": 2.5, "lutas": 4, "outros": 2.5
@@ -79,7 +85,7 @@
     { "padrao": "^nhl\\b", "esporte": "nhl", "competicao": "NHL" },
     { "padrao": "volei|vôlei", "esporte": "volei" },
     { "padrao": "futsal", "esporte": "futsal" },
-    { "padrao": "ufc|luta|combate|boxe|mma", "esporte": "lutas" },
-    { "padrao": "futebol|copa|liga|campeonato|supercopa|libertadores|sul-americana|champions|europa", "esporte": "futebol" }
+    { "padrao": "\\b(ufc|luta|lutas|combate|boxe|mma)\\b", "esporte": "lutas" },
+    { "padrao": "futebol|copa|liga|campeonato|supercopa|libertadores|sul-americana|champions|europa", "esporte": "futebol", "generica": true }
   ]
 }

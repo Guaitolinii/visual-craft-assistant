@@ -16,6 +16,16 @@ export function validarRegras(r) {
   if (!r.fontes || ["espn", "ge", "guia"].some((k) => typeof r.fontes[k] !== "boolean")) {
     throw new Error("regras: fontes precisa de espn, ge e guia booleanos");
   }
+  if (!Array.isArray(r.canaisEsporte) || !r.canaisEsporte.length) {
+    throw new Error("regras: canaisEsporte precisa ser lista não vazia de regex");
+  }
+  for (const c of r.canaisEsporte) {
+    try {
+      new RegExp(c, "i");
+    } catch {
+      throw new Error(`regras: canaisEsporte padrão inválido (${c})`);
+    }
+  }
   if (!r.duracaoHoras || ESPORTES.some((e) => !(r.duracaoHoras[e] > 0))) {
     throw new Error("regras: duracaoHoras precisa de um número positivo por esporte");
   }

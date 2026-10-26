@@ -65,6 +65,17 @@ test("marcas do ge viram listas de canais; Disney+, Globoplay e Cartola não tê
   assert.equal(regras.marcas["disney+"], undefined);
   assert.equal(regras.marcas.cartola, undefined);
 });
+test("canaisEsporte existe; casa com canais esportivos e não com canais gerais", () => {
+  const regexes = regras.canaisEsporte.map((p) => new RegExp(p, "i"));
+  const casa = (nome) => regexes.some((r) => r.test(nome));
+  for (const c of ["espn 4", "sportv 2", "premiere 3", "band sports", "caze tv", "canal goat 01"]) {
+    assert.equal(casa(c), true, `deveria casar: ${c}`);
+  }
+  for (const c of ["adult swim", "hbo 2", "futura", "globo", "tnt", "discovery"]) {
+    assert.equal(casa(c), false, `não deveria casar: ${c}`);
+  }
+});
+
 
 test("validarRegras recusa regras quebradas", () => {
   assert.throws(() => validarRegras({}), /fontes/);
@@ -74,4 +85,7 @@ test("validarRegras recusa regras quebradas", () => {
   const ruim2 = JSON.parse(JSON.stringify(regras));
   ruim2.competicoes[0].esporte = "curling";
   assert.throws(() => validarRegras(ruim2), /esporte/);
+  const semCanais = JSON.parse(JSON.stringify(regras));
+  delete semCanais.canaisEsporte;
+  assert.throws(() => validarRegras(semCanais), /canaisEsporte/);
 });
