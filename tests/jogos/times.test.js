@@ -35,6 +35,31 @@ test("mesmoJogo: mesmos times (mesmo trocados) e horário a menos de 45 min", ()
   const a = jogo("Sevilla", "Osasuna", "2026-10-26T20:00:00Z");
   assert.equal(mesmoJogo(a, jogo("Osasuna", "Sevilla", "2026-10-26T20:30:00Z"), ALIASES, 45 * 60), true);
   assert.equal(mesmoJogo(a, jogo("Sevilla", "Osasuna", "2026-10-26T21:00:00Z"), ALIASES, 45 * 60), false);
-  assert.equal(mesmoJogo(a, jogo("Sevilla", "Betis", "2026-10-26T20:00:00Z"), ALIASES, 45 * 60), false);
+  // Um time igual no mesmo horário já identifica o jogo (o outro nome muda de idioma entre as fontes)
+  assert.equal(mesmoJogo(a, jogo("Sevilla", "Betis", "2026-10-26T20:00:00Z"), ALIASES, 45 * 60), true);
   assert.equal(mesmoJogo(a, { inicio: a.inicio, titulo: "UFC 300" }, ALIASES, 45 * 60), false);
+});
+
+test("mesmoJogo: casamento parcial (um time igual) e tolerâncias de horário", () => {
+  // Marseille x Le Havre AC contra Olympique de Marselha x Le Havre, mesmo horário => true
+  assert.equal(
+    mesmoJogo(
+      jogo("Marseille", "Le Havre AC", "2026-10-26T16:15:00-03:00"),
+      jogo("Olympique de Marselha", "Le Havre", "2026-10-26T16:15:00-03:00"),
+      ALIASES,
+    ),
+    true,
+  );
+
+  const base = jogo("Time A", "Time B", "2026-10-26T20:00:00Z");
+
+  // Um time igual e início a 25 minutos de diferença => true; a 40 minutos de diferença => false
+  assert.equal(mesmoJogo(base, jogo("Time A", "Outro C", "2026-10-26T20:25:00Z"), ALIASES), true);
+  assert.equal(mesmoJogo(base, jogo("Time A", "Outro C", "2026-10-26T20:40:00Z"), ALIASES), false);
+
+  // Nenhum time igual no mesmo horário => false
+  assert.equal(mesmoJogo(base, jogo("Time X", "Time Y", "2026-10-26T20:00:00Z"), ALIASES), false);
+
+  // Os dois times iguais com 40 minutos de diferença => true (a tolerância de 45 min continua valendo para os dois times)
+  assert.equal(mesmoJogo(base, jogo("Time A", "Time B", "2026-10-26T20:40:00Z"), ALIASES), true);
 });

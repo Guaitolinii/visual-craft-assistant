@@ -32,11 +32,23 @@ export function mesmoTime(a, b, aliases = {}) {
   return curto.join("").length >= 4 && curto.every((p) => longo.includes(p));
 }
 
-// Mesmo jogo: os dois times (mesmo trocados de lado) e início com diferença de até `toleranciaSec`
+// Mesmo jogo: os dois times (mesmo trocados de lado) e início com diferença de até `toleranciaSec`,
+// ou casamento parcial (um time igual) com tolerância de até min(toleranciaSec, 30 min).
 export function mesmoJogo(a, b, aliases = {}, toleranciaSec = 45 * 60) {
   if (!a || !b || !a.casa || !a.fora || !b.casa || !b.fora) return false;
-  if (Math.abs(a.inicio - b.inicio) > toleranciaSec) return false;
-  const direto = mesmoTime(a.casa.nome, b.casa.nome, aliases) && mesmoTime(a.fora.nome, b.fora.nome, aliases);
-  const trocado = mesmoTime(a.casa.nome, b.fora.nome, aliases) && mesmoTime(a.fora.nome, b.casa.nome, aliases);
-  return direto || trocado;
+  const diff = Math.abs(a.inicio - b.inicio);
+  if (diff > toleranciaSec) return false;
+
+  const cc = mesmoTime(a.casa.nome, b.casa.nome, aliases);
+  const ff = mesmoTime(a.fora.nome, b.fora.nome, aliases);
+  const cf = mesmoTime(a.casa.nome, b.fora.nome, aliases);
+  const fc = mesmoTime(a.fora.nome, b.casa.nome, aliases);
+
+  const doisTimes = (cc && ff) || (cf && fc);
+  if (doisTimes) return true;
+
+  const umTime = cc || ff || cf || fc;
+  if (umTime && diff <= Math.min(toleranciaSec, 30 * 60)) return true;
+
+  return false;
 }
