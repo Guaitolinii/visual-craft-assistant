@@ -952,6 +952,31 @@
     .vod-empty { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
     .vod-error { color: var(--error); padding: 1rem 0; }
 
+    /* ════════════ ABA JOGOS ════════════ */
+    .jogos-secao { margin-top: 1.5rem; }
+    .jogos-secao h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .6rem; }
+    .jogos-grupo { font-size: .7rem; font-weight: 600; color: var(--primary); letter-spacing: .08em; margin: 2rem 0 .25rem; }
+    .jogos-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .75rem; }
+    .jogos-aviso { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
+    .jogo-card {
+      display: flex; flex-direction: column; gap: .6rem; padding: .8rem .9rem; text-align: left;
+      border: 1px solid var(--border); border-radius: .8rem; background: var(--card); color: var(--foreground); cursor: pointer;
+    }
+    .jogo-card:hover { border-color: var(--primary); }
+    .jogo-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .jogo-topo { display: flex; justify-content: space-between; align-items: center; gap: .5rem; font-size: .72rem; color: var(--muted-fg); }
+    .jogo-comp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .jogo-vivo { color: #fff; background: var(--error); border-radius: 999px; padding: .1rem .5rem; font-weight: 600; letter-spacing: .04em; flex-shrink: 0; }
+    .jogo-hora { font-weight: 600; color: var(--foreground); flex-shrink: 0; }
+    .jogo-times { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .jogo-time { display: flex; flex-direction: column; align-items: center; gap: .3rem; flex: 1; min-width: 0; font-size: .8rem; text-align: center; }
+    .jogo-time img, .jogo-ini { width: 2.4rem; height: 2.4rem; object-fit: contain; }
+    .jogo-ini { display: grid; place-items: center; border-radius: 999px; background: var(--secondary); font-weight: 600; font-size: .8rem; }
+    .jogo-time > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .jogo-x { color: var(--muted-fg); font-weight: 600; }
+    .jogo-titulo { font-weight: 600; }
+    .jogo-canal { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--muted-fg); text-transform: uppercase; letter-spacing: .03em; }
+
     /* ════════════ TELA DE EMBED (Filmes Livres) ════════════ */
     /* Acima do modal de filme (9999) e abaixo do menu da TV (10001) e do aviso (10002). */
     #embed-screen {
@@ -1189,7 +1214,7 @@
       .sidebar-scrim.open { display: block; }
       .mobile-tabs {
         position: fixed; inset: auto 0 0; z-index: 32;
-        display: grid; grid-template-columns: repeat(5, 1fr);
+        display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
         /* Additive, same pattern as .topbar's top inset: the base 4.3rem bar
            height is preserved and env(safe-area-inset-bottom) grows the box
            on top of it (height), while the matching padding-bottom keeps the
@@ -1740,6 +1765,9 @@
     <button class="nav-item" data-section="Todos os canais">
       <i data-lucide="monitor-play" style="width:19px;height:19px"></i><span>Canais</span>
     </button>
+    <button class="nav-item" data-jogos-open id="nav-jogos-btn">
+      <i data-lucide="trophy" style="width:19px;height:19px"></i><span>Jogos</span>
+    </button>
     <!-- Downloads (v8): só aparece no app instalado (canDownload). -->
     <button class="nav-item" id="nav-downloads-btn" style="display:none"><i data-lucide="download" style="width:19px;height:19px"></i><span>Downloads</span></button>
 
@@ -2084,6 +2112,19 @@
     </div>
   </div><!-- /downloads-view -->
 
+  <!-- JOGOS: jogos ao vivo, de hoje e de amanhã; o card abre o canal -->
+  <div class="view hidden" id="jogos-view">
+    <div class="content-shell">
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow">JOGOS</p>
+          <h1>O que está passando?</h1>
+        </div>
+      </section>
+      <div id="jogos-content"></div>
+    </div>
+  </div>
+
   <!-- ══ SETTINGS VIEW ══ -->
   <div class="view settings-view hidden" id="settings-view">
     <div class="settings-content">
@@ -2257,6 +2298,9 @@
   <button data-section="Todos os canais" class="mobile-tab">
     <i data-lucide="monitor-play"></i><span>Canais</span>
   </button>
+  <button class="mobile-tab" data-jogos-open>
+    <i data-lucide="trophy"></i><span>Jogos</span>
+  </button>
   <button class="mobile-tab" data-vod-view="series">
     <i data-lucide="tv"></i><span>Séries</span>
   </button>
@@ -2292,6 +2336,16 @@
     <p class="tv-sheet-title" id="tv-sheet-title">Escolha a TV</p>
     <div id="tv-sheet-list"></div>
     <button type="button" class="action-sheet-cancel" id="tv-sheet-cancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- Folha "Onde assistir" da aba Jogos -->
+<div id="jogos-sheet" class="action-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="action-sheet-card">
+    <p class="action-sheet-title" id="jogos-sheet-title"></p>
+    <p class="jogos-aviso" id="jogos-sheet-sub" style="padding:0 0 .6rem"></p>
+    <div class="action-sheet-actions" id="jogos-sheet-actions"></div>
+    <button class="action-sheet-cancel" id="jogos-sheet-cancel">Cancelar</button>
   </div>
 </div>
 
@@ -8866,6 +8920,9 @@ function renderNav() {
     el.classList.toggle("active", section === "vod" && el.dataset.vodView === vodType);
   });
   document.getElementById("nav-downloads-btn").classList.toggle("active", section === "downloads");
+  document.querySelectorAll("[data-jogos-open]").forEach(el => {
+    el.classList.toggle("active", section === "jogos");
+  });
   // Conta favoritos
   const favCount = getChannels().filter(isFav).length;
   const fc = document.getElementById("fav-count");
@@ -9144,6 +9201,7 @@ function renderPageSection() {
   document.getElementById("settings-view").classList.toggle("hidden", section !== "settings");
   document.getElementById("vod-view").classList.toggle("hidden", section !== "vod");
   document.getElementById("downloads-view").classList.toggle("hidden", section !== "downloads");
+  document.getElementById("jogos-view").classList.toggle("hidden", section !== "jogos");
 }
 
 // Como o player aparece (pontos 6/7 da v6): grande no topo de todas as
@@ -11310,6 +11368,150 @@ function jogosLerCache(raw, nowMs) {
   return data ? { ts: o.ts, data } : null;
 }
 
+// ─── Aba Jogos: tela ───
+let _jogos = { data: null, status: "idle", fetchedAt: 0, timer: 0 };
+
+// Baixa e valida o arquivo (12 s de limite). Devolve os dados ou null se o formato não for o esperado.
+async function jogosBaixar() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(JOGOS_URL, { cache: "no-cache", signal: ctrl.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return jogosValidar(await res.json());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Carrega os jogos: usa a cópia guardada na hora (se íntegra, até 24 h) e baixa de novo se tiver mais de 20 min.
+// Sem rede e com cópia: segue com ela; sem rede e sem cópia: mostra "indisponíveis".
+async function loadJogos(force) {
+  const agora = Date.now();
+  if (!_jogos.data) {
+    let raw = null;
+    try { raw = localStorage.getItem(JOGOS_CACHE_KEY); } catch (e) { /* sem armazenamento */ }
+    const cache = jogosLerCache(raw, agora);
+    if (cache) { _jogos.data = cache.data; _jogos.fetchedAt = cache.ts; }
+  }
+  if (!force && _jogos.data && agora - _jogos.fetchedAt <= JOGOS_REFRESH_MS) { renderJogos(); return; }
+  _jogos.status = _jogos.data ? "ready" : "loading";
+  renderJogos();
+  try {
+    const data = await jogosBaixar();
+    if (!data) throw new Error("formato inesperado");
+    _jogos.data = data;
+    _jogos.fetchedAt = Date.now();
+    _jogos.status = "ready";
+    try { localStorage.setItem(JOGOS_CACHE_KEY, JSON.stringify({ ts: _jogos.fetchedAt, data })); } catch (e) { /* sem armazenamento */ }
+  } catch (e) {
+    _jogos.status = _jogos.data ? "ready" : "error";
+  }
+  renderJogos();
+}
+
+// Escudo do time (ou as iniciais se faltar imagem)
+function jogoTimeHtml(t) {
+  const img = t.escudo
+    ? `<img src="${escapeHtmlText(sanitizeImageUrl(t.escudo))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`
+    : `<span class="jogo-ini">${escapeHtmlText(makeInitials(t.nome))}</span>`;
+  return `<div class="jogo-time">${img}<span>${escapeHtmlText(t.nome)}</span></div>`;
+}
+
+// Card de um jogo. diaRotulo ("Hoje"/"Amanhã") só nos grupos de outros esportes, onde os dias se misturam.
+function jogoCardHtml(j, agoraMs, diaRotulo) {
+  const vivo = jogosAoVivo(j, agoraMs);
+  const hora = jogosHoraBrt(j.inicio);
+  const quando = vivo
+    ? `<span class="jogo-vivo">AO VIVO</span>`
+    : `<span class="jogo-hora">${escapeHtmlText(diaRotulo ? `${diaRotulo} ${hora}` : hora)}</span>`;
+  const lados = j.casa && j.fora
+    ? `<div class="jogo-times">${jogoTimeHtml(j.casa)}<span class="jogo-x">x</span>${jogoTimeHtml(j.fora)}</div>`
+    : `<p class="jogo-titulo">${escapeHtmlText(j.titulo || j.competicao)}</p>`;
+  const canal = j.canais.length ? j.canais.join(" · ") : "Canal não confirmado";
+  return `<button class="jogo-card" type="button" data-jogo-id="${escapeHtmlText(j.id)}">
+    <div class="jogo-topo"><span class="jogo-comp">${escapeHtmlText(j.competicao)}</span>${quando}</div>
+    ${lados}
+    <div class="jogo-canal"><i data-lucide="tv" style="width:14px;height:14px"></i><span>${escapeHtmlText(canal)}</span></div>
+  </button>`;
+}
+
+function jogosSecaoHtml(titulo, cardsHtml) {
+  return `<section class="jogos-secao"><h2>${escapeHtmlText(titulo)}</h2><div class="jogos-grade">${cardsHtml}</div></section>`;
+}
+
+// Desenha a tela inteira a partir do estado (chamada ao abrir, ao chegar o arquivo e a cada minuto)
+function renderJogos() {
+  const el = document.getElementById("jogos-content");
+  if (!el) return;
+  if (!_jogos.data) {
+    el.innerHTML = _jogos.status === "error"
+      ? `<p class="jogos-aviso">Jogos indisponíveis agora. Tente de novo em instantes.</p>`
+      : `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando jogos...</div>`;
+    return;
+  }
+  const agora = Date.now();
+  const s = jogosSecoes(_jogos.data.jogos, agora);
+  const cards = (lista, rotulo) => lista.map((j) => jogoCardHtml(j, agora, rotulo)).join("");
+  let h = "";
+  if (s.aoVivo.length) h += jogosSecaoHtml("Ao vivo agora", cards(s.aoVivo));
+  if (s.hoje.length) h += jogosSecaoHtml("Hoje", cards(s.hoje));
+  if (s.amanha.length) h += jogosSecaoHtml("Amanhã", cards(s.amanha));
+  if (s.outros.length) {
+    h += `<p class="jogos-grupo">OUTROS ESPORTES</p>`;
+    s.outros.forEach((g) => {
+      const cartoes = g.itens.map((i) => jogoCardHtml(i.jogo, agora, i.dia === "hoje" ? "Hoje" : "Amanhã")).join("");
+      h += jogosSecaoHtml(g.rotulo, cartoes);
+    });
+  }
+  el.innerHTML = h || `<p class="jogos-aviso">Nenhum jogo hoje nem amanhã.</p>`;
+  lucide.createIcons();
+}
+
+// Abre a aba e liga o relógio de 1 min (atualiza o AO VIVO e baixa de novo quando a cópia envelhece); o relógio se desliga ao sair da aba
+function openJogosSection() {
+  setState({ section: "jogos" });
+  window.scrollTo({ top: 0 });
+  closeSidebar();
+  loadJogos(false);
+  if (!_jogos.timer) {
+    _jogos.timer = setInterval(() => {
+      if (_state.section !== "jogos") { clearInterval(_jogos.timer); _jogos.timer = 0; return; }
+      loadJogos(false);
+    }, 60000);
+  }
+}
+
+// Toque no card: um canal confirmado na lista toca direto; vários (ou só prováveis) abrem a escolha; nenhum avisa
+function abrirJogo(id) {
+  const jogo = _jogos.data && _jogos.data.jogos.find((j) => j.id === id);
+  if (!jogo) return;
+  const acao = jogosAcaoClique(jogo, getChannels());
+  if (acao.tipo === "tocar") { selectChannel(acao.canal); return; }
+  if (acao.tipo === "escolher") { abrirJogosSheet(jogo, acao.canais); return; }
+  showToast("Esse canal não está na sua lista.");
+}
+
+function abrirJogosSheet(jogo, canais) {
+  const titulo = jogo.casa && jogo.fora ? `${jogo.casa.nome} x ${jogo.fora.nome}` : (jogo.titulo || jogo.competicao);
+  document.getElementById("jogos-sheet-title").textContent = titulo;
+  document.getElementById("jogos-sheet-sub").textContent = jogo.canais.length ? "Onde assistir" : "Canal não confirmado: estes são os canais prováveis";
+  document.getElementById("jogos-sheet-actions").innerHTML = canais.map((c) => `
+    <button class="action-sheet-btn" data-jogos-canal="${escapeHtmlText(String(c.id))}">
+      <i data-lucide="tv" style="width:18px;height:18px"></i><span>${escapeHtmlText(c.name)}</span>
+    </button>`).join("");
+  const sheet = document.getElementById("jogos-sheet");
+  sheet.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+  lucide.createIcons();
+}
+
+function fecharJogosSheet() {
+  const sheet = document.getElementById("jogos-sheet");
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+}
+
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
@@ -13080,6 +13282,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── FILMES/SÉRIES (VOD) ──
   document.querySelectorAll("[data-vod-view]").forEach(el => {
     el.addEventListener("click", () => openVodSection(el.dataset.vodView));
+  });
+
+  // ── JOGOS ──
+  document.querySelectorAll("[data-jogos-open]").forEach(el => el.addEventListener("click", openJogosSection));
+  document.getElementById("jogos-content").addEventListener("click", e => {
+    const card = e.target.closest("[data-jogo-id]");
+    if (card) abrirJogo(card.dataset.jogoId);
+  });
+  document.getElementById("jogos-sheet-actions").addEventListener("click", e => {
+    const btn = e.target.closest("[data-jogos-canal]");
+    if (!btn) return;
+    const ch = getChannels().find(c => String(c.id) === btn.dataset.jogosCanal);
+    fecharJogosSheet();
+    if (ch) selectChannel(ch);
+  });
+  document.getElementById("jogos-sheet-cancel").addEventListener("click", fecharJogosSheet);
+  document.getElementById("jogos-sheet").addEventListener("click", e => {
+    if (e.target.id === "jogos-sheet") fecharJogosSheet();
   });
 
   document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
