@@ -1,0 +1,62 @@
+name: Atualizar os jogos (aba Jogos)
+
+on:
+  schedule:
+    - cron: "23 */3 * * *"
+  workflow_dispatch:
+
+# O passo final faz push na branch vod-data com o GITHUB_TOKEN: precisa de
+# escrita no conteúdo do repositório (e só disso).
+permissions:
+  contents: write
+
+# Uma execução por vez (duas ao mesmo tempo brigariam pelo push).
+concurrency:
+  group: jogos
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CODE_REF: v24
+    steps:
+      - name: Checkout (branch de dados)
+        uses: actions/checkout@v4
+        with:
+          ref: vod-data
+
+      - name: Baixar o gerador da branch de código
+        # O gerador vive na branch de código ($CODE_REF); só o jogos.json mora
+        # em vod-data. Extraímos scripts/jogos para uma pasta temporária só
+        # para rodar aqui, sem commitá-la.
+        run: |
+          git fetch origin "$CODE_REF" --depth=1
+          mkdir -p .gerador
+          git archive FETCH_HEAD scripts/jogos | tar -x -C .gerador
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # IMPORTANTE: não esconder a falha deste passo nem a do passo de commit
+      # (nada de ignorar erro nem de forçar a execução depois de uma falha).
+      # O gerador sai com erro, SEM gravar jogos.json, quando nenhuma fonte
+      # produz jogos; é essa falha que impede o passo de commit de rodar e
+      # mantém o último arquivo bom na branch vod-data.
+      - name: Gerar jogos.json
+        run: node .gerador/scripts/jogos/build.mjs --epg epg-extra.json --out jogos.json
+
+      - name: Commitar só o jogos.json (o gerador baixado não entra na branch de dados)
+        run: |
+          rm -rf .gerador
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add jogos.json
+          if git diff --staged --quiet; then
+            echo "Sem mudanças nos jogos."
+          else
+            git commit -m "chore(vod-data): atualizar os jogos"
+            git pull --rebase origin vod-data
+            git push origin vod-data
+          fi
