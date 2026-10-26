@@ -149,3 +149,64 @@ test("jogosLerCache: devolve a cópia guardada se tiver menos de 24 h e estiver 
   assert.equal(ctx.jogosLerCache(null, agora), null);
   assert.equal(ctx.jogosLerCache(guarda(agora, { v: 9, jogos: [] }), agora), null);
 });
+
+test("W1: jogosDiaExibicao e jogosSecoes com jogo que cruzou a meia-noite e acabou há pouco", () => {
+  const agoraMs = Date.parse("2026-10-25T01:00:00-03:00");
+  const jCruza = jogo("cruza", "futebol", "2026-10-24T23:30:00-03:00", "2026-10-25T00:55:00-03:00");
+  const jOntem = jogo("ontem", "futebol", "2026-10-24T21:30:00-03:00", "2026-10-24T23:50:00-03:00");
+  const jOutro = jogo("outro", "nfl", "2026-10-24T23:30:00-03:00", "2026-10-25T00:55:00-03:00");
+
+  assert.equal(ctx.jogosDiaExibicao(jCruza, "2026-10-25", "2026-10-26"), "2026-10-25");
+  assert.equal(ctx.jogosDiaExibicao(jOntem, "2026-10-25", "2026-10-26"), "");
+
+  const s = ctx.jogosSecoes([jCruza, jOntem, jOutro], agoraMs);
+  assert.deepEqual(s.hoje.map((j) => j.id), ["cruza"]);
+  assert.deepEqual(s.aoVivo, []);
+  assert.deepEqual(s.amanha, []);
+  assert.equal(s.outros.length, 1);
+  assert.equal(s.outros[0].itens[0].jogo.id, "outro");
+  assert.equal(s.outros[0].itens[0].dia, "hoje");
+});
+
+test("W2: jogosValidar normaliza campos e descarta itens malformados", () => {
+  const base = {
+    id: "ok",
+    esporte: "futebol",
+    inicio: 1000,
+    fim: 2000,
+    competicao: { a: 1 },
+    titulo: 123,
+    casa: { nome: "Fla", escudo: "https://img/fla.png" },
+    fora: { nome: "Flu", escudo: null },
+    canais: [123, null, "  espn  ", ""],
+    provaveis: [" sportv ", {}],
+  };
+  const res = ctx.jogosValidar({ v: 1, gerado: 100, jogos: [base] });
+  assert.equal(res.jogos.length, 1);
+  const normalizado = res.jogos[0];
+  assert.equal(normalizado.competicao, "");
+  assert.equal("titulo" in normalizado, false);
+  assert.deepEqual(normalizado.canais, ["espn"]);
+  assert.deepEqual(normalizado.provaveis, ["sportv"]);
+  assert.equal(normalizado.fora.escudo, "");
+  assert.equal(normalizado.casa.escudo, "https://img/fla.png");
+
+  // descartados
+  const descartados = [
+    { ...base, id: "" },
+    { ...base, esporte: 12 },
+    { ...base, inicio: 3000, fim: 2000 },
+    { ...base, inicio: 2000, fim: 2000 },
+    { ...base, casa: {} },
+    { ...base, casa: { nome: 123 } },
+    { ...base, casa: { nome: "A" }, fora: undefined },
+    { ...base, fora: { nome: "B" }, casa: undefined },
+  ];
+  const rDesc = ctx.jogosValidar({ v: 1, gerado: 100, jogos: descartados });
+  assert.deepEqual(rDesc.jogos, []);
+
+  // jogosAcaoClique com jogo normalizado nunca lança
+  assert.doesNotThrow(() => {
+    ctx.jogosAcaoClique(normalizado, [{ id: 1, name: "ESPN" }]);
+  });
+});

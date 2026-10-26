@@ -11282,6 +11282,14 @@ function jogosAoVivo(j, nowMs) {
 function jogosVisivel(j, nowMs) {
   return nowMs / 1000 < j.fim + JOGOS_SOBRA_MS / 1000;
 }
+function jogosDiaExibicao(j, hoje, amanha) {
+  if (!j) return "";
+  const dIni = jogosDiaBrt(j.inicio);
+  if (dIni === hoje || dIni === amanha) return dIni;
+  if (jogosDiaBrt(j.fim) === hoje) return hoje;
+  return "";
+}
+
 
 // Seções da tela: futebol em "ao vivo agora", "hoje" e "amanhã"; os outros esportes em grupos (NFL, College Football, NBA, NHL e demais).
 // Jogo que começou ontem e ainda está no ar entra em "ao vivo". Jogo terminado há mais de 10 min e jogo de depois de amanhã não entram.
@@ -11291,20 +11299,20 @@ function jogosSecoes(jogos, nowMs) {
   const hoje = jogosDiaBrt(nowMs / 1000);
   const amanha = jogosDiaBrt(nowMs / 1000 + 86400);
   const lista = jogos
-    .filter((j) => j && jogosVisivel(j, nowMs) && (jogosAoVivo(j, nowMs) || [hoje, amanha].includes(jogosDiaBrt(j.inicio))))
+    .filter((j) => j && jogosVisivel(j, nowMs) && (jogosAoVivo(j, nowMs) || jogosDiaExibicao(j, hoje, amanha) !== ""))
     .sort((a, b) => a.inicio - b.inicio || String(a.id).localeCompare(String(b.id)));
   const futebol = lista.filter((j) => j.esporte === "futebol");
   const resto = futebol.filter((j) => !jogosAoVivo(j, nowMs));
   return {
     aoVivo: futebol.filter((j) => jogosAoVivo(j, nowMs)),
-    hoje: resto.filter((j) => jogosDiaBrt(j.inicio) === hoje),
-    amanha: resto.filter((j) => jogosDiaBrt(j.inicio) === amanha),
+    hoje: resto.filter((j) => jogosDiaExibicao(j, hoje, amanha) === hoje),
+    amanha: resto.filter((j) => jogosDiaExibicao(j, hoje, amanha) === amanha),
     outros: JOGOS_ORDEM_OUTROS.map((esporte) => ({
       esporte,
       rotulo: JOGOS_ROTULOS[esporte],
       itens: lista.filter((j) => j.esporte === esporte).map((j) => ({
         jogo: j,
-        dia: jogosDiaBrt(j.inicio) === hoje ? "hoje" : "amanha",
+        dia: jogosDiaExibicao(j, hoje, amanha) === hoje ? "hoje" : "amanha",
         aoVivo: jogosAoVivo(j, nowMs),
       })),
     })).filter((g) => g.itens.length),
@@ -11354,8 +11362,63 @@ function jogosAcaoClique(jogo, canais) {
 // Confere o formato do arquivo (v1) e descarta jogo quebrado. null = arquivo inválido.
 function jogosValidar(dados) {
   if (!dados || dados.v !== 1 || !Array.isArray(dados.jogos)) return null;
-  const jogos = dados.jogos.filter((j) => j && typeof j.id === "string" && typeof j.esporte === "string"
-    && isFinite(j.inicio) && isFinite(j.fim) && Array.isArray(j.canais) && Array.isArray(j.provaveis));
+  const jogos = [];
+  for (const j of dados.jogos) {
+    if (!j || typeof j !== "object") continue;
+    if (typeof j.id !== "string" || !j.id.trim()) continue;
+    if (typeof j.esporte !== "string") continue;
+    if (!isFinite(j.inicio) || !isFinite(j.fim) || j.inicio >= j.fim) continue;
+
+    const temCasa = j.casa != null;
+    const temFora = j.fora != null;
+    if (temCasa !== temFora) continue;
+
+    let casa;
+    let fora;
+    if (temCasa) {
+      if (typeof j.casa !== "object" || typeof j.fora !== "object") continue;
+      if (typeof j.casa.nome !== "string" || !j.casa.nome.trim()) continue;
+      if (typeof j.fora.nome !== "string" || !j.fora.nome.trim()) continue;
+      casa = {
+        nome: j.casa.nome,
+        escudo: typeof j.casa.escudo === "string" ? j.casa.escudo : "",
+      };
+      fora = {
+        nome: j.fora.nome,
+        escudo: typeof j.fora.escudo === "string" ? j.fora.escudo : "",
+      };
+    }
+
+    const limpaLista = (l) => {
+      if (!Array.isArray(l)) return [];
+      const out = [];
+      for (const item of l) {
+        if (typeof item === "string") {
+          const s = item.trim();
+          if (s) out.push(s);
+        }
+      }
+      return out;
+    };
+
+    const item = {
+      id: j.id,
+      esporte: j.esporte,
+      inicio: j.inicio,
+      fim: j.fim,
+      competicao: typeof j.competicao === "string" ? j.competicao : "",
+      canais: limpaLista(j.canais),
+      provaveis: limpaLista(j.provaveis),
+    };
+    if (typeof j.titulo === "string") {
+      item.titulo = j.titulo;
+    }
+    if (casa && fora) {
+      item.casa = casa;
+      item.fora = fora;
+    }
+    jogos.push(item);
+  }
   return { v: 1, gerado: dados.gerado, jogos };
 }
 
