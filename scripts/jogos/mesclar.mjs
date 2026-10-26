@@ -1,4 +1,4 @@
-import { mesmoJogo, normalizarTime } from "./times.mjs";
+import { pontuarJogo, normalizarTime } from "./times.mjs";
 
 const TOLERANCIA_SEC = 45 * 60;
 
@@ -24,8 +24,22 @@ export function idDoJogo(j, aliases) {
 // o guia confirma o canal (e traz os jogos que só ele conhece). Depois filtra pela janela e ordena.
 export function mesclarJogos({ espn, ge, guia, aliases, janela }) {
   const base = espn.map((j) => ({ ...j, canais: j.canais.slice(), provaveis: j.provaveis.slice() }));
-  const acha = (j) => base.find((x) => mesmoJogo(x, j, aliases, TOLERANCIA_SEC));
-
+  const acha = (j) => {
+    let melhor = null;
+    let melhorPts = 0;
+    let menorDiff = Infinity;
+    for (const x of base) {
+      const pts = pontuarJogo(x, j, aliases, TOLERANCIA_SEC);
+      if (pts === 0) continue;
+      const diff = Math.abs(x.inicio - j.inicio);
+      if (pts > melhorPts || (pts === melhorPts && diff < menorDiff)) {
+        melhor = x;
+        melhorPts = pts;
+        menorDiff = diff;
+      }
+    }
+    return melhor;
+  };
   for (const g of ge) {
     const alvo = acha(g);
     if (alvo) {
@@ -44,7 +58,7 @@ export function mesclarJogos({ espn, ge, guia, aliases, janela }) {
   }
 
   return base
-    .filter((j) => j.inicio >= janela.inicio && j.inicio < janela.fim)
+    .filter((j) => j.inicio < janela.fim && j.fim > janela.inicio)
     .map((j) => ({
       id: idDoJogo(j, aliases),
       esporte: j.esporte,

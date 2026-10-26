@@ -4,6 +4,12 @@ const PALAVRAS_VAZIAS = new Set([
   "club", "clube", "de", "do", "da", "dos", "das", "the", "football", "futebol",
 ]);
 
+const MARCADORES_CATEGORIA = new Set([
+  "feminino", "feminina", "women", "womens",
+  "sub", "u17", "u18", "u19", "u20", "u21", "u23",
+  "ii", "reserves", "jr", "youth",
+]);
+
 // Nome -> forma comparável. `aliases` mapeia nome normalizado -> nome canônico normalizado.
 export function normalizarTime(nome, aliases = {}) {
   let t = String(nome == null ? "" : nome)
@@ -19,11 +25,28 @@ export function normalizarTime(nome, aliases = {}) {
   return resto || t;
 }
 
+function marcadoresDe(normalizado) {
+  const s = new Set();
+  normalizado.split(" ").forEach((p) => {
+    if (MARCADORES_CATEGORIA.has(p)) s.add(p);
+  });
+  return s;
+}
+
+function conjuntosIguais(sa, sb) {
+  if (sa.size !== sb.size) return false;
+  for (const x of sa) {
+    if (!sb.has(x)) return false;
+  }
+  return true;
+}
+
 // Mesmo time: nomes iguais depois de normalizar, ou o mais curto contido (palavra por palavra) no mais longo
 export function mesmoTime(a, b, aliases = {}) {
   const na = normalizarTime(a, aliases);
   const nb = normalizarTime(b, aliases);
   if (!na || !nb) return false;
+  if (!conjuntosIguais(marcadoresDe(na), marcadoresDe(nb))) return false;
   if (na === nb) return true;
   const ta = na.split(" ");
   const tb = nb.split(" ");
@@ -32,12 +55,14 @@ export function mesmoTime(a, b, aliases = {}) {
   return curto.join("").length >= 4 && curto.every((p) => longo.includes(p));
 }
 
-// Mesmo jogo: os dois times (mesmo trocados de lado) e início com diferença de até `toleranciaSec`,
-// ou casamento parcial (um time igual) com tolerância de até min(toleranciaSec, 30 min).
-export function mesmoJogo(a, b, aliases = {}, toleranciaSec = 45 * 60) {
-  if (!a || !b || !a.casa || !a.fora || !b.casa || !b.fora) return false;
+// Pontua a correspondência entre dois jogos:
+// 2: dois times casam (direto ou trocados) dentro de toleranciaSec
+// 1: um par casa dentro de min(toleranciaSec, 30 min)
+// 0: caso contrário (inclusive sem casa/fora)
+export function pontuarJogo(a, b, aliases = {}, toleranciaSec = 45 * 60) {
+  if (!a || !b || !a.casa || !a.fora || !b.casa || !b.fora) return 0;
   const diff = Math.abs(a.inicio - b.inicio);
-  if (diff > toleranciaSec) return false;
+  if (diff > toleranciaSec) return 0;
 
   const cc = mesmoTime(a.casa.nome, b.casa.nome, aliases);
   const ff = mesmoTime(a.fora.nome, b.fora.nome, aliases);
@@ -45,10 +70,15 @@ export function mesmoJogo(a, b, aliases = {}, toleranciaSec = 45 * 60) {
   const fc = mesmoTime(a.fora.nome, b.casa.nome, aliases);
 
   const doisTimes = (cc && ff) || (cf && fc);
-  if (doisTimes) return true;
+  if (doisTimes) return 2;
 
   const umTime = cc || ff || cf || fc;
-  if (umTime && diff <= Math.min(toleranciaSec, 30 * 60)) return true;
+  if (umTime && diff <= Math.min(toleranciaSec, 30 * 60)) return 1;
 
-  return false;
+  return 0;
+}
+
+// Mesmo jogo: pontuarJogo(...) > 0
+export function mesmoJogo(a, b, aliases = {}, toleranciaSec = 45 * 60) {
+  return pontuarJogo(a, b, aliases, toleranciaSec) > 0;
 }

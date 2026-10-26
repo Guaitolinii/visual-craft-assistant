@@ -79,13 +79,13 @@
   },
   "esportePorPalavra": [
     { "padrao": "^nfl\\b", "esporte": "nfl", "competicao": "NFL" },
-    { "padrao": "universit|college|ncaa", "esporte": "ncaaf", "competicao": "College Football" },
+    { "padrao": "universit|college|ncaa", "esporte": "ncaaf", "competicao": "College Football", "soPrefixo": true },
     { "padrao": "^nba\\b", "esporte": "nba", "competicao": "NBA" },
     { "padrao": "basquete|nbb|wnba", "esporte": "basquete" },
     { "padrao": "^nhl\\b", "esporte": "nhl", "competicao": "NHL" },
     { "padrao": "volei|vôlei", "esporte": "volei" },
     { "padrao": "futsal", "esporte": "futsal" },
     { "padrao": "\\b(ufc|luta|lutas|combate|boxe|mma)\\b", "esporte": "lutas" },
-    { "padrao": "futebol|copa|liga|campeonato|supercopa|libertadores|sul-americana|champions|europa", "esporte": "futebol", "generica": true }
+    { "padrao": "futebol|copa|liga|campeonato|supercopa|libertadores|sul-americana|champions|europa|brasileir|premier|serie a|série a|serie b|série b|bundesliga|ligue 1|laliga|la liga|eredivisie|primeira liga|\\b(mls)\\b|eliminat|mundial|amistoso", "esporte": "futebol", "generica": true }
   ]
 }

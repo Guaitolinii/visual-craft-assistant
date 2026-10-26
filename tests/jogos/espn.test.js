@@ -73,3 +73,36 @@ test("buscarEspn: consulta cada competição em cada dia, junta, tira repetidos 
   assert.match(avisos[0], /nfl/);
   assert.equal(r.jogos.length, 2); // 1 de LaLiga e 1 de NFL, sem repetição pelo idFonte
 });
+
+test("F6: parseEspn tolera elementos nulos em events e competitors sem lançar", () => {
+  const base = ESPN_LALIGA.events[0];
+  const comNulos = {
+    events: [
+      null,
+      { ...base, id: "com-comp-nulo", competitions: [{ competitors: [null, base.competitions[0].competitors[0], base.competitions[0].competitors[1]] }] },
+    ],
+  };
+  const res = parseEspn(comNulos, LALIGA, DURACAO);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].idFonte, "com-comp-nulo");
+});
+
+test("F7: parseEspn descarta escudo inseguro e limpa tags HTML de nomes", () => {
+  const base = ESPN_LALIGA.events[0];
+  const xss = {
+    events: [{
+      ...base,
+      id: "xss-espn",
+      competitions: [{
+        competitors: [
+          { homeAway: "home", team: { displayName: "<img src=x onerror=alert(1)>", logo: "javascript:alert(1)" } },
+          { homeAway: "away", team: { displayName: "Time Visitante", logo: "https://a.espncdn.com/logo.png" } },
+        ],
+      }],
+    }],
+  };
+  const [j] = parseEspn(xss, LALIGA, DURACAO);
+  assert.equal(j.casa.nome, "img src=x onerror=alert(1)");
+  assert.equal(j.casa.escudo, "");
+  assert.equal(j.fora.escudo, "https://a.espncdn.com/logo.png");
+});

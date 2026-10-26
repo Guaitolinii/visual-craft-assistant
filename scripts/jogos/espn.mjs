@@ -1,4 +1,5 @@
 import { aaaammdd } from "./tempo.mjs";
+import { limparTexto, urlSegura } from "./limpar.mjs";
 
 const BASE = "https://site.api.espn.com/apis/site/v2/sports/";
 
@@ -14,15 +15,16 @@ export function parseEspn(json, competicao, duracaoHoras) {
   const durSec = (duracaoHoras[competicao.esporte] || duracaoHoras.outros || 2.5) * 3600;
   const jogos = [];
   for (const e of eventos) {
-    const comp = e && Array.isArray(e.competitions) ? e.competitions[0] : null;
-    const lados = comp && Array.isArray(comp.competitors) ? comp.competitors : [];
+    if (!e || typeof e !== "object") continue;
+    const comp = Array.isArray(e.competitions) ? e.competitions[0] : null;
+    const lados = comp && Array.isArray(comp.competitors) ? comp.competitors.filter((l) => l && typeof l === "object") : [];
     const inicio = Math.floor(Date.parse(e && e.date) / 1000);
-    if (!e || !e.id || !isFinite(inicio) || lados.length < 2) continue;
+    if (!e.id || !isFinite(inicio) || lados.length < 2) continue;
     const casaRaw = lados.find((l) => l.homeAway === "home") || lados[0];
     const foraRaw = lados.find((l) => l.homeAway === "away") || lados[1];
     const lado = (l) => ({
-      nome: String((l.team && (l.team.displayName || l.team.shortDisplayName)) || ""),
-      escudo: String((l.team && l.team.logo) || ""),
+      nome: limparTexto((l.team && (l.team.displayName || l.team.shortDisplayName)) || ""),
+      escudo: urlSegura(String((l.team && l.team.logo) || "")),
     });
     const casa = lado(casaRaw);
     const fora = lado(foraRaw);
@@ -31,7 +33,7 @@ export function parseEspn(json, competicao, duracaoHoras) {
       fonte: "espn",
       idFonte: String(e.id),
       esporte: competicao.esporte,
-      competicao: competicao.nome,
+      competicao: limparTexto(competicao.nome),
       casa,
       fora,
       inicio,

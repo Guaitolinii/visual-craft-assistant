@@ -88,11 +88,40 @@ test("só ficam os jogos da janela (hoje, amanhã e depois de amanhã em Brasíl
     espn: [
       espn("tarde", "A", "B", "2026-10-27T20:00:00Z"),
       espn("cedo", "C", "D", "2026-10-25T20:00:00Z"),
-      espn("ontem", "E", "F", "2026-10-25T02:00:00Z"),   // 23h de sábado em Brasília: fora
+      espn("ontem", "E", "F", "2026-10-24T20:00:00Z"),   // 17h de sábado em Brasília (fim 19h): fora
       espn("depois", "G", "H", "2026-10-28T03:00:00Z"),  // meia-noite do quarto dia em Brasília: fora
     ], ge: [], guia: [], aliases: ALIASES, janela: JANELA,
   });
   assert.deepEqual(r.map((j) => j.id), ["espn-cedo", "espn-tarde"]);
+});
+
+test("F2: jogo que começou ontem e cruza a meia-noite de Brasília é mantido na janela", () => {
+  // Jogo que começa às 22:15 do dia anterior e termina às 01:45 de hoje em Brasília (04:45Z)
+  const nflCruza = {
+    fonte: "espn", idFonte: "nfl-madrugada", esporte: "nfl", competicao: "NFL",
+    casa: { nome: "Team A", escudo: "" }, fora: { nome: "Team B", escudo: "" },
+    inicio: t("2026-10-26T01:15:00Z"), fim: t("2026-10-26T04:45:00Z"),
+    canais: [], provaveis: ["espn 2"],
+  };
+  // Janela com agora às 00:23 de Brasília em 26/10 (03:23Z)
+  const janela0023 = janelaDias(t("2026-10-26T03:23:00Z"), 3);
+  const r = mesclarJogos({ espn: [nflCruza], ge: [], guia: [], aliases: ALIASES, janela: janela0023 });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].id, "espn-nfl-madrugada");
+});
+
+test("F3 (a): quando há mais de um candidato no mesmo horário, casa com o melhor (maior pontuação)", () => {
+  // ESPN tem Botafogo x Vasco da Gama e Botafogo SP x Santos no mesmo horário
+  const j1 = espn("bota-vasco", "Botafogo", "Vasco da Gama", "2026-10-26T20:00:00Z");
+  const j2 = espn("bota-santos", "Botafogo SP", "Santos", "2026-10-26T20:00:00Z");
+  // Guia tem Botafogo-SP x Santos em sportv
+  const g = guia("sportv", "Botafogo-SP", "Santos", "2026-10-26T20:00:00Z");
+
+  const r = mesclarJogos({ espn: [j1, j2], ge: [], guia: [g], aliases: ALIASES, janela: JANELA });
+  const resBotaVasco = r.find((j) => j.id === "espn-bota-vasco");
+  const resBotaSantos = r.find((j) => j.id === "espn-bota-santos");
+  assert.deepEqual(resBotaSantos.canais, ["sportv"]);
+  assert.deepEqual(resBotaVasco.canais, []);
 });
 
 test("o arquivo final não carrega campos internos (fonte, idFonte)", () => {

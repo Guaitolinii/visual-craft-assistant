@@ -55,3 +55,56 @@ test("jogosDoGe: evento sem times ou sem horário válido é ignorado; agenda to
   assert.deepEqual(jogosDoGe(null, regras), []);
   assert.deepEqual(jogosDoGe({ "2026-10-26": null }, regras), []);
 });
+
+test("F6: jogosDoGe tolera campeonatos, eventos e fontes de transmissão nulos sem lançar", () => {
+  const agenda = {
+    "2026-10-26": {
+      championshipsAgenda: [
+        null,
+        {
+          championship: { name: "Brasileirão" },
+          future: [
+            null,
+            {
+              match: {
+                id: 999,
+                startDate: "2026-10-26",
+                startHour: "20:00:00",
+                firstContestant: { popularName: "Palmeiras", badgePng: "https://globo.com/p.png" },
+                secondContestant: { popularName: "Santos", badgePng: "https://globo.com/s.png" },
+                liveWatchSources: [null, { name: "SporTV" }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const r = jogosDoGe(agenda, regras);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].idFonte, "999");
+  assert.deepEqual(r[0].provaveis, ["sportv", "sportv 2", "sportv 3"]);
+});
+
+test("F7: jogosDoGe descarta escudo inseguro e limpa tags HTML de nomes", () => {
+  const agenda = {
+    "2026-10-26": {
+      championshipsAgenda: [{
+        championship: { name: "Brasileirão" },
+        future: [{
+          match: {
+            id: 888,
+            startDate: "2026-10-26",
+            startHour: "20:00:00",
+            firstContestant: { popularName: "<img src=x onerror=alert(1)>", badgePng: "javascript:alert(1)" },
+            secondContestant: { popularName: "Time Visitante", badgePng: "https://globo.com/logo.png" },
+          },
+        }],
+      }],
+    },
+  };
+  const [j] = jogosDoGe(agenda, regras);
+  assert.equal(j.casa.nome, "img src=x onerror=alert(1)");
+  assert.equal(j.casa.escudo, "");
+  assert.equal(j.fora.escudo, "https://globo.com/logo.png");
+});

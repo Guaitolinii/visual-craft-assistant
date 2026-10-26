@@ -57,5 +57,6 @@ jobs:
             echo "Sem mudanças nos jogos."
           else
             git commit -m "chore(vod-data): atualizar os jogos"
+            git pull --rebase origin vod-data
             git push origin vod-data
           fi

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { normalizarTime, mesmoTime, mesmoJogo } from "../../scripts/jogos/times.mjs";
+import { normalizarTime, mesmoTime, mesmoJogo, pontuarJogo } from "../../scripts/jogos/times.mjs";
 
 const ALIASES = JSON.parse(readFileSync(new URL("../../scripts/jogos/aliases-times.json", import.meta.url), "utf8"));
 
@@ -27,6 +27,26 @@ test("mesmoTime: igual, apelido e nome abreviado casam; times diferentes não", 
   assert.equal(mesmoTime("Flamengo", "Fluminense", ALIASES), false);
   assert.equal(mesmoTime("Inter", "Internacional", ALIASES), false);
   assert.equal(mesmoTime("", "Sevilla", ALIASES), false);
+});
+
+test("F3 (b): marcadores de categoria impedem falso positivo por contenção", () => {
+  assert.equal(mesmoTime("Flamengo", "Flamengo Feminino", ALIASES), false);
+  assert.equal(mesmoTime("Palmeiras", "Palmeiras Sub 20", ALIASES), false);
+  assert.equal(mesmoTime("Flamengo Feminino", "Flamengo Feminino", ALIASES), true);
+  assert.equal(mesmoTime("Vasco da Gama", "Vasco", ALIASES), true);
+});
+
+test("F3: pontuarJogo devolve 2, 1 e 0 nos casos certos", () => {
+  const a = jogo("Botafogo SP", "Santos", "2026-10-26T20:00:00Z");
+  const b2 = jogo("Botafogo-SP", "Santos", "2026-10-26T20:00:00Z");
+  const b1 = jogo("Botafogo-SP", "Vasco", "2026-10-26T20:10:00Z");
+  const b0 = jogo("Flamengo", "Fluminense", "2026-10-26T20:00:00Z");
+  const bSemCasa = { inicio: a.inicio };
+
+  assert.equal(pontuarJogo(a, b2, ALIASES), 2);
+  assert.equal(pontuarJogo(a, b1, ALIASES), 1);
+  assert.equal(pontuarJogo(a, b0, ALIASES), 0);
+  assert.equal(pontuarJogo(a, bSemCasa, ALIASES), 0);
 });
 
 const jogo = (casa, fora, iso) => ({ casa: { nome: casa }, fora: { nome: fora }, inicio: Date.parse(iso) / 1000 });

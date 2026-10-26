@@ -1,3 +1,5 @@
+import { limparTexto } from "./limpar.mjs";
+
 // Jogos a partir do guia de TV (epg-extra.json): { canais: { nome: [[inicio, fim, titulo, descricao], ...] } }
 const REPRISE = /^\s*(vt|reprise|compacto|melhores momentos|p[oó]s[- ]jogo|pr[eé][- ]jogo)\b/i;
 const CONFRONTO = /^(.*?)\s+(?:x|vs\.?|versus)\s+(.*)$/i;
@@ -21,7 +23,7 @@ function classificar(prefixo, regras, textoSemPrefixo) {
 
   const texto = textoSemPrefixo || "";
   for (const r of regras.esportePorPalavra) {
-    if (r.generica) continue;
+    if (r.generica || r.soPrefixo) continue;
     if (new RegExp(r.padrao, "i").test(texto)) {
       const competicao = r.competicao || ROTULO_ESPORTE[r.esporte] || "Outros";
       return { esporte: r.esporte, competicao };
@@ -40,12 +42,12 @@ export function interpretarTitulo(titulo, regras, descricao) {
   if (m) { prefixo = m[1].trim(); t = m[2].trim(); }
   const c = t.match(CONFRONTO);
   if (!c) return null;
-  const casa = c[1].trim();
-  const fora = c[2].trim();
+  const casa = limparTexto(c[1]);
+  const fora = limparTexto(c[2]);
   if (!casa || !fora) return null;
   const textoSemPrefixo = `${titulo} ${descricao || ""}`;
   const { esporte, competicao } = classificar(prefixo, regras, textoSemPrefixo);
-  return { esporte, competicao, casa, fora };
+  return { esporte, competicao: limparTexto(competicao), casa, fora };
 }
 
 // Todos os jogos do guia, um por programa (o mesmo jogo em dois canais vira dois itens; a mescla junta depois)

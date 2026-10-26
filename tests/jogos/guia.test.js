@@ -92,3 +92,16 @@ test("interpretarTitulo: sem prefixo classifica esporte pela descrição quando 
   const semDesc = interpretarTitulo("Time A x Time B", regras);
   assert.equal(semDesc.esporte, "futebol");
 });
+
+test("F4: Universitario x Alianza Lima (sem prefixo) é futebol, não ncaaf", () => {
+  const j = interpretarTitulo("Universitario x Alianza Lima - Ao Vivo", regras);
+  assert.equal(j.esporte, "futebol");
+  const c = interpretarTitulo("Futebol Americano Universitário: Houston x Utah - Ao Vivo", regras);
+  assert.equal(c.esporte, "ncaaf");
+});
+
+test("F5: prefixos de futebol desconhecidos são classificados como futebol", () => {
+  assert.equal(interpretarTitulo("Brasileirão: Flamengo x Palmeiras", regras).esporte, "futebol");
+  assert.equal(interpretarTitulo("Premier League: Arsenal x Chelsea", regras).esporte, "futebol");
+  assert.equal(interpretarTitulo("Serie A: Napoli x Roma", regras).esporte, "futebol");
+});

@@ -97,3 +97,24 @@ test("main: grava o arquivo no sucesso e NÃO grava nada na falha (o arquivo bom
   assert.equal(falha, 1);
   assert.equal(existsSync(out2), false);
 });
+
+test("F1: se as fontes só trouxerem jogos fora da janela, falha e NÃO sobrescreve arquivo bom existente", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "jogos-f1-"));
+  const epgPath = path.join(dir, "epg-velho.json");
+  const outPath = path.join(dir, "jogos.json");
+  // Guia com um jogo de 20/10/2026 (fora da janela de 25/10/2026)
+  const inicioVelho = Date.parse("2026-10-20T19:00:00-03:00") / 1000;
+  const epgVelho = { canais: { "sportv": [[inicioVelho, inicioVelho + 7200, "Flamengo x Vasco", ""]] } };
+  writeFileSync(epgPath, JSON.stringify(epgVelho));
+  writeFileSync(outPath, JSON.stringify({ bom: 1 }));
+
+  const falha = await main(["--epg", epgPath, "--out", outPath], {
+    fetchFn: fetchFalso({ espnOk: false, geOk: false }),
+    agoraSec: AGORA,
+    log: () => {},
+  });
+
+  assert.equal(falha, 1);
+  const mantido = JSON.parse(readFileSync(outPath, "utf8"));
+  assert.deepEqual(mantido, { bom: 1 });
+});

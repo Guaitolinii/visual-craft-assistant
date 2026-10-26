@@ -1,4 +1,5 @@
 import { epochDeBrt } from "./tempo.mjs";
+import { limparTexto, urlSegura } from "./limpar.mjs";
 
 // Endereço da agenda do ge (a página embute os dados em window.dataSportsSchedule)
 export const URL_AGENDA_GE = "https://ge.globo.com/agenda/";
@@ -46,20 +47,23 @@ export function jogosDoGe(agenda, regras) {
     const agendaDia = agenda[dia];
     const campeonatos = agendaDia && Array.isArray(agendaDia.championshipsAgenda) ? agendaDia.championshipsAgenda : [];
     for (const camp of campeonatos) {
-      const nomeCamp = String((camp.championship && camp.championship.name) || "");
+      if (!camp || typeof camp !== "object") continue;
+      const nomeCamp = limparTexto((camp.championship && camp.championship.name) || "");
       for (const balde of ["past", "now", "future"]) {
         for (const ev of Array.isArray(camp[balde]) ? camp[balde] : []) {
-          const m = ev && ev.match;
-          if (!m || !m.firstContestant || !m.secondContestant) continue;
+          if (!ev || typeof ev !== "object") continue;
+          const m = ev.match;
+          if (!m || typeof m !== "object" || !m.firstContestant || !m.secondContestant) continue;
           const inicio = epochDeBrt(m.startDate || dia, m.startHour || "00:00:00");
-          const casaNome = m.firstContestant.popularName || m.firstContestant.name;
-          const foraNome = m.secondContestant.popularName || m.secondContestant.name;
+          const casaNome = limparTexto(m.firstContestant.popularName || m.firstContestant.name);
+          const foraNome = limparTexto(m.secondContestant.popularName || m.secondContestant.name);
           if (!isFinite(inicio) || !casaNome || !foraNome) continue;
           const id = String(m.id);
           if (vistos.has(id)) continue;
           vistos.add(id);
           const provaveis = [];
           for (const fonte of Array.isArray(m.liveWatchSources) ? m.liveWatchSources : []) {
+            if (!fonte || typeof fonte !== "object") continue;
             const canais = regras.marcas[String(fonte.name || "").toLowerCase()] || [];
             canais.forEach((c) => { if (!provaveis.includes(c)) provaveis.push(c); });
           }
@@ -68,8 +72,8 @@ export function jogosDoGe(agenda, regras) {
             idFonte: id,
             esporte: "futebol",
             competicao: nomeCamp,
-            casa: { nome: String(casaNome), escudo: String(m.firstContestant.badgePng || "") },
-            fora: { nome: String(foraNome), escudo: String(m.secondContestant.badgePng || "") },
+            casa: { nome: casaNome, escudo: urlSegura(String(m.firstContestant.badgePng || "")) },
+            fora: { nome: foraNome, escudo: urlSegura(String(m.secondContestant.badgePng || "")) },
             inicio,
             fim: inicio + dur,
             canais: [],

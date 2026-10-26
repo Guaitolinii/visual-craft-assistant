@@ -53,6 +53,7 @@ export async function gerarJogos({ agoraSec, regras, aliases, epg, fetchFn, avis
   if (!espn.length && !ge.length && !guia.length) throw new Error("nenhuma fonte produziu jogos");
 
   const jogos = mesclarJogos({ espn, ge, guia, aliases, janela });
+  if (!jogos.length) throw new Error("nenhuma fonte produziu jogos dentro da janela");
   return { arquivo: { v: 1, gerado: agoraSec, fuso: "America/Sao_Paulo", jogos }, resumo };
 }
 

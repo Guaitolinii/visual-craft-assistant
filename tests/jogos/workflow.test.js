@@ -32,3 +32,11 @@ test("a falha do gerador nunca é escondida (o último arquivo bom fica na branc
   assert.doesNotMatch(yml, /\|\| true/);
   assert.doesNotMatch(yml, /if: always\(\)/);
 });
+
+test("faz git pull --rebase antes do push para evitar disputa com outros workflows", () => {
+  const idxRebase = yml.indexOf("git pull --rebase origin vod-data");
+  const idxPush = yml.indexOf("git push origin vod-data");
+  assert.ok(idxRebase >= 0, "git pull --rebase origin vod-data deve existir");
+  assert.ok(idxPush >= 0, "git push origin vod-data deve existir");
+  assert.ok(idxRebase < idxPush, "git pull --rebase deve vir antes de git push");
+});
