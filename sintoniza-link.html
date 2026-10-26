@@ -11200,6 +11200,116 @@ function closeEmbedScreen(fromPopState) {
   }
 }
 
+// ─── Aba Jogos: jogos de hoje e de amanhã (arquivo jogos.json gerado no GitHub; spec 2026-10-25) ───
+const JOGOS_URL = "https://raw.githubusercontent.com/Guaitolinii/visual-craft-assistant/vod-data/jogos.json";
+const JOGOS_CACHE_KEY = "sint_jogos_cache";
+const JOGOS_CACHE_MAX_MS = 24 * 3600 * 1000;   // cópia guardada vale por 24 h se a rede falhar
+const JOGOS_REFRESH_MS = 20 * 60 * 1000;       // baixa de novo se a cópia tiver mais de 20 min
+const JOGOS_SOBRA_MS = 10 * 60 * 1000;         // o jogo some 10 min depois do fim
+const JOGOS_ROTULOS = { futebol: "Futebol", nfl: "NFL", ncaaf: "College Football", nba: "NBA", nhl: "NHL", volei: "Vôlei", futsal: "Futsal", basquete: "Basquete", lutas: "Lutas", outros: "Outros" };
+const JOGOS_ORDEM_OUTROS = ["nfl", "ncaaf", "nba", "nhl", "volei", "futsal", "basquete", "lutas", "outros"];
+
+// Dia (AAAA-MM-DD) e hora (HH:MM) de Brasília, UTC-3 fixo: o app mostra sempre o horário de Brasília, em qualquer aparelho
+function jogosDiaBrt(epochSec) {
+  return new Date((epochSec - 3 * 3600) * 1000).toISOString().slice(0, 10);
+}
+function jogosHoraBrt(epochSec) {
+  return new Date((epochSec - 3 * 3600) * 1000).toISOString().slice(11, 16);
+}
+
+function jogosAoVivo(j, nowMs) {
+  const t = nowMs / 1000;
+  return j.inicio <= t && t < j.fim;
+}
+function jogosVisivel(j, nowMs) {
+  return nowMs / 1000 < j.fim + JOGOS_SOBRA_MS / 1000;
+}
+
+// Seções da tela: futebol em "ao vivo agora", "hoje" e "amanhã"; os outros esportes em grupos (NFL, College Football, NBA, NHL e demais).
+// Jogo que começou ontem e ainda está no ar entra em "ao vivo". Jogo terminado há mais de 10 min e jogo de depois de amanhã não entram.
+function jogosSecoes(jogos, nowMs) {
+  const vazio = { aoVivo: [], hoje: [], amanha: [], outros: [] };
+  if (!Array.isArray(jogos)) return vazio;
+  const hoje = jogosDiaBrt(nowMs / 1000);
+  const amanha = jogosDiaBrt(nowMs / 1000 + 86400);
+  const lista = jogos
+    .filter((j) => j && jogosVisivel(j, nowMs) && (jogosAoVivo(j, nowMs) || [hoje, amanha].includes(jogosDiaBrt(j.inicio))))
+    .sort((a, b) => a.inicio - b.inicio || String(a.id).localeCompare(String(b.id)));
+  const futebol = lista.filter((j) => j.esporte === "futebol");
+  const resto = futebol.filter((j) => !jogosAoVivo(j, nowMs));
+  return {
+    aoVivo: futebol.filter((j) => jogosAoVivo(j, nowMs)),
+    hoje: resto.filter((j) => jogosDiaBrt(j.inicio) === hoje),
+    amanha: resto.filter((j) => jogosDiaBrt(j.inicio) === amanha),
+    outros: JOGOS_ORDEM_OUTROS.map((esporte) => ({
+      esporte,
+      rotulo: JOGOS_ROTULOS[esporte],
+      itens: lista.filter((j) => j.esporte === esporte).map((j) => ({
+        jogo: j,
+        dia: jogosDiaBrt(j.inicio) === hoje ? "hoje" : "amanha",
+        aoVivo: jogosAoVivo(j, nowMs),
+      })),
+    })).filter((g) => g.itens.length),
+  };
+}
+
+// Qualidade da versão de um canal: HD primeiro, depois FHD, depois SD, depois o resto
+function jogosPesoVariante(nome) {
+  const n = String(nome == null ? "" : nome).toLowerCase();
+  if (/\bhd\b/.test(n)) return 0;
+  if (/\bfhd\b/.test(n)) return 1;
+  if (/\bsd\b/.test(n)) return 2;
+  return 3;
+}
+
+// Canais da conta que casam com os nomes do jogo. As versões HD/FHD/SD do mesmo canal contam como um só (vale a melhor).
+function jogosCanaisDaConta(jogo, canais) {
+  const porNome = new Map();
+  (Array.isArray(canais) ? canais : []).forEach((ch) => {
+    const n = normalizeChannelName(ch && ch.name);
+    if (!n) return;
+    const atual = porNome.get(n);
+    if (!atual || jogosPesoVariante(ch.name) < jogosPesoVariante(atual.name)) porNome.set(n, ch);
+  });
+  const pega = (nomes) => {
+    const saida = [];
+    const vistos = new Set();
+    (Array.isArray(nomes) ? nomes : []).forEach((nome) => {
+      const n = normalizeChannelName(nome);
+      const ch = porNome.get(n);
+      if (ch && !vistos.has(n)) { vistos.add(n); saida.push(ch); }
+    });
+    return saida;
+  };
+  return { confirmados: pega(jogo.canais), provaveis: pega(jogo.provaveis) };
+}
+
+// O que fazer ao tocar no card: "tocar" (um canal confirmado na lista), "escolher" (vários, ou só prováveis) ou "nenhum"
+function jogosAcaoClique(jogo, canais) {
+  const r = jogosCanaisDaConta(jogo, canais);
+  if (r.confirmados.length === 1) return { tipo: "tocar", canal: r.confirmados[0] };
+  const opcoes = r.confirmados.length ? r.confirmados : r.provaveis;
+  if (!opcoes.length) return { tipo: "nenhum" };
+  return { tipo: "escolher", canais: opcoes };
+}
+
+// Confere o formato do arquivo (v1) e descarta jogo quebrado. null = arquivo inválido.
+function jogosValidar(dados) {
+  if (!dados || dados.v !== 1 || !Array.isArray(dados.jogos)) return null;
+  const jogos = dados.jogos.filter((j) => j && typeof j.id === "string" && typeof j.esporte === "string"
+    && isFinite(j.inicio) && isFinite(j.fim) && Array.isArray(j.canais) && Array.isArray(j.provaveis));
+  return { v: 1, gerado: dados.gerado, jogos };
+}
+
+// Cópia guardada no aparelho: { ts, data } com menos de 24 h e íntegra, senão null
+function jogosLerCache(raw, nowMs) {
+  let o = null;
+  try { o = JSON.parse(raw || "null"); } catch (e) { return null; }
+  if (!o || !isFinite(o.ts) || nowMs - o.ts > JOGOS_CACHE_MAX_MS) return null;
+  const data = jogosValidar(o.data);
+  return data ? { ts: o.ts, data } : null;
+}
+
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
