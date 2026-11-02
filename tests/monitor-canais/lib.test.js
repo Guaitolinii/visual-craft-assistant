@@ -506,6 +506,87 @@ before(async () => {
       return;
     }
 
+    if (url.pathname === "/xui-bouquet") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>NOT_IN_BOUQUET</body></html>");
+      return;
+    }
+
+    if (url.pathname === "/xui-invalid") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>INVALID_STREAM_ID</body></html>");
+      return;
+    }
+
+    if (url.pathname === "/dominio-parked-200") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>This domain is parked</body></html>");
+      return;
+    }
+
+    if (url.pathname === "/dominio-parked-404") {
+      res.writeHead(404, { "Content-Type": "text/html" });
+      res.end("<html><body>This domain is parked</body></html>");
+      return;
+    }
+
+    if (url.pathname === "/erro-404-simples") {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("404 Not Found");
+      return;
+    }
+
+    if (url.pathname === "/erro-403-simples") {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("403 Forbidden");
+      return;
+    }
+
+    if (url.pathname === "/erro-503-simples") {
+      res.writeHead(503, { "Content-Type": "text/plain" });
+      res.end("503 Service Unavailable");
+      return;
+    }
+
+    if (url.pathname === "/html-sem-pista") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>Bem-vindo ao portal</body></html>");
+      return;
+    }
+
+    if (url.pathname === "/lento-ts") {
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "video/mp2t" });
+        res.write(criarMpegTsBuffer(60));
+        setTimeout(() => {
+          res.write(criarMpegTsBuffer(60));
+          res.end();
+        }, 250);
+      }, 600);
+      return;
+    }
+
+    if (url.pathname === "/ttfb-atraso") {
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "video/mp2t" });
+        res.write(criarMpegTsBuffer(10));
+        res.end();
+      }, 300);
+      return;
+    }
+
+    if (url.pathname === "/ttfb-sem-bytes") {
+      res.writeHead(200, { "Content-Type": "video/mp2t" });
+      res.end();
+      return;
+    }
+
+    if (url.pathname === "/segredo-com-erro") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>Error on http://usuario123:senha456@hostsecreto/live/1.ts with NOT_IN_BOUQUET</body></html>");
+      return;
+    }
+
     res.writeHead(400);
     res.end();
   });
@@ -657,6 +738,7 @@ test("segredo: URL e credenciais NUNCA aparecem nos registros gravados", async (
   const canais = [
     { nome: "Canal Secreto TS", grupo: "Privado", url: urlSecretaTs },
     { nome: "Canal Secreto HLS", grupo: "Privado", url: urlSecretaHls },
+    { nome: "Canal Secreto Erro XUI", grupo: "Privado", url: `${baseUrl}/segredo-com-erro` },
   ];
 
   const gravados = [];
@@ -674,6 +756,11 @@ test("segredo: URL e credenciais NUNCA aparecem nos registros gravados", async (
   assert.ok(!textoGravado.includes("senha456"), "Credencial senha456 vazou!");
   assert.ok(!textoGravado.includes("/live/"), "Caminho da URL vazou!");
   assert.ok(!textoGravado.includes("seg1.ts"), "Nome do segmento vazou!");
+  assert.ok(!textoGravado.includes("hostsecreto"), "Host hostsecreto vazou!");
+  assert.ok(!textoGravado.includes("http://"), "Prefixo http:// de URL vazou!");
+  const regXui = gravados.find((g) => g.canal === "Canal Secreto Erro XUI");
+  assert.ok(regXui);
+  assert.equal(regXui.erro, "xui-not_in_bouquet");
 });
 
 // --- Testes da CLI e verificações de entradas inválidas/ausentes ---
@@ -1256,4 +1343,116 @@ test("executarRodada: sondagem que nunca responde vira 'travou' e a rodada termi
   assert.equal(preso.status, "morto");
   assert.equal(preso.erro, "travou");
   assert.equal(registros.find((x) => x.canal === "Canal Bom").status, "vivo");
+});
+
+test("sondar: página com NOT_IN_BOUQUET e INVALID_STREAM_ID gera erro xui-* e status morto", async () => {
+  const r1 = await sondar(`${baseUrl}/xui-bouquet`, { leituraMs: 500 });
+  assert.equal(r1.erro, "xui-not_in_bouquet");
+  assert.equal(classificar(r1), "morto");
+  assert.equal(r1.tipo, "html");
+
+  const r2 = await sondar(`${baseUrl}/xui-invalid`, { leituraMs: 500 });
+  assert.equal(r2.erro, "xui-invalid_stream_id");
+  assert.equal(classificar(r2), "morto");
+  assert.equal(r2.tipo, "html");
+});
+
+test("sondar: página de domínio estacionado em HTTP 200 e HTTP 404 gera erro dominio-estacionado", async () => {
+  const r200 = await sondar(`${baseUrl}/dominio-parked-200`, { leituraMs: 500 });
+  assert.equal(r200.erro, "dominio-estacionado");
+  assert.equal(classificar(r200), "morto");
+
+  const r404 = await sondar(`${baseUrl}/dominio-parked-404`, { leituraMs: 500 });
+  assert.equal(r404.erro, "dominio-estacionado");
+  assert.equal(classificar(r404), "morto");
+});
+
+test("sondar: códigos HTTP 404, 403 e 503 com corpo curto sem termos de domínio ou xui", async () => {
+  const r404 = await sondar(`${baseUrl}/erro-404-simples`, { leituraMs: 500 });
+  assert.equal(r404.erro, "http-404");
+  assert.equal(classificar(r404), "morto");
+
+  const r403 = await sondar(`${baseUrl}/erro-403-simples`, { leituraMs: 500 });
+  assert.equal(r403.erro, "http-403");
+  assert.equal(classificar(r403), "morto");
+
+  const r503 = await sondar(`${baseUrl}/erro-503-simples`, { leituraMs: 500 });
+  assert.equal(r503.erro, "http-503");
+  assert.equal(classificar(r503), "morto");
+});
+
+test("sondar: HTML qualquer sem pista gera erro html", async () => {
+  const r = await sondar(`${baseUrl}/html-sem-pista`, { leituraMs: 500 });
+  assert.equal(r.erro, "html");
+  assert.equal(r.tipo, "html");
+  assert.equal(classificar(r), "morto");
+});
+
+test("sondar: servidor lento com resposta em 600ms dá timeout com conexaoMs 300 e fica vivo com conexaoMs 3000", async () => {
+  const rTimeout = await sondar(`${baseUrl}/lento-ts`, { leituraMs: 500, conexaoMs: 300 });
+  assert.equal(rTimeout.erro, "timeout");
+  assert.equal(classificar(rTimeout), "morto");
+
+  const rOk = await sondar(`${baseUrl}/lento-ts`, { leituraMs: 500, conexaoMs: 3000 });
+  assert.equal(rOk.erro, null);
+  assert.equal(classificar(rOk), "vivo");
+});
+
+test("CLI monitorar: validação de --conexao inválido (0, abc, negativo)", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-conexao-"));
+  const envFile = path.join(tempDir, "teste.env");
+  fs.writeFileSync(envFile, `OTT_CONTA_CANAIS="${baseUrl}/m3u-valida"\n`, "utf-8");
+
+  try {
+    for (const val of ["0", "abc", "-5"]) {
+      await assert.rejects(
+        async () =>
+          await runCli([
+            "monitorar",
+            "--env-file",
+            envFile,
+            "--grupos",
+            "ESPORTES",
+            "--out",
+            tempDir,
+            "--conexao",
+            val,
+          ]),
+        (err) => {
+          assert.equal(err.code, 1);
+          assert.ok(err.stderr.includes("--conexao"));
+          return true;
+        }
+      );
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sondar: ttfbMs mede tempo real até primeiro byte e é null sem bytes", async () => {
+  const rComBytes = await sondar(`${baseUrl}/ttfb-atraso`, { leituraMs: 600, conexaoMs: 1000 });
+  assert.ok(typeof rComBytes.ttfbMs === "number", `esperado número, obtido ${rComBytes.ttfbMs}`);
+  assert.ok(rComBytes.ttfbMs >= 250, `esperado ttfbMs >= 250, obtido ${rComBytes.ttfbMs}`);
+
+  const rSemBytes = await sondar(`${baseUrl}/ttfb-sem-bytes`, { leituraMs: 500 });
+  assert.equal(rSemBytes.ttfbMs, null);
+});
+
+test("resumir: acrescenta erroMaisComum por canal (texto do mais frequente, null se nenhum)", () => {
+  const registros = [
+    { rodada: 1, canal: "C1", grupo: "G", status: "morto", erro: "http-404" },
+    { rodada: 2, canal: "C1", grupo: "G", status: "morto", erro: "http-404" },
+    { rodada: 3, canal: "C1", grupo: "G", status: "morto", erro: "xui-not_in_bouquet" },
+    { rodada: 1, canal: "C2", grupo: "G", status: "vivo", erro: null },
+    { rodada: 2, canal: "C2", grupo: "G", status: "vivo", erro: null },
+  ];
+  const r = resumir(registros);
+  const c1 = r.canais.find((c) => c.canal === "C1");
+  const c2 = r.canais.find((c) => c.canal === "C2");
+
+  assert.ok(c1);
+  assert.equal(c1.erroMaisComum, "http-404");
+  assert.ok(c2);
+  assert.equal(c2.erroMaisComum, null);
 });

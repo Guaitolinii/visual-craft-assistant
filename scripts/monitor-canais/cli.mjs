@@ -182,6 +182,12 @@ async function comandoMonitorar(params) {
     process.exit(1);
   }
 
+  const conexaoSeg = Number(params.conexao ?? 25);
+  if (isNaN(conexaoSeg) || conexaoSeg < 1) {
+    console.error("Uso: --conexao deve ser no minimo 1");
+    process.exit(1);
+  }
+
   const leituraPrioritariaSeg = Number(params["leitura-prioritaria"] ?? 15);
   let concorrencia = Number(params.concorrencia ?? 2);
   if (isNaN(concorrencia) || concorrencia < 1) {
@@ -248,6 +254,7 @@ async function comandoMonitorar(params) {
       leituraPrioritariaMs: leituraPrioritariaSeg * 1000,
       prioritarios,
       concorrencia,
+      conexaoMs: conexaoSeg * 1000,
       gravar: (registro) => {
         fs.appendFileSync(arquivoSondagens, JSON.stringify(registro) + "\n", "utf-8");
       },

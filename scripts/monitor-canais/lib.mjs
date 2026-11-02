@@ -202,6 +202,62 @@ function identificarTipo(buffer) {
 }
 
 /**
+ * Determina o motivo da falha quando a resposta não é vídeo (TS) nem manifesto HLS.
+ * Analisa os primeiros 4 KB do corpo recebido e o código HTTP na ordem de precedência:
+ * 1. Código XUI: [A-Z]{3,}(?:_[A-Z]{2,})+ -> "xui-" + código em minúsculas
+ * 2. Domínio estacionado / à venda -> "dominio-estacionado"
+ * 3. Status HTTP 404, 403, >= 500 -> "http-" + http
+ * 4. Qualquer outro HTML -> "html"
+ *
+ * @param {Buffer} buffer - Primeiros bytes do corpo.
+ * @param {number} http - Código de status HTTP.
+ * @param {string | null} erroPadrao - Erro prévio de leitura ou conexão.
+ * @returns {string | null}
+ */
+function identificarMotivoFalha(buffer, http, erroPadrao = null) {
+  const corpoTexto = buffer ? buffer.subarray(0, 4096).toString("utf-8") : "";
+
+  // 1. Código do painel XUI: [A-Z]{3,}(?:_[A-Z]{2,})+
+  const matchXui = corpoTexto.match(/\b([a-zA-Z]{3,}(?:_[a-zA-Z]{2,})+)\b/);
+  if (matchXui) {
+    return "xui-" + matchXui[1].toLowerCase();
+  }
+
+  // 2. Frases de domínio estacionado / à venda (sem diferenciar maiúsculas)
+  const textoMinusculo = corpoTexto.toLowerCase();
+  const termosEstacionado = [
+    "parked",
+    "domain is for sale",
+    "buy this domain",
+    "domínio à venda",
+    "dominio a venda",
+    "domain parking",
+  ];
+  if (termosEstacionado.some((termo) => textoMinusculo.includes(termo))) {
+    return "dominio-estacionado";
+  }
+
+  // 3. Status HTTP específico
+  if (http === 404) {
+    return "http-404";
+  }
+  if (http === 403) {
+    return "http-403";
+  }
+  if (http >= 500) {
+    return `http-${http}`;
+  }
+
+  // 4. Qualquer outro HTML
+  const tipo = identificarTipo(buffer);
+  if (tipo === "html") {
+    return "html";
+  }
+
+  return erroPadrao;
+}
+
+/**
  * Extrai a URI da primeira variante de um manifesto mestre HLS.
  *
  * @param {string} texto
@@ -304,7 +360,7 @@ function parseMediaPlaylistHls(texto) {
  *   erro?: string
  * }>}
  */
-async function baixarTextoComRedirecionamento(urlInicial, { maxSaltos = 6, timeoutMs = 10000 } = {}) {
+async function baixarTextoComRedirecionamento(urlInicial, { maxSaltos = 6, timeoutMs = 25000 } = {}) {
   let curUrl = urlInicial;
   let saltos = 0;
   let hostFinal = "";
@@ -386,8 +442,9 @@ async function baixarTextoComRedirecionamento(urlInicial, { maxSaltos = 6, timeo
  *   erro: string | null
  * }>}
  */
-export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}) {
+export function sondar(url, { leituraMs, conexaoMs = 25000, maxSaltos = 6 } = {}) {
   return new Promise(async (resolve) => {
+    const ttfbInicio = performance.now();
     let currentUrl = url;
     let saltos = 0;
     let hostFinal = "";
@@ -513,6 +570,7 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
     let erroLeitura = null;
 
     if (!response.body) {
+      const erroVazio = identificarMotivoFalha(Buffer.alloc(0), http, null);
       return resolve({
         http,
         saltos,
@@ -523,7 +581,7 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         paradas: 0,
         maiorLacunaMs: 0,
         tipo: "vazio",
-        erro: null,
+        erro: erroVazio,
       });
     }
 
@@ -551,7 +609,7 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         if (value && value.length > 0) {
           if (tempoPrimeiroByte === null) {
             tempoPrimeiroByte = agora;
-            ttfbMs = agora - tempoInicio;
+            ttfbMs = Math.round(performance.now() - ttfbInicio);
             ultimoChunkTempo = agora;
           } else {
             const gap = agora - ultimoChunkTempo;
@@ -608,6 +666,9 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
     const tipo = identificarTipo(bufCabecalho);
 
     if (tipo !== "hls") {
+      const erroFinal = (tipo !== "ts")
+        ? identificarMotivoFalha(bufCabecalho, http, erroLeitura)
+        : erroLeitura;
       return resolve({
         http,
         saltos,
@@ -618,11 +679,17 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         paradas,
         maiorLacunaMs,
         tipo,
-        erro: erroLeitura,
+        erro: erroFinal,
       });
     }
 
     if (http !== 200) {
+      let erroHls = erroLeitura;
+      if (!erroHls) {
+        if (http === 404) erroHls = "http-404";
+        else if (http === 403) erroHls = "http-403";
+        else if (http >= 500) erroHls = `http-${http}`;
+      }
       return resolve({
         http,
         saltos,
@@ -634,7 +701,7 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         maiorLacunaMs: 0,
         tipo: "hls",
         segmentos: 0,
-        erro: erroLeitura,
+        erro: erroHls,
       });
     }
 
@@ -683,10 +750,9 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         });
       }
 
-      const tempoSobraMedia = Math.max(100, prazoFinal - Date.now());
       const resMedia = await baixarTextoComRedirecionamento(varUrl, {
         maxSaltos,
-        timeoutMs: Math.min(conexaoMs, tempoSobraMedia),
+        timeoutMs: conexaoMs,
       });
 
       saltosAcumulados += resMedia.saltos || 0;
@@ -746,9 +812,8 @@ export function sondar(url, { leituraMs, conexaoMs = 10000, maxSaltos = 6 } = {}
         break;
       }
 
-      const timeoutMs = i === 0
-        ? (tempoRestante > 0 ? Math.min(15000, tempoRestante) : 15000)
-        : Math.min(15000, tempoRestante);
+      const tetoSeg = Math.max(15000, conexaoMs);
+      const timeoutMs = Math.max(conexaoMs, tempoRestante > 0 ? Math.min(tetoSeg, tempoRestante) : tetoSeg);
 
       let segUrl;
       try {
@@ -1014,8 +1079,9 @@ export function classificar(s) {
  * @param {number} leituraMs
  * @param {number} tetoExtraMs
  */
-async function sondarComTeto(sondarFn, url, leituraMs, tetoExtraMs) {
-  const tetoMs = (Number(leituraMs) || 0) + (Number(tetoExtraMs) || 0);
+async function sondarComTeto(sondarFn, url, leituraMs, conexaoMs, tetoExtraMs) {
+  const cMs = Number(conexaoMs) || 0;
+  const tetoMs = (Number(leituraMs) || 0) + cMs * 2 + (Number(tetoExtraMs) || 0);
   let timer;
   const travou = new Promise((resolve) => {
     timer = setTimeout(
@@ -1027,7 +1093,11 @@ async function sondarComTeto(sondarFn, url, leituraMs, tetoExtraMs) {
     );
   });
   try {
-    return await Promise.race([Promise.resolve(sondarFn(url, { leituraMs })), travou]);
+    const opcoesSondar = { leituraMs };
+    if (conexaoMs !== undefined) {
+      opcoesSondar.conexaoMs = conexaoMs;
+    }
+    return await Promise.race([Promise.resolve(sondarFn(url, opcoesSondar)), travou]);
   } finally {
     clearTimeout(timer);
   }
@@ -1044,7 +1114,8 @@ export async function executarRodada(
     sondarFn = sondar,
     gravar,
     pausaLimiteMs = 90000,
-    tetoExtraMs = 45000,
+    tetoExtraMs = 60000,
+    conexaoMs,
   }
 ) {
   const conc = Math.min(4, Math.max(1, Number(concorrencia) || 1));
@@ -1067,7 +1138,7 @@ export async function executarRodada(
       const ehPrioritario = prioritarios && prioritarios.test(canal.nome);
       const leituraMs = ehPrioritario ? leituraPrioritariaMs : leituraPadraoMs;
 
-      let s = await sondarComTeto(sondarFn, canal.url, leituraMs, tetoExtraMs);
+      let s = await sondarComTeto(sondarFn, canal.url, leituraMs, conexaoMs, tetoExtraMs);
       let status = classificar(s);
 
       if (status === "limitado") {
@@ -1077,7 +1148,7 @@ export async function executarRodada(
         await new Promise((r) => setTimeout(r, pausaLimiteMs));
 
         // Tenta de novo uma única vez
-        s = await sondarComTeto(sondarFn, canal.url, leituraMs, tetoExtraMs);
+        s = await sondarComTeto(sondarFn, canal.url, leituraMs, conexaoMs, tetoExtraMs);
         status = classificar(s);
 
         pausaEmAndamento = null;
@@ -1234,6 +1305,8 @@ export function resumir(registros) {
     const kbpsValidos = [];
     const ttfbValidos = [];
     const velocidadesXValidas = [];
+    let erroMaisComum = null;
+    const contagemErros = new Map();
 
     for (const reg of regs) {
       if (reg.status === "vivo") vivos++;
@@ -1241,6 +1314,9 @@ export function resumir(registros) {
       else if (reg.status === "morto") mortos++;
       else if (reg.status === "limitado") limitados++;
 
+      if (reg.erro) {
+        contagemErros.set(reg.erro, (contagemErros.get(reg.erro) || 0) + 1);
+      }
       if (reg.paradas) paradasTotal += reg.paradas;
       if (reg.hostFinal) hostsSet.add(reg.hostFinal);
       if (reg.bytes > 0 && typeof reg.kbps === "number") {
@@ -1278,6 +1354,16 @@ export function resumir(registros) {
     const mediaVelocidadeX = velocidadesXValidas.length > 0
       ? Number((velocidadesXValidas.reduce((a, b) => a + b, 0) / velocidadesXValidas.length).toFixed(1))
       : null;
+    if (contagemErros.size > 0) {
+      let maxContagem = 0;
+      for (const [erro, qtd] of contagemErros.entries()) {
+        if (qtd > maxContagem) {
+          maxContagem = qtd;
+          erroMaisComum = erro;
+        }
+      }
+    }
+
     // Veredito avaliado em ordem rígida
     let veredito;
     if (limitadoPct >= 50 || total < 3) {
@@ -1309,6 +1395,7 @@ export function resumir(registros) {
       ultimoStatus,
       velocidadeX: mediaVelocidadeX,
       x: mediaVelocidadeX,
+      erroMaisComum,
       veredito,
     });
   }
