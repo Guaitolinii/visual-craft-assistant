@@ -1,0 +1,79 @@
+name: Atualizar a saúde dos canais
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+# O passo final faz push na branch vod-data com o GITHUB_TOKEN: precisa de
+# escrita no conteúdo do repositório (e só disso).
+permissions:
+  contents: write
+
+# Uma execução por vez (duas ao mesmo tempo brigariam pelo push).
+concurrency:
+  group: canais-saude
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CODE_REF: v24
+    steps:
+      - name: Checkout (branch de dados)
+        uses: actions/checkout@v4
+        with:
+          ref: vod-data
+
+      - name: Conferir o segredo da lista
+        id: seg
+        env:
+          OTT_LISTA_CANAIS: ${{ secrets.OTT_LISTA_CANAIS }}
+        run: |
+          if [ -z "$OTT_LISTA_CANAIS" ]; then
+            echo "::notice::O segredo OTT_LISTA_CANAIS ainda não foi cadastrado (Settings > Secrets and variables > Actions > New repository secret). Nada a fazer por enquanto."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Baixar o gerador da branch de código
+        if: steps.seg.outputs.ok == 'true'
+        # O gerador vive na branch de código ($CODE_REF); só o canais-saude.json
+        # mora em vod-data. Extraímos scripts/canais-saude e scripts/monitor-canais
+        # para uma pasta temporária só para rodar aqui, sem commitá-las.
+        run: |
+          git fetch origin "$CODE_REF" --depth=1
+          mkdir -p .gerador
+          git archive FETCH_HEAD scripts/canais-saude scripts/monitor-canais | tar -x -C .gerador
+
+      - uses: actions/setup-node@v4
+        if: steps.seg.outputs.ok == 'true'
+        with:
+          node-version: 20
+
+      # IMPORTANTE: não esconder a falha deste passo nem a do passo de commit
+      # (nada de ignorar erro nem de forçar a execução depois de uma falha).
+      # Se a lista falhar (o segredo vazio é tratado no passo anterior), o gerador sai com erro,
+      # impedindo o passo de commit de rodar e mantendo o último arquivo bom na branch vod-data.
+      - name: Gerar canais-saude.json
+        if: steps.seg.outputs.ok == 'true'
+        env:
+          OTT_LISTA_CANAIS: ${{ secrets.OTT_LISTA_CANAIS }}
+        run: node .gerador/scripts/canais-saude/build.mjs --env-var OTT_LISTA_CANAIS --anterior canais-saude.json --out canais-saude.json
+
+      - name: Commitar só o canais-saude.json (o gerador baixado não entra na branch de dados)
+        if: steps.seg.outputs.ok == 'true'
+        run: |
+          rm -rf .gerador
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add canais-saude.json
+          if git diff --staged --quiet; then
+            echo "Sem mudanças na saúde dos canais."
+          else
+            git commit -m "chore(vod-data): atualizar a saúde dos canais"
+            git pull --rebase origin vod-data
+            git push origin vod-data
+          fi

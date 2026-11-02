@@ -1,0 +1,21 @@
+{
+  "grupos": [
+    "Esportes"
+  ],
+  "nomes": [
+    "band sports",
+    "fifa+",
+    "formula 1",
+    "futebol de rua",
+    "sportynet",
+    "red bull",
+    "pluto tv esportes",
+    "ge fast"
+  ],
+  "amostrasPorHost": 3,
+  "minCanaisPorHost": 6,
+  "leituraMs": 8000,
+  "conexaoMs": 25000,
+  "concorrencia": 2,
+  "maxFalhaPct": 90
+}
