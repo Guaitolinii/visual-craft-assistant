@@ -958,6 +958,21 @@
     .jogos-grupo { font-size: .7rem; font-weight: 600; color: var(--primary); letter-spacing: .08em; margin: 2rem 0 .25rem; }
     .jogos-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .75rem; }
     .jogos-aviso { color: var(--muted-fg); padding: 2rem 0; text-align: center; }
+    .jogos-filtros {
+      position: relative; display: flex; gap: .5rem; overflow-x: auto; padding: .25rem 0 .75rem;
+      scrollbar-width: none;
+    }
+    .jogos-filtros::-webkit-scrollbar { display: none; }
+    .jogos-filtro-btn {
+      flex: 0 0 auto; display: inline-flex; align-items: center; gap: .4rem;
+      min-height: 2.25rem; padding: 0 .9rem; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--card); color: var(--foreground);
+      font-size: .85rem; font-weight: 500; cursor: pointer; transition: background 140ms, border-color 140ms;
+    }
+    .jogos-filtro-btn:hover { background: var(--secondary); border-color: var(--primary); }
+    .jogos-filtro-btn.ativo { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+    .jogos-filtro-n { font-size: .75rem; color: var(--muted-fg); }
+    .jogos-filtro-btn.ativo .jogos-filtro-n { color: var(--primary-fg); opacity: .8; }
     .jogo-card {
       display: flex; flex-direction: column; gap: .6rem; padding: .8rem .9rem; text-align: left;
       border: 1px solid var(--border); border-radius: .8rem; background: var(--card); color: var(--foreground); cursor: pointer;
@@ -2121,6 +2136,7 @@
           <h1>O que está passando?</h1>
         </div>
       </section>
+      <div id="jogos-filtros" class="jogos-filtros"></div>
       <div id="jogos-content"></div>
     </div>
   </div>
@@ -11319,6 +11335,54 @@ function jogosSecoes(jogos, nowMs) {
   };
 }
 
+// Lista os esportes que têm jogos disponíveis nas seções calculadas (futebol primeiro, depois outros; só total > 0)
+function jogosEsportesDisponiveis(s) {
+  if (!s || typeof s !== "object") return [];
+  const res = [];
+  const aoVivo = Array.isArray(s.aoVivo) ? s.aoVivo.length : 0;
+  const hoje = Array.isArray(s.hoje) ? s.hoje.length : 0;
+  const amanha = Array.isArray(s.amanha) ? s.amanha.length : 0;
+  const totalFutebol = aoVivo + hoje + amanha;
+  if (totalFutebol > 0) res.push({ esporte: "futebol", rotulo: "Futebol", total: totalFutebol });
+  if (Array.isArray(s.outros)) {
+    s.outros.forEach((g) => {
+      if (!g || !g.esporte) return;
+      const total = Array.isArray(g.itens) ? g.itens.length : 0;
+      if (total > 0) res.push({ esporte: g.esporte, rotulo: g.rotulo || g.esporte, total });
+    });
+  }
+  return res;
+}
+
+// Devolve o esporte se existir entre os disponíveis; senão devolve "todos"
+function jogosEsporteEfetivo(s, esporte) {
+  if (esporte === "todos") return "todos";
+  const disp = jogosEsportesDisponiveis(s);
+  const existe = disp.some((d) => d.esporte === esporte);
+  return existe ? esporte : "todos";
+}
+
+// Filtra as seções conforme o esporte escolhido (todos, futebol ou um grupo de outros)
+function jogosFiltrarSecoes(s, esporte) {
+  const efetivo = jogosEsporteEfetivo(s, esporte);
+  if (efetivo === "todos") return s;
+  if (efetivo === "futebol") {
+    return {
+      aoVivo: Array.isArray(s && s.aoVivo) ? s.aoVivo : [],
+      hoje: Array.isArray(s && s.hoje) ? s.hoje : [],
+      amanha: Array.isArray(s && s.amanha) ? s.amanha : [],
+      outros: [],
+    };
+  }
+  const grupo = (s && Array.isArray(s.outros) ? s.outros : []).find((g) => g && g.esporte === efetivo);
+  return {
+    aoVivo: [],
+    hoje: [],
+    amanha: [],
+    outros: grupo ? [grupo] : [],
+  };
+}
+
 // Qualidade da versão de um canal: HD primeiro, depois FHD, depois SD, depois o resto
 function jogosPesoVariante(nome) {
   const n = String(nome == null ? "" : nome).toLowerCase();
@@ -11432,7 +11496,25 @@ function jogosLerCache(raw, nowMs) {
 }
 
 // ─── Aba Jogos: tela ───
-let _jogos = { data: null, status: "idle", fetchedAt: 0, timer: 0 };
+let _jogos = { data: null, status: "idle", fetchedAt: 0, timer: 0, esporte: "todos" };
+
+const JOGOS_ESPORTE_KEY = "sint_jogos_esporte";
+
+// Lê o esporte guardado no localStorage (só aceita /^[a-z]{1,20}$/, senão "todos")
+function jogosLerEsporte() {
+  try {
+    const val = localStorage.getItem(JOGOS_ESPORTE_KEY);
+    if (val && /^[a-z]{1,20}$/.test(val)) return val;
+  } catch (e) { /* sem armazenamento */ }
+  return "todos";
+}
+
+// Grava o esporte escolhido no localStorage
+function jogosGravarEsporte(esporte) {
+  try {
+    localStorage.setItem(JOGOS_ESPORTE_KEY, esporte);
+  } catch (e) { /* sem armazenamento */ }
+}
 
 // Baixa e valida o arquivo (12 s de limite). Devolve os dados ou null se o formato não for o esperado.
 async function jogosBaixar() {
@@ -11506,8 +11588,10 @@ function jogosSecaoHtml(titulo, cardsHtml) {
 // Desenha a tela inteira a partir do estado (chamada ao abrir, ao chegar o arquivo e a cada minuto)
 function renderJogos() {
   const el = document.getElementById("jogos-content");
+  const filtrosEl = document.getElementById("jogos-filtros");
   if (!el) return;
   if (!_jogos.data) {
+    if (filtrosEl) filtrosEl.innerHTML = "";
     el.innerHTML = _jogos.status === "error"
       ? `<p class="jogos-aviso">Jogos indisponíveis agora. Tente de novo em instantes.</p>`
       : `<div class="vod-empty"><div class="spinner" style="margin:0 auto 1rem"></div>Carregando jogos...</div>`;
@@ -11515,14 +11599,42 @@ function renderJogos() {
   }
   const agora = Date.now();
   const s = jogosSecoes(_jogos.data.jogos, agora);
+  const disp = jogosEsportesDisponiveis(s);
+  const atual = jogosEsporteEfetivo(s, _jogos.esporte);
+
+  if (filtrosEl) {
+    if (disp.length < 2) {
+      filtrosEl.innerHTML = "";
+    } else {
+      const prevScroll = filtrosEl.scrollLeft;
+      const todosAtivo = atual === "todos";
+      let fHtml = `<button type="button" class="jogos-filtro-btn${todosAtivo ? " ativo" : ""}" data-jogos-esporte="todos" aria-pressed="${todosAtivo ? "true" : "false"}">Todos</button>`;
+      disp.forEach((d) => {
+        const ativo = atual === d.esporte;
+        fHtml += `<button type="button" class="jogos-filtro-btn${ativo ? " ativo" : ""}" data-jogos-esporte="${escapeHtmlText(d.esporte)}" aria-pressed="${ativo ? "true" : "false"}">` +
+          `${escapeHtmlText(d.rotulo)} <span class="jogos-filtro-n">${d.total}</span></button>`;
+      });
+      filtrosEl.innerHTML = fHtml;
+      // Esporte novo: centraliza o botão ativo (no celular a barra rola de lado); mesmo esporte: mantém a rolagem de antes
+      const btnAtivo = filtrosEl.querySelector(".jogos-filtro-btn.ativo");
+      if (filtrosEl.dataset.ativo !== atual && btnAtivo) {
+        filtrosEl.scrollLeft = btnAtivo.offsetLeft - (filtrosEl.clientWidth - btnAtivo.offsetWidth) / 2;
+      } else {
+        filtrosEl.scrollLeft = prevScroll;
+      }
+      filtrosEl.dataset.ativo = atual;
+    }
+  }
+
+  const filtradas = jogosFiltrarSecoes(s, atual);
   const cards = (lista, rotulo) => lista.map((j) => jogoCardHtml(j, agora, rotulo)).join("");
   let h = "";
-  if (s.aoVivo.length) h += jogosSecaoHtml("Ao vivo agora", cards(s.aoVivo));
-  if (s.hoje.length) h += jogosSecaoHtml("Hoje", cards(s.hoje));
-  if (s.amanha.length) h += jogosSecaoHtml("Amanhã", cards(s.amanha));
-  if (s.outros.length) {
-    h += `<p class="jogos-grupo">OUTROS ESPORTES</p>`;
-    s.outros.forEach((g) => {
+  if (filtradas.aoVivo.length) h += jogosSecaoHtml("Ao vivo agora", cards(filtradas.aoVivo));
+  if (filtradas.hoje.length) h += jogosSecaoHtml("Hoje", cards(filtradas.hoje));
+  if (filtradas.amanha.length) h += jogosSecaoHtml("Amanhã", cards(filtradas.amanha));
+  if (filtradas.outros.length) {
+    if (atual === "todos") h += `<p class="jogos-grupo">OUTROS ESPORTES</p>`;
+    filtradas.outros.forEach((g) => {
       const cartoes = g.itens.map((i) => jogoCardHtml(i.jogo, agora, i.dia === "hoje" ? "Hoje" : "Amanhã")).join("");
       h += jogosSecaoHtml(g.rotulo, cartoes);
     });
@@ -11533,6 +11645,7 @@ function renderJogos() {
 
 // Abre a aba e liga o relógio de 1 min (atualiza o AO VIVO e baixa de novo quando a cópia envelhece); o relógio se desliga ao sair da aba
 function openJogosSection() {
+  _jogos.esporte = jogosLerEsporte();
   setState({ section: "jogos" });
   window.scrollTo({ top: 0 });
   closeSidebar();
@@ -13353,6 +13466,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const card = e.target.closest("[data-jogo-id]");
     if (card) abrirJogo(card.dataset.jogoId);
   });
+  const filtrosEl = document.getElementById("jogos-filtros");
+  if (filtrosEl) {
+    filtrosEl.addEventListener("click", e => {
+      const btn = e.target.closest("[data-jogos-esporte]");
+      if (!btn) return;
+      const esp = btn.dataset.jogosEsporte;
+      _jogos.esporte = esp;
+      jogosGravarEsporte(esp);
+      renderJogos();
+      window.scrollTo({ top: 0 });
+    });
+  }
   document.getElementById("jogos-sheet-actions").addEventListener("click", e => {
     const btn = e.target.closest("[data-jogos-canal]");
     if (!btn) return;
