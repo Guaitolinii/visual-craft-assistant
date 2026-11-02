@@ -40,6 +40,7 @@ const PURE_HELPER_NAMES = [
   "jogosDiaBrt", "jogosHoraBrt", "jogosDiaExibicao", "jogosAoVivo", "jogosVisivel", "jogosSecoes", "jogosPesoVariante",
   "jogosCanaisDaConta", "jogosAcaoClique", "jogosValidar", "jogosLerCache",
   "jogosEsportesDisponiveis", "jogosEsporteEfetivo", "jogosFiltrarSecoes",
+  "liveRetryDelayMs", "shouldRetryLive",
 ];
 
 function toHostRealm(value) {

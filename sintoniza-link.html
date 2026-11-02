@@ -1906,7 +1906,6 @@
       <!-- Loader -->
       <div class="player-loader" id="player-loader">
         <div class="spinner"></div>
-        <p>Conectando ao canal...</p>
       </div>
       <!-- Overlay de erro -->
       <div class="player-error" id="player-error">
@@ -2956,6 +2955,27 @@ function metaApplyToItem(item, meta) {
 
   return out;
 }
+// ─── Retentativa silenciosa de canais ao vivo ───
+// Em canal ao vivo, o app nunca desiste nem mostra tela de erro: espera de forma
+// crescente (1s, 2s, 4s, 8s, 10s fixos) e continua tentando reconectar.
+function liveRetryDelayMs(tentativa) {
+  if (typeof tentativa !== "number" || !Number.isFinite(tentativa) || tentativa < 1) {
+    return 1000;
+  }
+  var n = Math.floor(tentativa);
+  if (n <= 1) return 1000;
+  if (n === 2) return 2000;
+  if (n === 3) return 4000;
+  if (n === 4) return 8000;
+  return 10000;
+}
+
+// Valida se uma tentativa de canal ao vivo ainda deve ser executada
+function shouldRetryLive(opts) {
+  if (!opts) return false;
+  return Boolean(opts.sameGeneration) && !opts.userPaused && !opts.isVod;
+}
+
 </script>
 
 <script id="epg-helpers">
@@ -6368,6 +6388,60 @@ let userPausedVod = false;
 // Ponto (s) para retomar quando o próximo filme/episódio começar a tocar.
 let pendingResumeAt = 0;
 let _resumeLookup = null; // Promise do minuto inicial (celular x conta); ver resolveResumeWithAccount
+let userPausedLive = false;
+let watchdogShowedLoader = false; // o watchdog acendeu o círculo (imagem parada): ele continua vigiando e apaga quando a imagem anda
+let liveRetryTimer = null;
+let liveRetryAttempt = 0;
+
+function clearLiveRetry() {
+  if (liveRetryTimer) {
+    clearTimeout(liveRetryTimer);
+    liveRetryTimer = null;
+  }
+}
+
+function scheduleLiveRetry({ gen, url, delayOverrideMs, is429 } = {}) {
+  const ch = _state.selected;
+  if (!ch || ch.isVod) return;
+  showPlayerLoader();
+  hidePlayerError();
+
+  // Rajada de erros (ex.: mpegts): só uma tentativa agendada por vez
+  if (liveRetryTimer) {
+    if (is429) {
+      clearTimeout(liveRetryTimer);
+      liveRetryTimer = null;
+    } else {
+      return;
+    }
+  }
+
+  liveRetryAttempt++;
+  let delay = delayOverrideMs != null ? delayOverrideMs : liveRetryDelayMs(liveRetryAttempt);
+  if (is429) delay = Math.max(delay, 20000);
+
+  const targetGen = gen != null ? gen : playbackGeneration;
+  const targetUrl = url || ch.url;
+
+  liveRetryTimer = setTimeout(() => {
+    liveRetryTimer = null;
+    const currentCh = _state.selected;
+    if (!shouldRetryLive({
+      sameGeneration: targetGen === playbackGeneration,
+      userPaused: userPausedLive || userPausedVod,
+      isVod: !!(currentCh && currentCh.isVod)
+    })) {
+      return;
+    }
+    if (!currentCh || currentCh.url !== targetUrl) return;
+
+    showPlayerLoader();
+    hidePlayerError();
+    isReloadingStream = false;
+    reconnectCircuitBreaker.reset(); // o espaçamento já é do atraso crescente; sem isto o GIVE_UP se repetiria para sempre
+    reloadCurrentChannel(true);
+  }, delay);
+}
 
 // ─── EPG (guia de programação) ───
 // Busca o xmltv.php do provedor (formato padrão em painéis Xtream Codes),
@@ -6805,6 +6879,7 @@ function updateDebugOverlay() {
 }
 
 function resetWatchdogCounters() {
+  watchdogShowedLoader = false;
   watchdogFrozenSeconds = 0;
   watchdogWaitingSeconds = 0;
   watchdogLastTime = 0;
@@ -6837,7 +6912,7 @@ function startWatchdog(url) {
 
     // Se o loader inicial ainda estiver ativo, o canal está na fase de conexão
     const loader = document.getElementById("player-loader");
-    if (loader && loader.classList.contains("active")) return;
+    if (loader && loader.classList.contains("active") && !watchdogShowedLoader) return;
 
     const curTime = video.currentTime || 0;
     const curFrames = video.webkitDecodedFrameCount || 0;
@@ -6874,7 +6949,11 @@ function startWatchdog(url) {
       watchdogLastFrames = curFrames;
       watchdogFrozenSeconds = 0;
       watchdogWaitingSeconds = 0;
-
+      watchdogShowedLoader = false;
+      hidePlayerLoader();
+      hidePlayerError();
+      liveRetryAttempt = 0;
+      clearLiveRetry();
       // Quality Manager: canal estável por tempo contínuo recupera score
       if (_state.selected && (_state.selected.quality_score || 100) < 100) {
         _state.selected.quality_score = Math.min(100, (_state.selected.quality_score || 80) + 1);
@@ -6919,6 +6998,11 @@ function startWatchdog(url) {
       // Paralisado no mesmo quadro
       watchdogFrozenSeconds++;
       if (video.readyState < 3) watchdogWaitingSeconds++;
+      if (_state.selected && !_state.selected.isVod) {
+        watchdogShowedLoader = true;
+        showPlayerLoader();
+        hidePlayerError();
+      }
       // Só HLS ao vivo: imagem parada de verdade sobe o atraso do canal (o buffer sozinho não cresce além do ao vivo)
       if (hlsInstance && livePlayStartedAt && shouldEscalateLiveLatency({
         frozenSeconds: watchdogFrozenSeconds, msSincePlayStart: Date.now() - livePlayStartedAt,
@@ -7041,16 +7125,23 @@ async function reloadCurrentChannel(isSilent = false) {
     // tentativa nova e reseta o contador logo abaixo.
     const verdict = reconnectCircuitBreaker.recordAttempt(Date.now());
     if (verdict === "GIVE_UP") {
-      console.warn(`[Circuit Breaker] Muitas reconexões automáticas para "${ch.name}". Parando e pedindo ação manual.`);
-      stopWatchdog();
-      setState({ playing: false });
-      showPlayerError(ch.isVod
-        ? `"${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`
-        : `Canal "${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
+      if (ch.isVod) {
+        console.warn(`[Circuit Breaker] Muitas reconexões automáticas para "${ch.name}". Parando e pedindo ação manual.`);
+        stopWatchdog();
+        setState({ playing: false });
+        showPlayerError(`"${ch.name}" está instável. Toque em "Tentar novamente" quando quiser tentar de novo.`);
+        return;
+      }
+      console.warn(`[Circuit Breaker] Muitas reconexões automáticas para canal ao vivo "${ch.name}". Aguardando atraso longo (10s)...`);
+      showPlayerLoader();
+      hidePlayerError();
+      scheduleLiveRetry({ gen: playbackGeneration, url: ch.url, delayOverrideMs: 10000 });
       return;
     }
   } else {
     reconnectCircuitBreaker.reset();
+    liveRetryAttempt = 0;
+    clearLiveRetry();
   }
 
   isReloadingStream = true;
@@ -7080,7 +7171,7 @@ async function reloadCurrentChannel(isSilent = false) {
     }
 
     await new Promise(r => setTimeout(r, 150));
-    playStream(ch.url);
+    playStream(ch.url, isSilent);
   } finally {
     setTimeout(() => {
       isReloadingStream = false;
@@ -7090,19 +7181,28 @@ async function reloadCurrentChannel(isSilent = false) {
 }
 
 // ─── PlayStream com Pré-teste e Engine Otimizado ───
-async function playStream(url) {
+async function playStream(url, isAutoRetry = false) {
   if (!url) { showPlayerError("Canal sem URL de transmissão."); return; }
   const gen = ++playbackGeneration;
+  clearLiveRetry();
+  if (!isAutoRetry) {
+    liveRetryAttempt = 0;
+    reconnectCircuitBreaker.reset();
+  }
+  userPausedLive = false;
   abortPendingProbe();
   userPausedVod = false;
 
   const video = document.getElementById("player-video");
   showPlayerLoader();
+  hidePlayerError();
   stopWatchdog();
 
   // Limpa instâncias anteriores
   mediaErrorEscalation.reset();
-  reconnectCircuitBreaker.reset();
+  if (!isAutoRetry) {
+    reconnectCircuitBreaker.reset();
+  }
   if (hlsInstance) {
     try { hlsInstance.stopLoad(); hlsInstance.destroy(); } catch (e) {}
     hlsInstance = null;
@@ -7226,6 +7326,8 @@ async function playStream(url) {
       hlsInstance.attachMedia(video);
 
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        liveRetryAttempt = 0;
+        clearLiveRetry();
         video.play().catch(() => {});
         hidePlayerLoader();
         showPlayerVideo();
@@ -7248,12 +7350,17 @@ async function playStream(url) {
           webRestartViaProxy(url, streamInfo.url); // CORS (ou rede) no direto: recomeça uma vez pelo proxy
           return;
         }
+        const respCode = data.response && (data.response.code || data.response.status);
+        const is429 = respCode === 429;
         if (data.fatal) {
+          showPlayerLoader();
+          hidePlayerError();
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR: {
               // Backoff instead of hammering the origin with an immediate
               // startLoad() on every fatal network error.
-              const backoffMs = computeReconnectBackoffMs(hlsNetworkRetryAttempt);
+              let backoffMs = computeReconnectBackoffMs(hlsNetworkRetryAttempt);
+              if (is429) backoffMs = Math.max(backoffMs, 20000);
               hlsNetworkRetryAttempt++;
               sessionReconnectCount++;
               updateDebugOverlay();
@@ -7271,13 +7378,15 @@ async function playStream(url) {
                 hlsInstance.swapAudioCodec();
                 hlsInstance.recoverMediaError();
               } else if (!isReloadingStream) {
-                reloadCurrentChannel(true);
+                if (is429) scheduleLiveRetry({ gen, url, is429: true });
+                else reloadCurrentChannel(true);
               }
               break;
             }
             default:
               if (!isReloadingStream) {
-                reloadCurrentChannel(true);
+                if (is429) scheduleLiveRetry({ gen, url, is429: true });
+                else reloadCurrentChannel(true);
               }
           }
         }
@@ -7305,6 +7414,8 @@ async function playStream(url) {
         nativeTimer = setTimeout(nativeFail, webNative.direct ? 8000 : 12000); // antes dos 15 s do timeout de abertura (que recarregaria o canal); canal "frio" demorado cai no hls.js, que espera mais
       }
       video.play().then(() => {
+        liveRetryAttempt = 0;
+        clearLiveRetry();
         if (webNative && webNative.direct) { nativeLeave(); webCount("direto", webHost(streamInfo.url)); }
         else if (webNative && webNative.preferido) { nativeLeave(); } // começou a tocar: o nativo cuida do resto
         else if (webNative && webNative.forced) webMemSet(streamInfo.url, "media", "p"); // o proxy tocou onde o direto falhou
@@ -7315,7 +7426,22 @@ async function playStream(url) {
       }).catch(err => {
         if (gen !== playbackGeneration) return; // a reprodução foi trocada (ex.: recomeço pelo proxy)
         if (webNative && webNative.direct && err && err.name !== "NotAllowedError") { nativeFail(); return; }
-        showPlayerError(err.message);
+        if (err && err.name === "NotAllowedError") {
+          hidePlayerLoader();
+          showPlayerArt();
+          const playCenter = document.getElementById("play-center-btn");
+          if (playCenter) playCenter.classList.remove("hidden");
+          showToast("Toque em ▶ para começar.");
+          return;
+        }
+        const ch = _state.selected;
+        if (ch && ch.isVod) {
+          showPlayerError(err.message);
+          return;
+        }
+        showPlayerLoader();
+        hidePlayerError();
+        scheduleLiveRetry({ gen, url });
       });
     } else {
       tryDirectPlay(playUrl, video);
@@ -7363,9 +7489,6 @@ async function playStream(url) {
         let lastBuf = -1;
         let plateauCount = 0;
 
-        const loaderEl = document.getElementById("player-loader");
-        const loaderText = loaderEl ? loaderEl.querySelector('p') : null;
-
         const tryStartMpegPlayback = () => {
           if (mpegStarted) return;
 
@@ -7382,11 +7505,6 @@ async function playStream(url) {
             }
           }
 
-          // Atualiza texto de progresso no loader
-          if (loaderText) {
-            const pct = Math.min(100, Math.round((currentBuf / mpegBufTarget) * 100));
-            loaderText.textContent = `Carregando buffer: ${currentBuf.toFixed(1)}s de ${mpegBufTarget}s (${pct}%)`;
-          }
 
           // Se atingiu o alvo completo de 25s, inicia
           if (currentBuf >= mpegBufTarget) {
@@ -7419,9 +7537,10 @@ async function playStream(url) {
           if (initialLoadTimeout) { clearTimeout(initialLoadTimeout); initialLoadTimeout = null; }
           if (mpegPrebufferTimer) { clearInterval(mpegPrebufferTimer); mpegPrebufferTimer = null; }
           if (mpegPrebufferTimeout) { clearTimeout(mpegPrebufferTimeout); mpegPrebufferTimeout = null; }
-          if (loaderText) loaderText.textContent = 'Conectando ao canal...';
 
           video.play().then(() => {
+            liveRetryAttempt = 0;
+            clearLiveRetry();
             hidePlayerLoader();
             showPlayerVideo();
             setState({ playing: true });
@@ -7433,6 +7552,20 @@ async function playStream(url) {
             requestScreenWakeLock();
           }).catch(err => {
             console.warn('[mpegts play notice]', err);
+            if (err && err.name === "NotAllowedError") {
+              hidePlayerLoader();
+              showPlayerArt();
+              const playCenter = document.getElementById("play-center-btn");
+              if (playCenter) playCenter.classList.remove("hidden");
+              showToast("Toque em ▶ para começar.");
+              return;
+            }
+            const ch = _state.selected;
+            if (ch && !ch.isVod) {
+              showPlayerLoader();
+              hidePlayerError();
+              scheduleLiveRetry({ gen: playbackGeneration, url });
+            }
           });
         };
 
@@ -7693,12 +7826,6 @@ function tryDirectPlay(url, video, attempt, generation, forceProxy) {
 }
 
 function tryDirectPlayWith(url, video, attempt, gen, forceProxy, media) {
-  const loaderText = document.querySelector("#player-loader p");
-  if (loaderText) {
-    loaderText.textContent = attempt === 1
-      ? "Conectando..."
-      : `Servidor ocupado, tentando de novo (${attempt}/${DIRECT_PLAY_MAX_ATTEMPTS})...`;
-  }
 
   if (attempt > 1) releaseVideoElement(video);
   // App web (v16): <video src> não exige CORS, então tenta o provedor direto (https) e só usa o proxy se for http, se a memória do
@@ -7736,28 +7863,35 @@ function tryDirectPlayWith(url, video, attempt, gen, forceProxy, media) {
       tryDirectPlay(url, video, attempt, gen, true);
       return;
     }
-    if (shouldRetryDirectPlay({ errorName, attempt, maxAttempts: DIRECT_PLAY_MAX_ATTEMPTS, url, isIOS: ios })) {
-      setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen, forceProxy), computeDirectPlayRetryDelayMs(attempt));
+    const ch = _state.selected;
+    if (ch && ch.isVod) {
+      if (shouldRetryDirectPlay({ errorName, attempt, maxAttempts: DIRECT_PLAY_MAX_ATTEMPTS, url, isIOS: ios })) {
+        setTimeout(() => tryDirectPlay(url, video, attempt + 1, gen, forceProxy), computeDirectPlayRetryDelayMs(attempt));
+        return;
+      }
+      // Guarda o detalhe interno antes de soltar o vídeo (release() limpa o erro)
+      const mediaErrorMessage = (video.error && video.error.message) || "";
+      releaseVideoElement(video);
+      const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
+      showPlayerError(message, code);
+      const refinable = (mediaErrorCode === 4 || errorName === "NotSupportedError") && !(ios && isContainerUnsupportedOnIOS(url));
+      reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts: attempt, baseMessage: message, refinable, gen });
       return;
     }
-    // Guarda o detalhe interno antes de soltar o vídeo (release() limpa o erro)
-    const mediaErrorMessage = (video.error && video.error.message) || "";
+    // Canal ao vivo nunca vai para a tela de erro
     releaseVideoElement(video);
-    const { message, code } = describeDirectPlayError({ errorName, mediaErrorCode, url, isIOS: ios, attempts: attempt });
-    showPlayerError(message, code);
-    // Só a mensagem "genérica" do MEDIA_ERR 4 pode ser refinada pela sondagem -
-    // timeout, MEDIA_ERR 2/3 e MKV no iPhone já têm causa conhecida e não
-    // devem ser sobrescritos por um palpite baseado no HTTP da sondagem.
-    const refinable = (mediaErrorCode === 4 || errorName === "NotSupportedError") && !(ios && isContainerUnsupportedOnIOS(url));
-    reportDirectPlayFailure({ url, video, errorName, mediaErrorCode, mediaErrorMessage, attempts: attempt, baseMessage: message, refinable, gen });
+    showPlayerLoader();
+    hidePlayerError();
+    scheduleLiveRetry({ gen, url });
   }
-
   video.play().then(() => {
     if (settled) return;
     settled = true;
     clearTimeout(attemptTimer);
     video.removeEventListener("error", onVideoError);
     if (gen !== playbackGeneration) return;
+    liveRetryAttempt = 0;
+    clearLiveRetry();
     if (media.resolved) { webCount("direto", webHost(url)); webMemSet(url, "media", "p"); } // o direto original não toca neste host (http no meio): da próxima vai direto à resolução
     else if (media.direct) webCount("direto", webHost(url));
     else if (media.forced) webMemSet(url, "media", "p"); // o proxy tocou onde o direto falhou: lembra o host
@@ -7896,6 +8030,9 @@ async function copyTextToClipboard(text) {
 function stopStream() {
   // Invalida qualquer retentativa pendente da reprodução que está parando.
   playbackGeneration++;
+  clearLiveRetry();
+  liveRetryAttempt = 0;
+  userPausedLive = false;
   abortPendingProbe();
   userPausedVod = false;
   releaseScreenWakeLock();
@@ -13272,10 +13409,19 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (!_state.playing) {
+      userPausedLive = false;
       if (ch?.url) playStream(ch.url);
     } else {
-      if (video.paused) { video.play(); }
-      else              { video.pause(); setState({ playing: false }); showPlayerArt(); }
+      if (video.paused) {
+        userPausedLive = false;
+        video.play();
+      } else {
+        userPausedLive = true;
+        clearLiveRetry();
+        video.pause();
+        setState({ playing: false });
+        showPlayerArt();
+      }
     }
   }
   document.getElementById("mini-play-btn").addEventListener("click", (e) => {
