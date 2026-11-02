@@ -5308,6 +5308,30 @@ function saudeChave(nome) {
   return nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// Impressão digital CURTA do endereço da lista (14 hexadecimais; cyrb53 do endereço sem espaços nas pontas). O arquivo de saúde só vale para a
+// lista em que foi medido: o gerador grava `lista` e o app só esconde canais se a impressão do endereço dele (sint_url) for a mesma.
+// Quem usa outra lista (ex.: conta com lista própria) nunca tem canal escondido por engano. IDÊNTICA ao gerador e ao app da TV.
+function saudeListaId(url) {
+  const t = typeof url === "string" ? url.trim() : "";
+  if (!t) return "";
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  let hex = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+  while (hex.length < 14) hex = "0" + hex;
+  return hex;
+}
+
+// Endereço da lista de canais que este aparelho está usando agora ("" se não houver ou se o storage falhar)
+function saudeUrlAtual() {
+  try { return localStorage.getItem("sint_url") || ""; } catch (e) { return ""; }
+}
+
 // Valida o JSON recebido. Só aceita formato v1 com gerado positivo e objeto canais simples.
 // Mantém apenas entradas válidas (e em "removido"|"instavel"|"vivo", d numérico finito, chave não vazia, m <= 80).
 function saudeValidar(dados) {
@@ -5331,7 +5355,8 @@ function saudeValidar(dados) {
     mapa.set(chKey, { e: item.e, d: item.d, m });
   }
 
-  return { gerado: dados.gerado, canais: mapa };
+  const lista = typeof dados.lista === "string" && /^[0-9a-f]{8,16}$/.test(dados.lista) ? dados.lista : "";
+  return { gerado: dados.gerado, lista, canais: mapa };
 }
 
 // Devolve o Set de chaves a esconder.
@@ -5454,16 +5479,19 @@ async function saudeBaixar() {
 }
 
 // API de leitura: getChannels com memoização por referência de canais e versão de saúde
-var _getChannelsCache = { raw: null, versao: -1, off: false, resultado: null };
+var _getChannelsCache = { raw: null, versao: -1, off: false, lista: "", resultado: null };
 function getChannels() {
   const raw = _state.channels || DEMO_CHANNELS;
   const off = saudeEstaDesligado();
-  if (_getChannelsCache.raw === raw && _getChannelsCache.versao === _saude.versao && _getChannelsCache.off === off) {
+  const lista = saudeListaId(saudeUrlAtual());
+  if (_getChannelsCache.raw === raw && _getChannelsCache.versao === _saude.versao && _getChannelsCache.off === off && _getChannelsCache.lista === lista) {
     return _getChannelsCache.resultado;
   }
-  const escondidos = off ? new Set() : _saude.escondidos;
+  // só esconde se o arquivo é da MESMA lista que este aparelho usa (sem `lista` no arquivo ou lista diferente = mostra tudo)
+  const vale = !off && _saude.validado && _saude.validado.lista && _saude.validado.lista === lista;
+  const escondidos = vale ? _saude.escondidos : new Set();
   const filtrados = saudeFiltrarCanais(raw, escondidos);
-  _getChannelsCache = { raw, versao: _saude.versao, off, resultado: filtrados };
+  _getChannelsCache = { raw, versao: _saude.versao, off, lista, resultado: filtrados };
   return filtrados;
 }
 
@@ -7469,7 +7497,8 @@ async function playStream(url, isAutoRetry = false) {
   // timeout e retentativas próprios - este timeout paralelo disparava uma
   // recarga que brigava com essas retentativas.
   if (currentStreamType !== "mpegts" && currentStreamType !== "direct") {
-    const timeoutMs = 15000;
+    // Canal ligado sob demanda leva ~12-17 s na primeira abertura: espera 25 s só nela (retentativas automáticas seguem com 15 s)
+    const timeoutMs = isAutoRetry ? 15000 : 25000;
     initialLoadTimeout = setTimeout(() => {
       const loader = document.getElementById("player-loader");
       if (loader && loader.classList.contains("active") && !isReloadingStream) {
@@ -7492,8 +7521,8 @@ async function playStream(url, isAutoRetry = false) {
         backBufferLength: 30,
         manifestLoadingMaxRetry: webDirect ? 2 : 8, // direto: se for CORS, o erro precisa aparecer logo para cair no proxy
         fragLoadingMaxRetry: webDirect ? 3 : 8,
-        manifestLoadingTimeOut: 15000,
-        levelLoadingTimeOut: 15000,
+        manifestLoadingTimeOut: isAutoRetry ? 15000 : 25000, // partida a frio de canal sob demanda (ver o timeout inicial acima)
+        levelLoadingTimeOut: isAutoRetry ? 15000 : 25000,
         fragLoadingTimeOut: 15000,
       });
       hlsInstance.loadSource(playUrl);

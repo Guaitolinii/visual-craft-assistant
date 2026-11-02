@@ -183,3 +183,9 @@ test("o watchdog continua vigiando quando foi ele quem acendeu o círculo (e só
   const reset = html.match(/function resetWatchdogCounters\(\) \{[\s\S]*?\r?\n\}/);
   assert.ok(reset && /watchdogShowedLoader = false;/.test(reset[0]), "resetWatchdogCounters tem que zerar a flag");
 });
+
+test("A3: a primeira abertura de canal ao vivo espera 25 s (partida a frio), as retentativas automáticas 15 s", () => {
+  assert.match(html, /const timeoutMs = isAutoRetry \? 15000 : 25000;/);
+  assert.match(html, /manifestLoadingTimeOut: isAutoRetry \? 15000 : 25000/);
+  assert.match(html, /levelLoadingTimeOut: isAutoRetry \? 15000 : 25000/);
+});

@@ -286,6 +286,7 @@ test("localStorage indisponível ou lançando não quebra saudeCarregarCache nem
     json: async () => ({
       v: 1,
       gerado: agoraSec,
+      lista: loadVodHelpers().saudeListaId("https://exemplo.test/lista.m3u?u=1"),
       canais: { "espn hd": { e: "removido", d: agoraSec - 25000, m: "ok" } }
     })
   });
@@ -311,9 +312,11 @@ test("desligamento: sint_saude_off=1 ou ?saude=0 na URL não esconde nenhum cana
     data: {
       v: 1,
       gerado: agoraSec,
+      lista: loadVodHelpers().saudeListaId("https://exemplo.test/lista.m3u?u=1"),
       canais: { "espn hd": { e: "removido", d: agoraSec - 25000, m: "ok" } }
     }
   };
+  ctx1.localStorage.setItem("sint_url", "https://exemplo.test/lista.m3u?u=1");
   ctx1.localStorage.setItem("sint_saude_cache", JSON.stringify(cacheData));
   vm.runInContext("saudeCarregarCache()", ctx1);
   const canais1 = vm.runInContext("getChannels()", ctx1);
@@ -323,6 +326,7 @@ test("desligamento: sint_saude_off=1 ou ?saude=0 na URL não esconde nenhum cana
   const ctx2 = loadVodHelpers();
   vm.runInContext(`_state.channels = ${JSON.stringify(listaCanais)}`, ctx2);
   ctx2.window.location.search = "?saude=0";
+  ctx2.localStorage.setItem("sint_url", "https://exemplo.test/lista.m3u?u=1");
   ctx2.localStorage.setItem("sint_saude_cache", JSON.stringify(cacheData));
   vm.runInContext("saudeCarregarCache()", ctx2);
   const canais2 = vm.runInContext("getChannels()", ctx2);
@@ -331,10 +335,28 @@ test("desligamento: sint_saude_off=1 ou ?saude=0 na URL não esconde nenhum cana
   // Contra-teste: sem desligamento, o canal DEVE ser escondido
   const ctx3 = loadVodHelpers();
   vm.runInContext(`_state.channels = ${JSON.stringify(listaCanais)}`, ctx3);
+  ctx3.localStorage.setItem("sint_url", "https://exemplo.test/lista.m3u?u=1");
   ctx3.localStorage.setItem("sint_saude_cache", JSON.stringify(cacheData));
   vm.runInContext("saudeCarregarCache()", ctx3);
   const canais3 = vm.runInContext("getChannels()", ctx3);
   assert.equal(canais3.some(c => c.name && c.name.toLowerCase().includes("espn")), false, "sem desligamento, canal morto deve ser escondido");
+
+  // Outra lista (conta com lista própria): o arquivo é de outra lista, nada é escondido
+  const ctx4 = loadVodHelpers();
+  vm.runInContext(`_state.channels = ${JSON.stringify(listaCanais)}`, ctx4);
+  ctx4.localStorage.setItem("sint_url", "https://outra-lista.test/minha.m3u");
+  ctx4.localStorage.setItem("sint_saude_cache", JSON.stringify(cacheData));
+  vm.runInContext("saudeCarregarCache()", ctx4);
+  assert.equal(vm.runInContext("getChannels()", ctx4).length, 3, "lista diferente da medida: mostra tudo");
+
+  // Arquivo antigo, sem `lista`: vale para ninguém
+  const ctx5 = loadVodHelpers();
+  vm.runInContext(`_state.channels = ${JSON.stringify(listaCanais)}`, ctx5);
+  ctx5.localStorage.setItem("sint_url", "https://exemplo.test/lista.m3u?u=1");
+  const semLista = JSON.parse(JSON.stringify(cacheData)); delete semLista.data.lista;
+  ctx5.localStorage.setItem("sint_saude_cache", JSON.stringify(semLista));
+  vm.runInContext("saudeCarregarCache()", ctx5);
+  assert.equal(vm.runInContext("getChannels()", ctx5).length, 3, "arquivo sem lista: mostra tudo");
 });
 // ═══════════════════════════════════════════════════════════════
 // 7. LIGAÇÕES NO HTML
@@ -360,4 +382,28 @@ test("regressão: aplicar o cache na inicialização invalida a memória do getC
 test("o aviso da aba Jogos sem canal viável usa o texto novo e não sobrou código comentado", () => {
   assert.match(html, /showToast\("Nenhum canal disponível para esse jogo agora\."\)/);
   assert.doesNotMatch(html, /\/\/ showToast\("Esse canal não está na sua lista\."\)/);
+});
+
+// ─── Impressão digital da lista (o arquivo só vale para a lista em que foi medido) ───
+test("saudeListaId: mesmos valores do gerador e da TV; espaços nas pontas e entradas inválidas", () => {
+  const h = loadVodHelpers();
+  assert.equal(h.saudeListaId("https://exemplo.test/lista.m3u?u=1"), "14eaa58a89e1ae");
+  assert.equal(h.saudeListaId("  https://exemplo.test/lista.m3u?u=1  "), "14eaa58a89e1ae");
+  assert.equal(h.saudeListaId("x"), "0189af1820c6f5");
+  for (const ruim of ["", null, undefined, 42, {}]) assert.equal(h.saudeListaId(ruim), "");
+  assert.match(h.saudeListaId("qualquer coisa"), /^[0-9a-f]{14}$/);
+});
+
+test("saudeValidar guarda `lista` só quando é hexadecimal de 8 a 16 caracteres", () => {
+  const h = loadVodHelpers();
+  const base = { v: 1, gerado: 1793600000, canais: { "espn hd": { e: "removido", d: 1793560000, m: "x" } } };
+  assert.equal(h.saudeValidar({ ...base, lista: "14eaa58a89e1ae" }).lista, "14eaa58a89e1ae");
+  for (const ruim of [undefined, null, 42, "", "xyz", "14EAA58A89E1AE", "abc", "1".repeat(17)]) assert.equal(h.saudeValidar({ ...base, lista: ruim }).lista, "", `lista ${String(ruim)}`);
+});
+
+test("getChannels só esconde se a lista do aparelho (sint_url) for a medida (sem `lista` no arquivo ou lista diferente = mostra tudo)", () => {
+  assert.match(html, /function saudeUrlAtual\(\)[\s\S]*?localStorage\.getItem\("sint_url"\)/);
+  assert.match(html, /const vale = !off && _saude\.validado && _saude\.validado\.lista && _saude\.validado\.lista === lista;/);
+  assert.match(html, /const escondidos = vale \? _saude\.escondidos : new Set\(\);/);
+  assert.match(html, /_getChannelsCache\.lista === lista/);
 });

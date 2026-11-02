@@ -41,7 +41,7 @@ const PURE_HELPER_NAMES = [
   "jogosCanaisDaConta", "jogosAcaoClique", "jogosValidar", "jogosLerCache",
   "jogosEsportesDisponiveis", "jogosEsporteEfetivo", "jogosFiltrarSecoes",
   "liveRetryDelayMs", "shouldRetryLive",
-  "saudeChave", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
+  "saudeChave", "saudeListaId", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
 ];
 
 function toHostRealm(value) {
