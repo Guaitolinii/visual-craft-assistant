@@ -47,7 +47,7 @@ test("abrir a aba muda a seção, baixa os jogos e liga o relógio que atualiza 
 });
 
 test("tocar no card: um canal toca direto (selectChannel), vários abrem a folha, nenhum avisa", () => {
-  assert.match(html, /function abrirJogo\(id\)[\s\S]*?jogosAcaoClique\(jogo, getChannels\(\)\)[\s\S]*?selectChannel\(acao\.canal\)[\s\S]*?abrirJogosSheet\(jogo, acao\.canais\)[\s\S]*?showToast\("Esse canal não está na sua lista\."\)/);
+  assert.match(html, /function abrirJogo\(id\)[\s\S]*?jogosAcaoClique\(jogo, getChannels\(\)\)[\s\S]*?selectChannel\(acao\.canal\)[\s\S]*?abrirJogosSheet\(jogo, acao\.canais\)[\s\S]*?showToast\("Nenhum canal disponível para esse jogo agora\."\)/);
   assert.match(html, /querySelectorAll\("\[data-jogos-open\]"\)\.forEach\(el => el\.addEventListener\("click", openJogosSection\)\)/);
   assert.match(html, /getElementById\("jogos-content"\)\.addEventListener\("click", e => \{[\s\S]*?\[data-jogo-id\]/);
   assert.match(html, /getElementById\("jogos-sheet-actions"\)\.addEventListener\("click", e => \{[\s\S]*?data-jogos-canal/);

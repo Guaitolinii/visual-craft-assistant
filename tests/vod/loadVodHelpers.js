@@ -41,10 +41,26 @@ const PURE_HELPER_NAMES = [
   "jogosCanaisDaConta", "jogosAcaoClique", "jogosValidar", "jogosLerCache",
   "jogosEsportesDisponiveis", "jogosEsporteEfetivo", "jogosFiltrarSecoes",
   "liveRetryDelayMs", "shouldRetryLive",
+  "saudeChave", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
 ];
 
 function toHostRealm(value) {
-  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "object") return value;
+  if (Object.prototype.toString.call(value) === "[object Map]") {
+    return new Map(Array.from(value.entries(), ([k, v]) => [k, toHostRealm(v)]));
+  }
+  if (Object.prototype.toString.call(value) === "[object Set]") {
+    return new Set(Array.from(value.values(), v => toHostRealm(v)));
+  }
+  if (Array.isArray(value)) {
+    return Array.from(value, v => toHostRealm(v));
+  }
+  const obj = {};
+  for (const [k, v] of Object.entries(value)) {
+    obj[k] = toHostRealm(v);
+  }
+  return obj;
 }
 
 // transformHtml (opcional) permite carregar a página como o build a gera -
@@ -179,7 +195,13 @@ export function loadVodHelpers({ transformHtml } = {}) {
 
   for (const name of PURE_HELPER_NAMES) {
     const fn = context[name];
-    if (typeof fn === "function") context[name] = (...args) => toHostRealm(fn(...args));
+    if (typeof fn === "function") {
+      context[name] = (...args) => {
+        const res = fn(...args);
+        if (args.length > 0 && res === args[0]) return args[0];
+        return toHostRealm(res);
+      };
+    }
   }
 
   return context;

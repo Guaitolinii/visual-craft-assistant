@@ -5290,8 +5290,182 @@ const _subs = [];
 function subscribe(fn) { _subs.push(fn); }
 function _notify()     { _subs.forEach(fn => fn()); }
 
-// API de leitura
-const getChannels = () => _state.channels || DEMO_CHANNELS;
+// ═══════════════════════════════════════════════════════════════
+// SAÚDE DOS CANAIS (canais-saude.json - falha aberta)
+// ═══════════════════════════════════════════════════════════════
+const SAUDE_URL = "https://raw.githubusercontent.com/Guaitolinii/visual-craft-assistant/vod-data/canais-saude.json";
+const SAUDE_CACHE_KEY = "sint_saude_cache";
+
+// Variável de estado da saúde dos canais
+var _saude = { validado: null, escondidos: new Set(), versao: 0, fetchedAt: 0 };
+var _saudeBaixando = false;
+var _saudeUltimaTentativa = 0;
+
+// Normaliza o nome do canal para a chave do arquivo de saúde:
+// minúsculas, sem acentos, espaços colapsados e aparados. Não-string devolve "".
+function saudeChave(nome) {
+  if (typeof nome !== "string") return "";
+  return nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Valida o JSON recebido. Só aceita formato v1 com gerado positivo e objeto canais simples.
+// Mantém apenas entradas válidas (e em "removido"|"instavel"|"vivo", d numérico finito, chave não vazia, m <= 80).
+function saudeValidar(dados) {
+  if (!dados || typeof dados !== "object" || Array.isArray(dados)) return null;
+  if (dados.v !== 1) return null;
+  if (typeof dados.gerado !== "number" || !Number.isFinite(dados.gerado) || dados.gerado <= 0) return null;
+  if (!dados.canais || typeof dados.canais !== "object" || Array.isArray(dados.canais)) return null;
+
+  const E_VALIDOS = new Set(["removido", "instavel", "vivo"]);
+  const mapa = new Map();
+
+  for (const rawKey of Object.keys(dados.canais)) {
+    if (rawKey === "__proto__") continue;
+    const chKey = saudeChave(rawKey);
+    if (!chKey) continue;
+    const item = dados.canais[rawKey];
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (!E_VALIDOS.has(item.e)) continue;
+    if (typeof item.d !== "number" || !Number.isFinite(item.d)) continue;
+    const m = item.m != null ? String(item.m).slice(0, 80) : "";
+    mapa.set(chKey, { e: item.e, d: item.d, m });
+  }
+
+  return { gerado: dados.gerado, canais: mapa };
+}
+
+// Devolve o Set de chaves a esconder.
+// Falha aberta: arquivo velho (> 48h) ou validado nulo devolve Set vazio.
+// Só esconde canais "removido" há pelo menos 6 horas (evita esconder por um soluço temporário).
+function saudeEscondidos(validado, nowMs) {
+  const escondidos = new Set();
+  if (!validado || !validado.canais || typeof validado.canais.entries !== "function") return escondidos;
+  const nowSec = (typeof nowMs === "number" && Number.isFinite(nowMs) ? nowMs : Date.now()) / 1000;
+  if (nowSec - validado.gerado > 48 * 3600) return escondidos;
+
+  for (const [chave, info] of validado.canais.entries()) {
+    if (info && info.e === "removido" && (nowSec - info.d) >= 6 * 3600) {
+      escondidos.add(chave);
+    }
+  }
+  return escondidos;
+}
+
+// Filtra os canais retirando os que estão em escondidos.
+// Falha aberta: se escondidos for vazio, canais não for array ou se mais de 70%
+// dos canais fossem escondidos (dado suspeito), devolve a mesma referência original.
+function saudeFiltrarCanais(canais, escondidos) {
+  if (!Array.isArray(canais) || !escondidos || !(escondidos.size > 0) || canais.length === 0) {
+    return canais;
+  }
+  const filtrados = [];
+  let escondidosCount = 0;
+  for (let i = 0; i < canais.length; i++) {
+    const ch = canais[i];
+    const chave = ch && ch.name ? saudeChave(ch.name) : "";
+    if (chave && escondidos.has(chave)) {
+      escondidosCount++;
+    } else {
+      filtrados.push(ch);
+    }
+  }
+  if (escondidosCount === 0) return canais;
+  if (escondidosCount / canais.length > 0.7) {
+    return canais;
+  }
+  return filtrados;
+}
+
+// Verifica se a funcionalidade de esconder canais foi desligada (depuração/suporte)
+function saudeEstaDesligado() {
+  try {
+    if (typeof window !== "undefined" && window.location && window.location.search) {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("saude") === "0") return true;
+    }
+  } catch (e) {}
+  try {
+    if (typeof localStorage !== "undefined" && (localStorage.getItem("sint_saude_off") === "1" || localStorage["sint_saude_off"] === "1")) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Carrega o cache síncrono salvo no localStorage
+function saudeCarregarCache() {
+  try {
+    const raw = localStorage.getItem(SAUDE_CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const dados = parsed && parsed.data ? parsed.data : parsed;
+    const validado = saudeValidar(dados);
+    if (!validado) return;
+    _saude.validado = validado;
+    if (parsed && typeof parsed.ts === "number") _saude.fetchedAt = parsed.ts;
+    _saude.escondidos = saudeEstaDesligado() ? new Set() : saudeEscondidos(validado, Date.now());
+    _saude.versao++; // invalida a memória do getChannels, que pode ter sido calculada antes do cache
+  } catch (e) {
+    // Falha aberta: erro ao ler storage não quebra inicialização
+  }
+}
+
+// Baixa o canais-saude.json com timeout de 8s e atualiza o estado
+async function saudeBaixar() {
+  if (typeof fetch === "undefined" || typeof AbortController === "undefined") return;
+  if (_saudeBaixando) return;
+  _saudeBaixando = true;
+  _saudeUltimaTentativa = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(SAUDE_URL, { cache: "no-cache", signal: ctrl.signal });
+    if (!res || !res.ok) return;
+    const json = await res.json();
+    const validado = saudeValidar(json);
+    if (!validado) return;
+
+    _saude.fetchedAt = Date.now();
+    try {
+      localStorage.setItem(SAUDE_CACHE_KEY, JSON.stringify({ ts: _saude.fetchedAt, data: json }));
+    } catch (e) { /* storage indisponível ou cheio */ }
+
+    _saude.validado = validado;
+    const novosEscondidos = saudeEstaDesligado() ? new Set() : saudeEscondidos(validado, Date.now());
+
+    let mudou = novosEscondidos.size !== _saude.escondidos.size;
+    if (!mudou) {
+      for (const k of novosEscondidos) {
+        if (!_saude.escondidos.has(k)) { mudou = true; break; }
+      }
+    }
+
+    _saude.escondidos = novosEscondidos;
+    if (mudou) {
+      _saude.versao++;
+      _notify();
+    }
+  } catch (e) {
+    // Falha silenciosa e aberta: falhas de rede, JSON ou timeout não afetam o app
+  } finally {
+    clearTimeout(timer);
+    _saudeBaixando = false;
+  }
+}
+
+// API de leitura: getChannels com memoização por referência de canais e versão de saúde
+var _getChannelsCache = { raw: null, versao: -1, off: false, resultado: null };
+function getChannels() {
+  const raw = _state.channels || DEMO_CHANNELS;
+  const off = saudeEstaDesligado();
+  if (_getChannelsCache.raw === raw && _getChannelsCache.versao === _saude.versao && _getChannelsCache.off === off) {
+    return _getChannelsCache.resultado;
+  }
+  const escondidos = off ? new Set() : _saude.escondidos;
+  const filtrados = saudeFiltrarCanais(raw, escondidos);
+  _getChannelsCache = { raw, versao: _saude.versao, off, resultado: filtrados };
+  return filtrados;
+}
 
 function isFav(idOrCh) {
   if (!idOrCh) return false;
@@ -11802,7 +11976,7 @@ function abrirJogo(id) {
   const acao = jogosAcaoClique(jogo, getChannels());
   if (acao.tipo === "tocar") { selectChannel(acao.canal); return; }
   if (acao.tipo === "escolher") { abrirJogosSheet(jogo, acao.canais); return; }
-  showToast("Esse canal não está na sua lista.");
+  showToast("Nenhum canal disponível para esse jogo agora.");
 }
 
 function abrirJogosSheet(jogo, canais) {
@@ -13281,6 +13455,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // depois que EPG_REFRESH_INTERVAL_MS tiver passado desde a última vez.
   refreshEpgIfStale();
   setInterval(refreshEpgIfStale, 30 * 60 * 1000);
+
+  // Saúde dos canais: carrega cache síncrono antes do primeiro render e dispara busca em segundo plano
+  saudeCarregarCache();
+  saudeBaixar();
+  setInterval(() => saudeBaixar(), 30 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - _saudeUltimaTentativa >= 30 * 60 * 1000) {
+      saudeBaixar();
+    }
+  });
 
   // URLs padrão do build (canais e Filmes/Séries): gravadas na primeira
   // abertura, depois do ?lista= (link compartilhado tem prioridade) e antes
