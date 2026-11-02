@@ -39,6 +39,7 @@ const PURE_HELPER_NAMES = [
   "embedsSlug", "embedsEpisodeInfo", "embedsGroupSeries", "embedsParseSeries", "embedsSeriesEnabled", "vodItemIsLivreSerie", "livreEpisodeRowHtml",
   "jogosDiaBrt", "jogosHoraBrt", "jogosDiaExibicao", "jogosAoVivo", "jogosVisivel", "jogosSecoes", "jogosPesoVariante",
   "jogosCanaisDaConta", "jogosAcaoClique", "jogosValidar", "jogosLerCache",
+  "jogosEsportesDisponiveis", "jogosEsporteEfetivo", "jogosFiltrarSecoes",
 ];
 
 function toHostRealm(value) {

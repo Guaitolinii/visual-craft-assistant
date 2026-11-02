@@ -210,3 +210,78 @@ test("W2: jogosValidar normaliza campos e descarta itens malformados", () => {
     ctx.jogosAcaoClique(normalizado, [{ id: 1, name: "ESPN" }]);
   });
 });
+
+test("jogosEsportesDisponiveis: futebol primeiro e outros na ordem com contagens > 0", () => {
+  const jogos = [
+    jogo("f1", "futebol", "2026-10-25T17:00:00-03:00", "2026-10-25T19:00:00-03:00"), // vivo
+    jogo("f2", "futebol", "2026-10-25T21:00:00-03:00", "2026-10-25T23:00:00-03:00"), // hoje
+    jogo("f3", "futebol", "2026-10-26T17:00:00-03:00", "2026-10-26T19:00:00-03:00"), // amanha
+    jogo("n1", "nfl", "2026-10-25T21:15:00-03:00", "2026-10-26T00:45:00-03:00"),
+    jogo("n2", "nfl", "2026-10-26T21:15:00-03:00", "2026-10-27T00:45:00-03:00"),
+    jogo("b1", "nba", "2026-10-26T20:00:00-03:00", "2026-10-26T22:30:00-03:00"),
+  ];
+  const s = ctx.jogosSecoes(jogos, AGORA);
+  const disp = ctx.jogosEsportesDisponiveis(s);
+  assert.deepEqual(disp, [
+    { esporte: "futebol", rotulo: "Futebol", total: 3 },
+    { esporte: "nfl", rotulo: "NFL", total: 2 },
+    { esporte: "nba", rotulo: "NBA", total: 1 },
+  ]);
+});
+
+test("jogosEsportesDisponiveis: devolve [] para entrada nula, indefinida ou malformada", () => {
+  for (const entrada of [null, undefined, {}, "x", { outros: "torto" }]) {
+    assert.deepEqual(ctx.jogosEsportesDisponiveis(entrada), []);
+  }
+});
+
+test("jogosEsporteEfetivo: validação do esporte atual contra disponíveis", () => {
+  const jogos = [
+    jogo("f1", "futebol", "2026-10-25T17:00:00-03:00", "2026-10-25T19:00:00-03:00"),
+    jogo("n1", "nba", "2026-10-26T20:00:00-03:00", "2026-10-26T22:30:00-03:00"),
+  ];
+  const s = ctx.jogosSecoes(jogos, AGORA);
+  assert.equal(ctx.jogosEsporteEfetivo(s, "todos"), "todos");
+  assert.equal(ctx.jogosEsporteEfetivo(s, "nba"), "nba");
+  assert.equal(ctx.jogosEsporteEfetivo(s, "futebol"), "futebol");
+  assert.equal(ctx.jogosEsporteEfetivo(s, "nfl"), "todos"); // ausente nos dados
+  assert.equal(ctx.jogosEsporteEfetivo(s, "inexistente"), "todos");
+  assert.equal(ctx.jogosEsporteEfetivo(s, ""), "todos");
+  assert.equal(ctx.jogosEsporteEfetivo(s, null), "todos");
+  assert.equal(ctx.jogosEsporteEfetivo(s, 123), "todos");
+  assert.equal(ctx.jogosEsporteEfetivo(null, "nba"), "todos");
+});
+
+test("jogosFiltrarSecoes: futebol, outro esporte ou todos", () => {
+  const jogos = [
+    jogo("f-vivo", "futebol", "2026-10-25T17:00:00-03:00", "2026-10-25T19:00:00-03:00"),
+    jogo("f-hoje", "futebol", "2026-10-25T21:00:00-03:00", "2026-10-25T23:00:00-03:00"),
+    jogo("f-amanha", "futebol", "2026-10-26T17:00:00-03:00", "2026-10-26T19:00:00-03:00"),
+    jogo("nfl1", "nfl", "2026-10-25T21:15:00-03:00", "2026-10-26T00:45:00-03:00"),
+    jogo("nba1", "nba", "2026-10-26T20:00:00-03:00", "2026-10-26T22:30:00-03:00"),
+  ];
+  const s = ctx.jogosSecoes(jogos, AGORA);
+
+  // "todos" devolve s sem mudar
+  const todos = ctx.jogosFiltrarSecoes(s, "todos");
+  assert.deepEqual(todos, s);
+
+  // esporte inválido devolve o mesmo s
+  assert.deepEqual(ctx.jogosFiltrarSecoes(s, "inexistente"), s);
+
+  // futebol: mantém aoVivo, hoje, amanha e esvazia outros
+  const fut = ctx.jogosFiltrarSecoes(s, "futebol");
+  assert.deepEqual(fut.aoVivo.map((j) => j.id), ["f-vivo"]);
+  assert.deepEqual(fut.hoje.map((j) => j.id), ["f-hoje"]);
+  assert.deepEqual(fut.amanha.map((j) => j.id), ["f-amanha"]);
+  assert.deepEqual(fut.outros, []);
+
+  // nfl: zera futebol e deixa só o grupo nfl
+  const nfl = ctx.jogosFiltrarSecoes(s, "nfl");
+  assert.deepEqual(nfl.aoVivo, []);
+  assert.deepEqual(nfl.hoje, []);
+  assert.deepEqual(nfl.amanha, []);
+  assert.equal(nfl.outros.length, 1);
+  assert.equal(nfl.outros[0].esporte, "nfl");
+  assert.deepEqual(nfl.outros[0].itens.map((i) => i.jogo.id), ["nfl1"]);
+});

@@ -58,3 +58,20 @@ test("o card mostra times, horário (ou AO VIVO) e o canal; nada do arquivo entr
   assert.match(html, /Canal não confirmado/);
   assert.match(html, /function jogoTimeHtml\(t\)[\s\S]*?sanitizeImageUrl\(t\.escudo\)[\s\S]*?escapeHtmlText\(t\.nome\)/);
 });
+
+test("seletor de esporte: HTML, estilos, ligações e funções puras registradas", () => {
+  // HTML tem id="jogos-filtros" antes de id="jogos-content"
+  assert.match(html, /id="jogos-filtros"[\s\S]*?id="jogos-content"/);
+  // renderJogos usa jogosFiltrarSecoes
+  assert.match(html, /jogosFiltrarSecoes\s*\(/);
+  // há listener com data-jogos-esporte
+  assert.match(html, /\[data-jogos-esporte\]/);
+  // chave sint_jogos_esporte aparece
+  assert.match(html, /sint_jogos_esporte/);
+});
+
+test("a barra de esportes centraliza o botão ativo quando o esporte muda e mantém a rolagem no mesmo esporte", () => {
+  assert.match(html, /filtrosEl\.dataset\.ativo !== atual/);
+  assert.match(html, /btnAtivo\.offsetLeft/);
+  assert.match(html, /\.jogos-filtros \{\s*position: relative;/);
+});
