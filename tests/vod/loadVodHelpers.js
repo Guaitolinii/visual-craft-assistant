@@ -44,7 +44,7 @@ const PURE_HELPER_NAMES = [
   "saudeChave", "saudeListaId", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
   "proximoEpisodioDe", "proximoEpSegundos", "proximoEpAtivo",
   "abrirUltimoAtivo", "ultimoCanalParaAbrir",
-  "LISTA_CANAIS_MAX_BYTES", "LISTA_CANAIS_MAX_QTD", "MSG_LISTA_CANAIS_GRANDE",
+  "epgProgressoAgora", "LISTA_CANAIS_MAX_BYTES", "LISTA_CANAIS_MAX_QTD", "MSG_LISTA_CANAIS_GRANDE",
   "listaExcedeTamanhoDeclarado", "listaTextoPareceM3u", "listaLimitarCanais", "lerTextoComLimite",
   "parecidosDe", "vodParecidoNormalizar",
   "epgProgramacaoDoDia",

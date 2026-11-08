@@ -1687,6 +1687,9 @@
       }
       html[data-web-app] .qa-meta { display: flex; align-items: center; gap: .4rem; min-width: 0; margin-top: .3rem; font-size: .72rem; font-weight: 500; color: var(--muted-fg); }
       html[data-web-app] .qa-cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      html[data-web-app] .qa-now { margin-top: .3rem; font-size: .72rem; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      html[data-web-app] .qa-bar { margin-top: .25rem; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
+      html[data-web-app] .qa-bar i { display: block; height: 100%; background: var(--primary); }
       html[data-web-app] .qa-card.is-current .qa-name,
       html[data-web-app] .qa-card.is-current .qa-cat { color: color-mix(in oklab, var(--primary) 72%, black); font-weight: 700; }
       /* botão de play no centro: aparece ao passar o mouse / focar; no canal em reprodução fica sempre aceso (volume) */
@@ -9433,6 +9436,21 @@ function carouselKeyTarget(key, index, count) {
   return -1;
 }
 
+// Quanto do programa no ar já passou (0 a 100, inteiro). Programa sem horário válido ou fora do ar agora = 0. Pura.
+function epgProgressoAgora(prog, nowMs) {
+  if (!prog || typeof prog.start !== "number" || typeof prog.stop !== "number" || !isFinite(prog.start) || !isFinite(prog.stop) || prog.stop <= prog.start) return 0;
+  if (typeof nowMs !== "number" || !isFinite(nowMs)) return 0;
+  return Math.max(0, Math.min(100, Math.round(((nowMs - prog.start) / (prog.stop - prog.start)) * 100)));
+}
+
+// Programa no ar + barra de progresso no cartão do canal (vazio quando o canal não tem guia). Título escapado.
+function quickAccessAgoraHtml(ch) {
+  const prog = getNowPlayingProgramme(ch);
+  if (!prog || !prog.title) return "";
+  const pct = epgProgressoAgora(prog, Date.now());
+  return `<p class="qa-now">${escapeHtmlText(prog.title)}</p><div class="qa-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>`;
+}
+
 // Cartão de canal da fileira "Acesso rápido" do app web (computador). Mesma silhueta do .vod-card dos filmes
 // (logo no formato 2:3, nome embaixo), mas <article> com botões irmãos: um <button> dentro de outro <button> é inválido.
 // Botão principal = reproduz; coração = favoritar; TV = "Assistir na TV" (só com conta ativa, ver .tv-only).
@@ -9450,6 +9468,7 @@ function quickAccessCardHtml(ch, isCur, isFavCh) {
         </div>
         <p class="qa-name">${nome}</p>
         <p class="qa-meta">${isChannelHls(ch) ? `<span class="tag-hls">HLS</span>` : ""}<span class="qa-cat">${isCur ? "● Em reprodução" : escapeHtmlText(ch.category || "")}</span></p>
+        ${quickAccessAgoraHtml(ch)}
       </button>
       <button type="button" class="tv-btn tv-only" data-tv-channel-id="${ch.id}" aria-label="Assistir ${nome} na TV"><i data-lucide="tv" style="width:16px;height:16px"></i></button>
       <button type="button" class="fav-btn ${isFavCh ? "fav-active" : ""}" data-fav-id="${ch.id}" aria-label="${isFavCh ? "Remover" : "Adicionar"} favorito de ${nome}">
