@@ -1141,6 +1141,57 @@
     [data-lp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
     [data-lp] img { -webkit-user-drag: none; pointer-events: none; }
 
+    /* Botão e folha de programação do dia (EPG) */
+    #player-epg-day-btn {
+      margin-top: .4rem;
+      padding: .35rem .75rem;
+      font-size: .8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      width: fit-content;
+    }
+    #player-epg-day-btn[hidden] { display: none !important; }
+    .epg-day-list {
+      display: flex; flex-direction: column; gap: .5rem;
+      max-height: 60vh; overflow-y: auto; padding: .25rem 0;
+    }
+    .epg-day-item {
+      display: flex; flex-direction: column; gap: .3rem;
+      padding: .65rem .75rem; border-radius: .6rem;
+      background: var(--secondary); font-size: .85rem;
+    }
+    .epg-day-item.passou { opacity: .55; }
+    .epg-day-item.agora {
+      border: 1px solid var(--primary);
+      background: color-mix(in oklab, var(--primary) 8%, var(--secondary));
+    }
+    .epg-day-item-header {
+      display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    }
+    .epg-day-time {
+      font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted-fg); font-size: .8rem;
+    }
+    .epg-day-badge-agora {
+      font-size: .65rem; font-weight: 700; color: var(--primary-fg);
+      background: var(--primary); border-radius: .25rem; padding: .1rem .35rem;
+      letter-spacing: .04em;
+    }
+    .epg-day-title { font-weight: 500; color: var(--foreground); }
+    .epg-day-progress-track {
+      width: 100%; height: 4px; border-radius: 2px;
+      background: var(--border); overflow: hidden; margin: .15rem 0;
+    }
+    .epg-day-progress-bar {
+      height: 100%; background: var(--primary); border-radius: 2px;
+    }
+    .epg-day-desc {
+      font-size: .78rem; color: var(--muted-fg); line-height: 1.35;
+    }
+    .epg-day-vazio {
+      color: var(--muted-fg); font-size: .875rem; padding: 1.25rem .5rem; text-align: center;
+    }
+
     /* ════════════ SETTINGS VIEW ════════════ */
     .settings-view { padding-bottom: 4rem; }
     .settings-content { margin: 0 auto; max-width: 48rem; padding: 2rem 2rem 0; }
@@ -1915,6 +1966,10 @@
           <h2 id="player-name">Nenhum canal selecionado</h2>
           <p id="player-status">Escolha um canal abaixo</p>
           <p class="epg-desc" id="player-epg-desc"></p>
+          <button type="button" id="player-epg-day-btn" class="btn-ghost" hidden>
+            <i data-lucide="calendar" style="width:14px;height:14px"></i>
+            <span>Programação do dia</span>
+          </button>
         </div>
         <button class="mini-play-btn" id="mini-play-btn" aria-label="Reproduzir/Pausar">
           <i data-lucide="play" style="width:20px;height:20px" id="mini-play-icon"></i>
@@ -2403,6 +2458,15 @@
     <p class="jogos-aviso" id="jogos-sheet-sub" style="padding:0 0 .6rem"></p>
     <div class="action-sheet-actions" id="jogos-sheet-actions"></div>
     <button class="action-sheet-cancel" id="jogos-sheet-cancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- Folha "Programação do dia" do canal selecionado -->
+<div id="epg-day-sheet" class="action-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="action-sheet-card">
+    <p class="action-sheet-title" id="epg-day-sheet-title">Programação</p>
+    <div class="action-sheet-actions" id="epg-day-sheet-actions"></div>
+    <button type="button" class="action-sheet-cancel" id="epg-day-sheet-cancel">Fechar</button>
   </div>
 </div>
 
@@ -5566,6 +5630,7 @@ function setState(patch, silent) {
 
 function selectChannel(ch, autoPlay = true) {
   if (!ch) return;
+  fecharEpgDiaSheet();
   limparProximoEpisodio();
   // Escolhe o degrau inicial de buffer pela qualidade de conexão reportada
   // pelo navegador (Network Information API) em vez de sempre começar no
@@ -6928,6 +6993,104 @@ function hasEpgSchedule(ch) {
   if (!ch || !ch.name) return false;
   const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
   return !!(programmes && programmes.length);
+}
+
+function epgProgramacaoDoDia(programmes, nowMs, opts) {
+  if (!Array.isArray(programmes) || !programmes.length) {
+    return { temGuia: false, itens: [] };
+  }
+
+  var validos = [];
+  var vistos = {};
+  for (var i = 0; i < programmes.length; i++) {
+    var p = programmes[i];
+    if (!p || typeof p !== "object") continue;
+    var start = p.start;
+    var stop = p.stop;
+    if (typeof start !== "number" || !isFinite(start)) continue;
+    if (typeof stop !== "number" || !isFinite(stop)) continue;
+    if (stop <= start) continue;
+
+    var titulo = typeof p.title === "string" && p.title.trim().length ? p.title.trim() : "Programa";
+    var chave = start + "|" + titulo;
+    if (vistos[chave]) continue;
+    vistos[chave] = true;
+
+    var desc = typeof p.desc === "string" ? p.desc : "";
+    validos.push({
+      titulo: titulo,
+      inicio: start,
+      fim: stop,
+      desc: desc,
+    });
+  }
+
+  var temGuia = validos.length > 0;
+  if (typeof nowMs !== "number" || !isFinite(nowMs)) {
+    return { temGuia: temGuia, itens: [] };
+  }
+
+  var passadoMs = opts && typeof opts.passadoMs === "number" && !isNaN(opts.passadoMs) && opts.passadoMs >= 0
+    ? opts.passadoMs
+    : 30 * 60 * 1000;
+  var futuroMs = opts && typeof opts.futuroMs === "number" && !isNaN(opts.futuroMs) && opts.futuroMs >= 0
+    ? opts.futuroMs
+    : 24 * 60 * 60 * 1000;
+  var max = opts && typeof opts.max === "number" && !isNaN(opts.max) && opts.max > 0
+    ? Math.floor(opts.max)
+    : 30;
+
+  var filtrados = [];
+  for (var j = 0; j < validos.length; j++) {
+    var item = validos[j];
+    if (item.fim > (nowMs - passadoMs) && item.inicio < (nowMs + futuroMs)) {
+      var estado;
+      var progresso;
+      if (item.inicio <= nowMs && nowMs < item.fim) {
+        estado = "agora";
+        var ratio = (nowMs - item.inicio) / (item.fim - item.inicio);
+        progresso = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+      } else if (item.fim <= nowMs) {
+        estado = "passou";
+        progresso = 100;
+      } else {
+        estado = "depois";
+        progresso = 0;
+      }
+      filtrados.push({
+        titulo: item.titulo,
+        inicio: item.inicio,
+        fim: item.fim,
+        estado: estado,
+        progresso: progresso,
+        desc: item.desc,
+      });
+    }
+  }
+
+  filtrados.sort(function(a, b) {
+    return a.inicio - b.inicio;
+  });
+
+  if (filtrados.length > max) {
+    var agoraItem = null;
+    for (var k = 0; k < filtrados.length; k++) {
+      if (filtrados[k].estado === "agora") {
+        agoraItem = filtrados[k];
+        break;
+      }
+    }
+    var cortados = filtrados.slice(0, max);
+    if (agoraItem && cortados.indexOf(agoraItem) === -1) {
+      cortados[cortados.length - 1] = agoraItem;
+      cortados.sort(function(a, b) {
+        return a.inicio - b.inicio;
+      });
+    }
+    filtrados = cortados;
+  }
+
+  return { temGuia: temGuia, itens: filtrados };
 }
 
 function showEpgPopoverFor(anchorEl, ch) {
@@ -9213,8 +9376,10 @@ function renderPlayerInfo() {
   // Nada escolhido ainda: só o fundo preto e dourado (ponto 5 da v7).
   document.getElementById("player-screen").classList.toggle("is-idle", !ch);
   const descEl = document.getElementById("player-epg-desc");
+  const epgDayBtn = document.getElementById("player-epg-day-btn");
   if (!ch) {
     if (descEl) descEl.textContent = "";
+    if (epgDayBtn) epgDayBtn.hidden = true;
     return;
   }
 
@@ -9227,6 +9392,10 @@ function renderPlayerInfo() {
   document.getElementById("player-status").textContent   = nowPlaying ? `${ch.category} • Agora: ${nowPlaying}` : ch.category;
   if (descEl) descEl.textContent = nowDesc;
   document.getElementById("player-badge").textContent    = ch.isVod ? "▶ SOB DEMANDA" : "● AO VIVO";
+  if (epgDayBtn) {
+    const showEpgBtn = !!(ch && !ch.isVod && hasEpgSchedule(ch));
+    epgDayBtn.hidden = !showEpgBtn;
+  }
   updateVodSeekVisibility();
   // Logo no art
   const artLogo = document.getElementById("player-art-logo");
@@ -12542,6 +12711,68 @@ function fecharJogosSheet() {
   sheet.setAttribute("aria-hidden", "true");
 }
 
+function abrirEpgDiaSheet() {
+  const ch = _state.selected;
+  if (!ch) return;
+  const titleEl = document.getElementById("epg-day-sheet-title");
+  const actionsEl = document.getElementById("epg-day-sheet-actions");
+  const cancelBtn = document.getElementById("epg-day-sheet-cancel");
+  const sheet = document.getElementById("epg-day-sheet");
+  if (!sheet || !actionsEl) return;
+
+  if (titleEl) {
+    titleEl.textContent = `Programação — ${ch.name || ""}`;
+  }
+
+  const programmes = resolveEpgProgrammes(epgIndexByName, normalizeChannelName(ch.name));
+  const res = epgProgramacaoDoDia(programmes, Date.now());
+
+  if (!res.itens.length) {
+    actionsEl.innerHTML = `<p class="epg-day-vazio">Sem programação disponível agora.</p>`;
+  } else {
+    actionsEl.innerHTML = `
+      <div class="epg-day-list">
+        ${res.itens.map(item => {
+          const timeStr = escapeHtmlText(formatProgrammeTimeRange(item.inicio, item.fim));
+          const titleStr = escapeHtmlText(item.titulo);
+          const descStr = item.desc ? escapeHtmlText(item.desc) : "";
+          const isAgora = item.estado === "agora";
+          const isPassou = item.estado === "passou";
+          const itemCls = isAgora ? "epg-day-item agora" : (isPassou ? "epg-day-item passou" : "epg-day-item");
+          return `
+            <div class="${itemCls}">
+              <div class="epg-day-item-header">
+                <span class="epg-day-time">${timeStr}</span>
+                ${isAgora ? '<span class="epg-day-badge-agora">AGORA</span>' : ""}
+              </div>
+              <div class="epg-day-title">${titleStr}</div>
+              ${isAgora ? `
+                <div class="epg-day-progress-track">
+                  <div class="epg-day-progress-bar" style="width:${item.progresso}%"></div>
+                </div>
+                ${descStr ? `<div class="epg-day-desc">${descStr}</div>` : ""}
+              ` : ""}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  sheet.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+  if (cancelBtn) {
+    try { cancelBtn.focus(); } catch (e) {}
+  }
+}
+
+function fecharEpgDiaSheet() {
+  const sheet = document.getElementById("epg-day-sheet");
+  if (!sheet) return;
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+}
+
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds, episodes }) {
@@ -14093,6 +14324,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape") {
       hideEpgPopover();
       closeCardActions();
+      fecharJogosSheet();
+      fecharEpgDiaSheet();
       if (_embedOpen) closeEmbedScreen();
       if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
     }
@@ -14375,6 +14608,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("jogos-sheet-cancel").addEventListener("click", fecharJogosSheet);
   document.getElementById("jogos-sheet").addEventListener("click", e => {
     if (e.target.id === "jogos-sheet") fecharJogosSheet();
+  });
+  document.getElementById("player-epg-day-btn").addEventListener("click", () => abrirEpgDiaSheet());
+  document.getElementById("epg-day-sheet-cancel").addEventListener("click", fecharEpgDiaSheet);
+  document.getElementById("epg-day-sheet").addEventListener("click", e => {
+    if (e.target.id === "epg-day-sheet") fecharEpgDiaSheet();
   });
 
   document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
