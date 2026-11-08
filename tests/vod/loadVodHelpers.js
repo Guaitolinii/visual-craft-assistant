@@ -48,6 +48,7 @@ const PURE_HELPER_NAMES = [
   "listaExcedeTamanhoDeclarado", "listaTextoPareceM3u", "listaLimitarCanais", "lerTextoComLimite",
   "parecidosDe", "vodParecidoNormalizar",
   "epgProgramacaoDoDia",
+  "faixasLer", "faixasTemOpcoes", "faixasEscolherAudio", "faixasEscolherLegenda", "faixasNomeIdioma",
 ];
 
 function toHostRealm(value) {

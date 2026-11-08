@@ -2042,6 +2042,7 @@
       </div>
       <button class="ctrl-btn" id="tv-cast-btn" type="button" aria-label="Assistir na TV" title="Assistir na TV" style="display:none"><i data-lucide="tv" style="width:20px;height:20px"></i></button>
       <button class="ctrl-btn" id="pip-btn" aria-label="Janela flutuante" title="Janela flutuante" style="display:none"><i data-lucide="picture-in-picture-2" style="width:20px;height:20px"></i></button>
+      <button class="ctrl-btn" id="faixas-btn" type="button" aria-label="Áudio e legenda" title="Áudio e legenda" style="display:none"><i data-lucide="languages" style="width:20px;height:20px"></i></button>
       <select class="ctrl-select" aria-label="Enquadramento" id="fit-select">
         <option value="contain">Original</option>
         <option value="cover">Preencher</option>
@@ -2470,6 +2471,15 @@
     <p class="action-sheet-title" id="epg-day-sheet-title">Programação</p>
     <div class="action-sheet-actions" id="epg-day-sheet-actions"></div>
     <button type="button" class="action-sheet-cancel" id="epg-day-sheet-cancel">Fechar</button>
+  </div>
+</div>
+
+<!-- Folha "Áudio e legenda" do VOD -->
+<div id="faixas-sheet" class="action-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="action-sheet-card">
+    <p class="action-sheet-title" id="faixas-sheet-title">Áudio e legenda</p>
+    <div class="action-sheet-actions" id="faixas-sheet-actions"></div>
+    <button type="button" class="action-sheet-cancel" id="faixas-sheet-cancel">Fechar</button>
   </div>
 </div>
 
@@ -5634,6 +5644,9 @@ function setState(patch, silent) {
 function selectChannel(ch, autoPlay = true) {
   if (!ch) return;
   fecharEpgDiaSheet();
+  fecharFaixasSheet();
+  const faixasBtn = document.getElementById("faixas-btn");
+  if (faixasBtn) faixasBtn.style.display = "none";
   limparProximoEpisodio();
   // Escolhe o degrau inicial de buffer pela qualidade de conexão reportada
   // pelo navegador (Network Information API) em vez de sempre começar no
@@ -9369,6 +9382,22 @@ function updateVodSeekVisibility() {
   if (fwdBtn) fwdBtn.style.display = isVod ? "flex" : "none";
   // Na tela cheia, a linha do tempo e os ±10s também são só de VOD.
   document.getElementById("player-screen").classList.toggle("is-vod", isVod);
+  atualizarFaixasBtnVisibilidade();
+}
+
+// Atualiza visibilidade do botão "Áudio e legenda".
+// Aparece só se for VOD e houver 2+ faixas de áudio ou 1+ legenda.
+function atualizarFaixasBtnVisibilidade() {
+  const btn = document.getElementById("faixas-btn");
+  if (!btn) return;
+  const isVod = !!(_state.selected && _state.selected.isVod);
+  if (!isVod) {
+    btn.style.display = "none";
+    return;
+  }
+  const video = document.getElementById("player-video");
+  const temOpcoes = video ? faixasTemOpcoes(faixasLer(video)) : false;
+  btn.style.display = temOpcoes ? "flex" : "none";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -9441,6 +9470,161 @@ function epgProgressoAgora(prog, nowMs) {
   if (!prog || typeof prog.start !== "number" || typeof prog.stop !== "number" || !isFinite(prog.start) || !isFinite(prog.stop) || prog.stop <= prog.start) return 0;
   if (typeof nowMs !== "number" || !isFinite(nowMs)) return 0;
   return Math.max(0, Math.min(100, Math.round(((nowMs - prog.start) / (prog.stop - prog.start)) * 100)));
+}
+
+// Mapeia códigos de idioma (ex.: pt, por, pob, pt-BR) para nome legível em português. Pura.
+function faixasNomeIdioma(codigo) {
+  if (typeof codigo !== "string") return "";
+  const raw = codigo.trim().toLowerCase();
+  if (!raw) return "";
+  const p = raw.split(/[-_]/)[0];
+  if (p === "pt" || p === "por" || p === "pob") return "Português";
+  if (p === "en" || p === "eng") return "Inglês";
+  if (p === "es" || p === "spa") return "Espanhol";
+  if (p === "fr" || p === "fra" || p === "fre") return "Francês";
+  if (p === "de" || p === "deu" || p === "ger") return "Alemão";
+  if (p === "it" || p === "ita") return "Italiano";
+  if (p === "ja" || p === "jpn") return "Japonês";
+  if (p === "ko" || p === "kor") return "Coreano";
+  if (p === "zh" || p === "zho" || p === "chi") return "Chinês";
+  return "";
+}
+
+// Limpa quebras de linha e limita o rótulo da faixa em 40 caracteres. Pura.
+function faixasLimparRotulo(texto) {
+  if (typeof texto !== "string") return "";
+  const semQuebras = texto.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  return semQuebras.slice(0, 40);
+}
+
+// Lê faixas de áudio e legendas disponíveis no elemento de vídeo. Pura (não lança).
+function faixasLer(video) {
+  const res = { audio: [], legendas: [] };
+  if (!video) return res;
+
+  // Áudios
+  try {
+    const aTracks = video.audioTracks;
+    if (aTracks && typeof aTracks.length === "number") {
+      let numSeq = 1;
+      const contagemRotulos = Object.create(null);
+      for (let i = 0; i < aTracks.length; i++) {
+        const track = aTracks[i];
+        if (!track) continue;
+        let rotuloBase = "";
+        if (typeof track.label === "string" && track.label.trim()) {
+          rotuloBase = faixasLimparRotulo(track.label);
+        }
+        if (!rotuloBase && typeof track.language === "string") {
+          rotuloBase = faixasNomeIdioma(track.language);
+        }
+        if (!rotuloBase) {
+          rotuloBase = "Faixa " + numSeq;
+        }
+        numSeq++;
+        const cont = (contagemRotulos[rotuloBase] || 0) + 1;
+        contagemRotulos[rotuloBase] = cont;
+        const rotuloFinal = cont > 1 ? `${rotuloBase} (${cont})` : rotuloBase;
+        res.audio.push({
+          tipo: "audio",
+          indice: i,
+          rotulo: rotuloFinal,
+          ativa: !!track.enabled,
+        });
+      }
+    }
+  } catch (e) {}
+
+  // Legendas
+  try {
+    const tTracks = video.textTracks;
+    if (tTracks && typeof tTracks.length === "number") {
+      let numSeq = 1;
+      const contagemRotulos = Object.create(null);
+      for (let i = 0; i < tTracks.length; i++) {
+        const track = tTracks[i];
+        if (!track) continue;
+        const kind = track.kind;
+        if (kind !== "subtitles" && kind !== "captions") continue;
+        let rotuloBase = "";
+        if (typeof track.label === "string" && track.label.trim()) {
+          rotuloBase = faixasLimparRotulo(track.label);
+        }
+        if (!rotuloBase && typeof track.language === "string") {
+          rotuloBase = faixasNomeIdioma(track.language);
+        }
+        if (!rotuloBase) {
+          rotuloBase = "Faixa " + numSeq;
+        }
+        numSeq++;
+        const cont = (contagemRotulos[rotuloBase] || 0) + 1;
+        contagemRotulos[rotuloBase] = cont;
+        const rotuloFinal = cont > 1 ? `${rotuloBase} (${cont})` : rotuloBase;
+        res.legendas.push({
+          tipo: "legenda",
+          indice: i,
+          rotulo: rotuloFinal,
+          ativa: track.mode === "showing",
+        });
+      }
+    }
+  } catch (e) {}
+
+  return res;
+}
+
+// Decide se há opções reais de seleção (>= 2 áudios ou >= 1 legenda). Pura.
+function faixasTemOpcoes(f) {
+  if (!f || !Array.isArray(f.audio) || !Array.isArray(f.legendas)) return false;
+  return f.audio.length >= 2 || f.legendas.length >= 1;
+}
+
+// Ativa a faixa de áudio no índice e desativa as demais. Retorna true se sucesso, false se inválido. Pura.
+function faixasEscolherAudio(video, indice) {
+  if (!video || !video.audioTracks || typeof indice !== "number" || !isFinite(indice) || indice < 0) return false;
+  const aTracks = video.audioTracks;
+  if (typeof aTracks.length !== "number" || indice >= aTracks.length) return false;
+  if (!aTracks[indice]) return false;
+  for (let i = 0; i < aTracks.length; i++) {
+    const track = aTracks[i];
+    if (!track) continue;
+    try {
+      track.enabled = (i === indice);
+    } catch (e) {}
+  }
+  return true;
+}
+
+// Ativa a faixa de legenda no índice (ou desativa todas se -1). Retorna true se sucesso, false se inválido. Pura.
+function faixasEscolherLegenda(video, indice) {
+  if (!video || !video.textTracks || typeof indice !== "number" || !isFinite(indice)) return false;
+  const tTracks = video.textTracks;
+  if (typeof tTracks.length !== "number") return false;
+  if (indice === -1) {
+    for (let i = 0; i < tTracks.length; i++) {
+      const track = tTracks[i];
+      if (!track) continue;
+      const kind = track.kind;
+      if (kind !== "subtitles" && kind !== "captions") continue;
+      try {
+        track.mode = "disabled";
+      } catch (e) {}
+    }
+    return true;
+  }
+  if (indice < 0 || indice >= tTracks.length) return false;
+  const target = tTracks[indice];
+  if (!target || (target.kind !== "subtitles" && target.kind !== "captions")) return false;
+  for (let i = 0; i < tTracks.length; i++) {
+    const track = tTracks[i];
+    if (!track) continue;
+    const kind = track.kind;
+    if (kind !== "subtitles" && kind !== "captions") continue;
+    try {
+      track.mode = (i === indice ? "showing" : "disabled");
+    } catch (e) {}
+  }
+  return true;
 }
 
 // Programa no ar + barra de progresso no cartão do canal (vazio quando o canal não tem guia). Título escapado.
@@ -12793,6 +12977,50 @@ function fecharEpgDiaSheet() {
   sheet.setAttribute("aria-hidden", "true");
 }
 
+function abrirFaixasSheet() {
+  const video = document.getElementById("player-video");
+  const sheet = document.getElementById("faixas-sheet");
+  const actionsEl = document.getElementById("faixas-sheet-actions");
+  const cancelBtn = document.getElementById("faixas-sheet-cancel");
+  if (!sheet || !actionsEl || !video) return;
+
+  const faixas = faixasLer(video);
+  let htmlStr = "";
+
+  if (faixas.audio.length > 0) {
+    htmlStr += '<div style="font-weight:600;font-size:.85rem;color:var(--muted-fg);padding:.4rem .2rem .2rem">Áudio</div>';
+    faixas.audio.forEach(a => {
+      const prefix = a.ativa ? "✓ " : "";
+      htmlStr += `<button type="button" class="action-sheet-btn" data-faixa-tipo="audio" data-faixa-indice="${a.indice}"><span>${escapeHtmlText(prefix + a.rotulo)}</span></button>`;
+    });
+  }
+
+  if (faixas.legendas.length > 0) {
+    const algumaAtiva = faixas.legendas.some(l => l.ativa);
+    htmlStr += '<div style="font-weight:600;font-size:.85rem;color:var(--muted-fg);padding:.4rem .2rem .2rem">Legenda</div>';
+    const offPrefix = !algumaAtiva ? "✓ " : "";
+    htmlStr += `<button type="button" class="action-sheet-btn" data-faixa-tipo="legenda" data-faixa-indice="-1"><span>${escapeHtmlText(offPrefix + "Desligada")}</span></button>`;
+    faixas.legendas.forEach(l => {
+      const prefix = l.ativa ? "✓ " : "";
+      htmlStr += `<button type="button" class="action-sheet-btn" data-faixa-tipo="legenda" data-faixa-indice="${l.indice}"><span>${escapeHtmlText(prefix + l.rotulo)}</span></button>`;
+    });
+  }
+
+  actionsEl.innerHTML = htmlStr;
+  sheet.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+  if (cancelBtn) {
+    try { cancelBtn.focus(); } catch (e) {}
+  }
+}
+
+function fecharFaixasSheet() {
+  const sheet = document.getElementById("faixas-sheet");
+  if (!sheet) return;
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+}
+
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
 function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds, episodes }) {
@@ -12826,6 +13054,9 @@ function playVodSelection(url, meta) {
     cancelarProximoEpisodio();
   }
   closeVodModal();
+  fecharFaixasSheet();
+  const faixasBtn = document.getElementById("faixas-btn");
+  if (faixasBtn) faixasBtn.style.display = "none";
   // "Continue Assistindo": retoma do ponto salvo assim que o vídeo começar.
   pendingResumeAt = meta.resumeAt > 0 ? meta.resumeAt : 0;
   const continueId = meta.continueId || `resume-${meta.contType}-${meta.id}`;
@@ -14346,6 +14577,7 @@ document.addEventListener("DOMContentLoaded", () => {
       closeCardActions();
       fecharJogosSheet();
       fecharEpgDiaSheet();
+      fecharFaixasSheet();
       if (_embedOpen) closeEmbedScreen();
       if (!document.getElementById("vod-modal").classList.contains("hidden")) closeVodModal();
     }
@@ -14633,6 +14865,41 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("epg-day-sheet-cancel").addEventListener("click", fecharEpgDiaSheet);
   document.getElementById("epg-day-sheet").addEventListener("click", e => {
     if (e.target.id === "epg-day-sheet") fecharEpgDiaSheet();
+  });
+  document.getElementById("faixas-btn").addEventListener("click", () => abrirFaixasSheet());
+  document.getElementById("faixas-sheet-cancel").addEventListener("click", fecharFaixasSheet);
+  document.getElementById("faixas-sheet").addEventListener("click", e => {
+    if (e.target.id === "faixas-sheet") fecharFaixasSheet();
+  });
+  document.getElementById("faixas-sheet-actions").addEventListener("click", e => {
+    const btn = e.target.closest("[data-faixa-tipo]");
+    if (!btn) return;
+    const tipo = btn.dataset.faixaTipo;
+    const indice = parseInt(btn.dataset.faixaIndice, 10);
+    const video = document.getElementById("player-video");
+    if (!video) return;
+    if (tipo === "audio") {
+      const ok = faixasEscolherAudio(video, indice);
+      if (ok) {
+        const f = faixasLer(video);
+        const sel = f.audio.find(a => a.indice === indice);
+        const nome = sel ? sel.rotulo : "Áudio";
+        showToast(`Áudio: ${nome}`);
+      }
+    } else if (tipo === "legenda") {
+      const ok = faixasEscolherLegenda(video, indice);
+      if (ok) {
+        if (indice === -1) {
+          showToast("Legenda: Desligada");
+        } else {
+          const f = faixasLer(video);
+          const sel = f.legendas.find(l => l.indice === indice);
+          const nome = sel ? sel.rotulo : "Legenda";
+          showToast(`Legenda: ${nome}`);
+        }
+      }
+    }
+    fecharFaixasSheet();
   });
 
   document.getElementById("vod-modal-close").addEventListener("click", closeVodModal);
@@ -14986,6 +15253,23 @@ document.addEventListener("DOMContentLoaded", () => {
   // acima, que já atualizaram userPausedVod)
   document.getElementById("player-video").addEventListener("play", () => syncAutoPip());
   document.getElementById("player-video").addEventListener("pause", () => syncAutoPip());
+
+  // Faixas de áudio e legenda: atualiza visibilidade do botão de faixas
+  const pVideo = document.getElementById("player-video");
+  pVideo.addEventListener("loadedmetadata", () => {
+    atualizarFaixasBtnVisibilidade();
+    // Se audioTracks ou textTracks existirem, liga ouvintes addtrack/removetrack uma só vez
+    if (pVideo.audioTracks && !pVideo.audioTracks._faixasObserved) {
+      pVideo.audioTracks._faixasObserved = true;
+      pVideo.audioTracks.addEventListener("addtrack", () => atualizarFaixasBtnVisibilidade());
+      pVideo.audioTracks.addEventListener("removetrack", () => atualizarFaixasBtnVisibilidade());
+    }
+    if (pVideo.textTracks && !pVideo.textTracks._faixasObserved) {
+      pVideo.textTracks._faixasObserved = true;
+      pVideo.textTracks.addEventListener("addtrack", () => atualizarFaixasBtnVisibilidade());
+      pVideo.textTracks.addEventListener("removetrack", () => atualizarFaixasBtnVisibilidade());
+    }
+  });
 
   // ── SETTINGS FORM ──
   document.getElementById("tab-url").addEventListener("click",  () => { setSettingsMode("url");     updateSaveBtn(); });
