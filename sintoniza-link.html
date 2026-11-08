@@ -10589,8 +10589,9 @@ function vodParecidoNormalizar(item, categories) {
   if (!item) return { id: "", titulo: "", grupo: "", ano: 0, nota: 0, capa: "" };
   var id = String(item.stream_id != null ? item.stream_id : (item.series_id != null ? item.series_id : ""));
   var titulo = item.name || item.title || "";
-  var grupo = "";
-  if (item.category_id != null && Array.isArray(categories)) {
+  // O gênero do provedor ("Aventura, Ação, Thriller") separa melhor que a categoria (nas séries as categorias são plataformas)
+  var grupo = typeof item.genre === "string" ? item.genre.trim() : "";
+  if (!grupo && item.category_id != null && Array.isArray(categories)) {
     var catIdStr = String(item.category_id);
     var cat = categories.find(function (c) { return c && String(c.category_id) === catIdStr; });
     if (cat && cat.category_name) {

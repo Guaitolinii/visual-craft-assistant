@@ -217,3 +217,11 @@ test("vodParecidoNormalizar: resolução por categories, genre, category_name e 
   assert.equal(norm5.ano, 0);
   assert.equal(norm5.nota, 0);
 });
+
+test("vodParecidoNormalizar: o genero multi-valor do provedor vale mais que a categoria (plataforma nas series)", () => {
+  const categorias = [{ category_id: "5", category_name: "SÉRIES | NETFLIX" }];
+  const item = { series_id: 9, name: "Dark", category_id: "5", genre: "Drama, Sci-Fi & Fantasy", cover: "x.jpg" };
+  assert.equal(ctx.vodParecidoNormalizar(item, categorias).grupo, "Drama, Sci-Fi & Fantasy");
+  const semGenero = { series_id: 10, name: "Outra", category_id: "5", cover: "y.jpg" };
+  assert.equal(ctx.vodParecidoNormalizar(semGenero, categorias).grupo, "NETFLIX");
+});
