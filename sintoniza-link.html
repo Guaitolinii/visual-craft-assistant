@@ -2330,6 +2330,10 @@
             <span class="pref-label">Tocar o próximo episódio automaticamente</span>
             <input type="checkbox" class="pref-checkbox" id="pref-next-ep" aria-label="Tocar o próximo episódio automaticamente" />
           </div>
+          <div class="pref-row">
+            <span class="pref-label">Abrir no último canal ao iniciar</span>
+            <input type="checkbox" class="pref-checkbox" id="pref-last-channel" aria-label="Abrir no último canal ao iniciar" />
+          </div>
         </div>
       </div>
     </div>
@@ -6646,6 +6650,7 @@ async function loadPlaylistFromUrl(url) {
       showToast(`✓ ${finalChannels.length} canais carregados`);
     }
     document.getElementById("playlist-plan").textContent = `${finalChannels.length} canais`;
+    tentarAbrirUltimoCanal(0);
   } catch (err) {
     setState({ loadingPlaylist: false });
     setStatus("error", "Erro ao carregar lista");
@@ -6679,6 +6684,7 @@ async function loadPlaylistFromFile(file) {
       showToast(`✓ ${finalChannels.length} canais do arquivo`);
     }
     document.getElementById("playlist-plan").textContent = `${finalChannels.length} canais`;
+    tentarAbrirUltimoCanal(0);
   } catch (err) {
     setState({ loadingPlaylist: false });
     setStatus("error", "Erro ao ler arquivo");
@@ -10917,6 +10923,56 @@ function proximoEpAtivo(storage) {
   }
 }
 
+function abrirUltimoAtivo(storage) {
+  if (!storage) return false;
+  try {
+    return storage.getItem("sintoniza_pref_abrir_ultimo") === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function ultimoCanalParaAbrir(recents, channels) {
+  if (!Array.isArray(recents) || !Array.isArray(channels)) return null;
+  for (let i = 0; i < recents.length; i++) {
+    const item = recents[i];
+    if (!item || typeof item !== "object") continue;
+    if (item.type !== "channel") continue;
+    if (item.id === undefined || item.id === null) continue;
+    const strId = String(item.id);
+    const achado = channels.find(c => c && String(c.id) === strId && Boolean(c.url));
+    if (achado) return achado;
+  }
+  return null;
+}
+
+let _ultimoAberto = false;
+let _ultimoAbertoTimer = null;
+function tentarAbrirUltimoCanal(tentativa = 0) {
+  if (_ultimoAberto) return;
+  if (!abrirUltimoAtivo(typeof localStorage !== "undefined" ? localStorage : null)) return;
+  if (_state.selected) return;
+
+  const root = typeof document !== "undefined" && document.documentElement && document.documentElement.classList;
+  if (root && (root.contains("ott-open") || root.contains("profile-open"))) {
+    if (tentativa < 20) {
+      if (_ultimoAbertoTimer) clearTimeout(_ultimoAbertoTimer);
+      _ultimoAbertoTimer = setTimeout(() => {
+        _ultimoAbertoTimer = null;
+        tentarAbrirUltimoCanal(tentativa + 1);
+      }, 1500);
+    }
+    return;
+  }
+
+  const canais = typeof getChannels === "function" ? getChannels() : (_state.channels || []);
+  const canal = ultimoCanalParaAbrir(_state.recents, canais);
+  _ultimoAberto = true;
+  if (canal && typeof selectChannel === "function") {
+    selectChannel(canal, true);
+  }
+}
+
 let _proxEp = { episodes: [], series: null, creds: null, timer: 0, fimMs: 0, proximo: null };
 
 function cancelarProximoEpisodio() {
@@ -12376,6 +12432,8 @@ function loadSettingsForm() {
   document.getElementById("pref-fit").value  = fit;
   const prefNextEp = document.getElementById("pref-next-ep");
   if (prefNextEp) prefNextEp.checked = proximoEpAtivo(localStorage);
+  const prefLastCh = document.getElementById("pref-last-channel");
+  if (prefLastCh) prefLastCh.checked = abrirUltimoAtivo(localStorage);
   document.getElementById("proxy-url").value = proxy;
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   document.getElementById("epg-url").value = epgUrl;
@@ -14624,6 +14682,12 @@ document.addEventListener("DOMContentLoaded", () => {
   if (prefNextEpEl) {
     prefNextEpEl.addEventListener("change", e => {
       lsSet("sintoniza_pref_proximo_ep", e.target.checked ? "1" : "0");
+    });
+  }
+  const prefLastChEl = document.getElementById("pref-last-channel");
+  if (prefLastChEl) {
+    prefLastChEl.addEventListener("change", e => {
+      lsSet("sintoniza_pref_abrir_ultimo", e.target.checked ? "1" : "0");
     });
   }
 
