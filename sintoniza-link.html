@@ -6459,6 +6459,85 @@ function embedFrameHtml(url, protect) {
   return `<iframe id="embed-frame" src="${escapeHtmlText(u)}" title="Player"${sandbox} allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write" allowfullscreen></iframe>`;
 }
 
+// Limites de tamanho e quantidade da lista de canais (proteção contra travamentos por estouro de memória)
+const LISTA_CANAIS_MAX_BYTES = 25 * 1024 * 1024;
+const LISTA_CANAIS_MAX_QTD = 20000;
+const MSG_LISTA_CANAIS_GRANDE =
+  "A lista de canais passa de 25 MB e foi recusada para não travar o aplicativo. Confira se o link é mesmo a lista de canais (links de filmes e séries são bem maiores).";
+
+function listaExcedeTamanhoDeclarado(contentLength, maxBytes) {
+  if (contentLength === null || contentLength === undefined) return false;
+  const s = String(contentLength).trim();
+  if (!s) return false;
+  const n = Number(s);
+  return Number.isFinite(n) && n > maxBytes;
+}
+
+function listaTextoPareceM3u(texto) {
+  if (typeof texto !== "string") return false;
+  const limpo = texto.replace(/^\uFEFF/, "").trimStart();
+  return limpo.startsWith("#EXTM3U") || limpo.includes("#EXTINF");
+}
+
+function listaLimitarCanais(canais, maxQtd) {
+  if (!Array.isArray(canais)) return { canais: [], cortados: 0 };
+  const teto = typeof maxQtd === "number" && Number.isFinite(maxQtd) ? Math.max(0, Math.floor(maxQtd)) : 0;
+  if (canais.length <= teto) {
+    return { canais: canais.slice(), cortados: 0 };
+  }
+  return {
+    canais: canais.slice(0, teto),
+    cortados: canais.length - teto,
+  };
+}
+
+function cancelarSemErro(alvo) {
+  try {
+    if (alvo && typeof alvo.cancel === "function") {
+      const p = alvo.cancel();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {});
+      }
+    }
+  } catch (e) {
+    /* nada a fazer */
+  }
+}
+
+async function lerTextoComLimite(res, maxBytes, mensagem) {
+  const declarado = res && res.headers && typeof res.headers.get === "function" ? res.headers.get("content-length") : null;
+  if (listaExcedeTamanhoDeclarado(declarado, maxBytes)) {
+    if (res && res.body) cancelarSemErro(res.body);
+    throw new Error(mensagem);
+  }
+  const body = res ? res.body : null;
+  const podeEmPartes =
+    body && typeof body.getReader === "function" && typeof TextDecoder !== "undefined";
+  if (!podeEmPartes) {
+    const t = await res.text();
+    if (t.length > maxBytes) throw new Error(mensagem);
+    return t;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  const partes = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      partes.push(decoder.decode());
+      return partes.join("");
+    }
+    const pedaco = value || new Uint8Array(0);
+    total += pedaco.byteLength;
+    if (total > maxBytes) {
+      cancelarSemErro(reader);
+      throw new Error(mensagem);
+    }
+    partes.push(decoder.decode(pedaco, { stream: true }));
+  }
+}
+
 function parseM3U(text) {
   const lines = text.split(/\r?\n/);
   const channels = [];
@@ -6541,26 +6620,32 @@ async function loadPlaylistFromUrl(url) {
   try {
     const res = isWebApp() ? await webFetchRouted(url, { cache: "no-cache" }) : await fetch(proxyIfInsecure(url), { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
+    const text = await lerTextoComLimite(res, LISTA_CANAIS_MAX_BYTES, MSG_LISTA_CANAIS_GRANDE);
+    if (!listaTextoPareceM3u(text)) throw new Error("Isso não parece uma lista .m3u");
     const channels = filterAdultChannels(parseM3U(text));
-
     if (channels.length === 0) throw new Error("Lista vazia ou formato inválido");
+    const limitResult = listaLimitarCanais(channels, LISTA_CANAIS_MAX_QTD);
+    const finalChannels = limitResult.canais;
 
     // Extrai categorias únicas
-    const cats = [...new Set(channels.map(c => c.category))].sort();
+    const cats = [...new Set(finalChannels.map(c => c.category))].sort();
 
-    setState({ channels, categories: cats, loadingPlaylist: false });
+    setState({ channels: finalChannels, categories: cats, loadingPlaylist: false });
     ensureEssentialFavorites();
     syncFavorites(); // a 1ª sincronização do perfil principal espera os canais (favoritos fixos entram na união)
     syncHistory(); // idem: os canais recentes esperam a lista
 
     // Nada de canal automático: mantém a escolha só se ela ainda existir
-    setState({ selected: keepSelectionIfPresent(_state.selected, channels) }, true);
+    setState({ selected: keepSelectionIfPresent(_state.selected, finalChannels) }, true);
 
-    setStatus("ok", `${channels.length} canais carregados`);
+    setStatus("ok", `${finalChannels.length} canais carregados`);
     renderCategoryNav();
-    showToast(`✓ ${channels.length} canais carregados`);
-    document.getElementById("playlist-plan").textContent = `${channels.length} canais`;
+    if (limitResult.cortados > 0) {
+      showToast(`Lista muito grande: usando os primeiros ${LISTA_CANAIS_MAX_QTD} canais`);
+    } else {
+      showToast(`✓ ${finalChannels.length} canais carregados`);
+    }
+    document.getElementById("playlist-plan").textContent = `${finalChannels.length} canais`;
   } catch (err) {
     setState({ loadingPlaylist: false });
     setStatus("error", "Erro ao carregar lista");
@@ -6575,15 +6660,25 @@ async function loadPlaylistFromFile(file) {
   renderCatalog();
 
   try {
+    if (file && typeof file.size === "number" && file.size > LISTA_CANAIS_MAX_BYTES) {
+      throw new Error(MSG_LISTA_CANAIS_GRANDE);
+    }
     const text = await file.text();
+    if (!listaTextoPareceM3u(text)) throw new Error("Isso não parece uma lista .m3u");
     const channels = filterAdultChannels(parseM3U(text));
     if (channels.length === 0) throw new Error("Arquivo vazio ou inválido");
-    const cats = [...new Set(channels.map(c => c.category))].sort();
-    setState({ channels, categories: cats, loadingPlaylist: false, selected: keepSelectionIfPresent(_state.selected, channels) }, true);
-    setStatus("ok", `${channels.length} canais carregados`);
+    const limitResult = listaLimitarCanais(channels, LISTA_CANAIS_MAX_QTD);
+    const finalChannels = limitResult.canais;
+    const cats = [...new Set(finalChannels.map(c => c.category))].sort();
+    setState({ channels: finalChannels, categories: cats, loadingPlaylist: false, selected: keepSelectionIfPresent(_state.selected, finalChannels) }, true);
+    setStatus("ok", `${finalChannels.length} canais carregados`);
     renderCategoryNav();
-    showToast(`✓ ${channels.length} canais do arquivo`);
-    document.getElementById("playlist-plan").textContent = `${channels.length} canais`;
+    if (limitResult.cortados > 0) {
+      showToast(`Lista muito grande: usando os primeiros ${LISTA_CANAIS_MAX_QTD} canais`);
+    } else {
+      showToast(`✓ ${finalChannels.length} canais do arquivo`);
+    }
+    document.getElementById("playlist-plan").textContent = `${finalChannels.length} canais`;
   } catch (err) {
     setState({ loadingPlaylist: false });
     setStatus("error", "Erro ao ler arquivo");

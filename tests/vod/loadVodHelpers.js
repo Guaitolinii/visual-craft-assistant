@@ -43,10 +43,22 @@ const PURE_HELPER_NAMES = [
   "liveRetryDelayMs", "shouldRetryLive",
   "saudeChave", "saudeListaId", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
   "proximoEpisodioDe", "proximoEpSegundos", "proximoEpAtivo",
+  "LISTA_CANAIS_MAX_BYTES", "LISTA_CANAIS_MAX_QTD", "MSG_LISTA_CANAIS_GRANDE",
+  "listaExcedeTamanhoDeclarado", "listaTextoPareceM3u", "listaLimitarCanais", "lerTextoComLimite",
 ];
 
 function toHostRealm(value) {
   if (value === undefined || value === null) return value;
+  if (typeof value === "object" && typeof value.then === "function") {
+    return value.then(toHostRealm, (err) => Promise.reject(toHostRealm(err)));
+  }
+  if (value instanceof Error || (typeof value === "object" && value.name && "message" in value && "stack" in value)) {
+    if (value instanceof Error) return value;
+    const err = new Error(value.message);
+    err.name = value.name;
+    if (value.stack) err.stack = value.stack;
+    return err;
+  }
   if (typeof value !== "object") return value;
   if (Object.prototype.toString.call(value) === "[object Map]") {
     return new Map(Array.from(value.entries(), ([k, v]) => [k, toHostRealm(v)]));
@@ -113,7 +125,11 @@ export function loadVodHelpers({ transformHtml } = {}) {
     clearTimeout: () => {},
     clearInterval: () => {},
     URL: URL,
-    URLSearchParams: URLSearchParams
+    URLSearchParams: URLSearchParams,
+    Response: typeof Response !== "undefined" ? Response : undefined,
+    ReadableStream: typeof ReadableStream !== "undefined" ? ReadableStream : undefined,
+    TextDecoder: typeof TextDecoder !== "undefined" ? TextDecoder : undefined,
+    TextEncoder: typeof TextEncoder !== "undefined" ? TextEncoder : undefined,
   };
 
   vm.createContext(context);
