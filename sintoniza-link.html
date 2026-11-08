@@ -330,6 +330,27 @@
       background: none; border: 1px solid oklch(1 0 0 / 25%); border-radius: .5rem;
       color: oklch(0.85 0.01 75); padding: .4rem .9rem; font-size: .78rem;
     }
+    /* Cartão de próximo episódio */
+    .proximo-ep-card {
+      position: absolute; inset: 0; z-index: 6;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: .75rem; background: oklch(0.08 0.01 65 / 92%);
+      color: oklch(0.78 0.02 75); text-align: center; padding: 1.5rem;
+    }
+    .proximo-ep-card.hidden { display: none !important; }
+    .proximo-ep-card h3 { font-size: 1.05rem; font-weight: 600; color: oklch(0.98 0 0); }
+    .proximo-ep-card .proximo-ep-nome { font-size: .88rem; max-width: 24rem; color: oklch(0.9 0.01 80); }
+    .proximo-ep-card .proximo-ep-tempo { font-size: .82rem; color: oklch(0.75 0.02 75); }
+    .proximo-ep-card .proximo-ep-botoes { display: flex; gap: .75rem; margin-top: .5rem; flex-wrap: wrap; justify-content: center; }
+    .proximo-ep-btn-assistir {
+      background: var(--primary); color: var(--primary-fg);
+      border: none; border-radius: .5rem; padding: .55rem 1.1rem;
+      font-size: .875rem; font-weight: 500; cursor: pointer;
+    }
+    .proximo-ep-btn-cancelar {
+      background: none; border: 1px solid oklch(1 0 0 / 25%); border-radius: .5rem;
+      color: oklch(0.85 0.01 75); padding: .55rem 1.1rem; font-size: .875rem; cursor: pointer;
+    }
     /* Controles */
     .player-controls {
       display: flex; height: 4.25rem; align-items: center; gap: .35rem;
@@ -1916,6 +1937,16 @@
         <button class="retry-btn" id="retry-btn">Tentar novamente</button>
         <button class="diag-btn" id="copy-diagnostic-btn" style="display:none">Copiar diagnóstico</button>
       </div>
+      <!-- Cartão de próximo episódio -->
+      <div class="proximo-ep-card hidden" id="proximo-ep-card">
+        <h3>Próximo episódio</h3>
+        <p class="proximo-ep-nome" id="proximo-ep-nome"></p>
+        <p class="proximo-ep-tempo" id="proximo-ep-tempo">Começa em 10 s</p>
+        <div class="proximo-ep-botoes">
+          <button type="button" class="proximo-ep-btn-assistir" id="proximo-ep-assistir-btn">Assistir agora</button>
+          <button type="button" class="proximo-ep-btn-cancelar" id="proximo-ep-cancelar-btn">Cancelar</button>
+        </div>
+      </div>
       <!-- Botão play central -->
       <button class="play-center" id="play-center-btn" aria-label="Reproduzir">
         <i data-lucide="play" style="width:28px;height:28px"></i>
@@ -2294,6 +2325,10 @@
               <option value="cover">Preencher</option>
               <option value="fill">Esticar</option>
             </select>
+          </div>
+          <div class="pref-row">
+            <span class="pref-label">Tocar o próximo episódio automaticamente</span>
+            <input type="checkbox" class="pref-checkbox" id="pref-next-ep" aria-label="Tocar o próximo episódio automaticamente" />
           </div>
         </div>
       </div>
@@ -5520,6 +5555,7 @@ function setState(patch, silent) {
 
 function selectChannel(ch, autoPlay = true) {
   if (!ch) return;
+  limparProximoEpisodio();
   // Escolhe o degrau inicial de buffer pela qualidade de conexão reportada
   // pelo navegador (Network Information API) em vez de sempre começar no
   // degrau mais raso e só escalar depois de já ter travado.
@@ -9740,7 +9776,7 @@ function showToast(msg, ms = 3500) {
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════
-const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", LEGENDADOS_URL:"sint_legendados_url", DEFAULTS_SEEDED:"sint_defaults_seeded" };
+const LS = { URL:"sint_url", MODE:"sint_mode", FIT:"sint_fit", PROXY:"sint_proxy", EPG_URL:"sint_epg_url", EPG_CACHE:"sint_epg_cache", VOD_URL:"sint_vod_url", LEGENDADOS_URL:"sint_legendados_url", DEFAULTS_SEEDED:"sint_defaults_seeded", PROXIMO_EP:"sintoniza_pref_proximo_ep" };
 
 // Escrita segura no localStorage: cota estourada ou armazenamento bloqueado (Safari privado, navegador cheio) nunca derruba o app.
 // Se estourar, apaga o guia de programação em cache (o maior item; o EPG segue em memória) e tenta uma vez de novo.
@@ -10594,6 +10630,7 @@ function closeMiniPlayer() {
   // Sai do PiP do navegador, se estiver ativo, antes de parar o vídeo
   try { if (document.pictureInPictureElement) document.exitPictureInPicture(); } catch (e) {}
   histPutCurrent(true); // saindo: grava o minuto exato no histórico da conta
+  limparProximoEpisodio();
   stopStream();
   setState({ selected: null, playing: false });
 }
@@ -10704,6 +10741,146 @@ function formatDownloadProgress(bytes, total) {
 
 function seasonsOf(episodes) {
   return Array.from(new Set(episodes.map(e => Number(e.season)).filter(n => n > 0))).sort((a, b) => a - b);
+}
+
+function proximoEpisodioDe(episodes, atual) {
+  if (!Array.isArray(episodes) || episodes.length === 0 || !atual) return null;
+  // Só considera episódio com id preenchido
+  const validos = episodes
+    .map((ep, idx) => ({ ep, idx }))
+    .filter(({ ep }) => ep && ep.id != null && String(ep.id).trim() !== "");
+  if (validos.length === 0) return null;
+
+  // Ordena por temporada e depois por número do episódio (empate mantém a ordem original do provedor)
+  validos.sort((a, b) => {
+    const sA = Number(a.ep.season) || 0;
+    const sB = Number(b.ep.season) || 0;
+    if (sA !== sB) return sA - sB;
+    const eA = Number(a.ep.episode_num) || 0;
+    const eB = Number(b.ep.episode_num) || 0;
+    if (eA !== eB) return eA - eB;
+    return a.idx - b.idx;
+  });
+
+  // Acha o atual primeiro pelo id (comparar como texto), depois pelo par temporada+episódio
+  let idxAtual = -1;
+  if (atual.id != null && String(atual.id).trim() !== "") {
+    const idBuscado = String(atual.id);
+    idxAtual = validos.findIndex(({ ep }) => String(ep.id) === idBuscado);
+  }
+  if (idxAtual === -1) {
+    const sAtual = Number(atual.season);
+    const eAtual = Number(atual.episode);
+    if (!Number.isNaN(sAtual) && !Number.isNaN(eAtual)) {
+      idxAtual = validos.findIndex(({ ep }) => (Number(ep.season) || 0) === sAtual && (Number(ep.episode_num) || 0) === eAtual);
+    }
+  }
+
+  if (idxAtual === -1) return null;
+
+  const epAtualItem = validos[idxAtual].ep;
+  const sAtualVal = Number(epAtualItem.season) || 0;
+
+  // Devolve o próximo da mesma temporada
+  for (let i = idxAtual + 1; i < validos.length; i++) {
+    const cand = validos[i].ep;
+    const sCand = Number(cand.season) || 0;
+    if (sCand === sAtualVal) {
+      return cand;
+    }
+  }
+
+  // Se acabou e a temporada atual for 0 ou menor ("especiais"), não puxa a seguinte
+  if (sAtualVal <= 0) return null;
+
+  // Se acabou, o primeiro da próxima temporada com número > 0
+  for (let i = idxAtual + 1; i < validos.length; i++) {
+    const cand = validos[i].ep;
+    const sCand = Number(cand.season) || 0;
+    if (sCand > sAtualVal) {
+      return cand;
+    }
+  }
+
+  return null;
+}
+
+function proximoEpSegundos(fimMs, agoraMs) {
+  if (typeof fimMs !== "number" || typeof agoraMs !== "number" || Number.isNaN(fimMs) || Number.isNaN(agoraMs)) return 0;
+  const diff = fimMs - agoraMs;
+  if (diff <= 0) return 0;
+  return Math.ceil(diff / 1000);
+}
+
+function proximoEpAtivo(storage) {
+  if (!storage) return true;
+  try {
+    const val = storage.getItem("sintoniza_pref_proximo_ep");
+    return val !== "0";
+  } catch (e) {
+    return true;
+  }
+}
+
+let _proxEp = { episodes: [], series: null, creds: null, timer: 0, fimMs: 0, proximo: null };
+
+function cancelarProximoEpisodio() {
+  if (_proxEp.timer) {
+    clearInterval(_proxEp.timer);
+    _proxEp.timer = 0;
+  }
+  _proxEp.fimMs = 0;
+  _proxEp.proximo = null;
+  const card = document.getElementById("proximo-ep-card");
+  if (card) card.classList.add("hidden");
+}
+
+function limparProximoEpisodio() {
+  cancelarProximoEpisodio();
+  _proxEp.episodes = [];
+  _proxEp.series = null;
+  _proxEp.creds = null;
+}
+
+function iniciarContagemProximoEpisodio(proximo) {
+  cancelarProximoEpisodio();
+  if (!proximo) return;
+  _proxEp.proximo = proximo;
+  _proxEp.fimMs = Date.now() + 10000;
+  const card = document.getElementById("proximo-ep-card");
+  const nomeEl = document.getElementById("proximo-ep-nome");
+  const tempoEl = document.getElementById("proximo-ep-tempo");
+  if (card && nomeEl && tempoEl) {
+    const seriesName = (_proxEp.series && (_proxEp.series.name || _proxEp.series.title)) || "";
+    nomeEl.textContent = formatEpisodeTitle(seriesName, proximo.season, proximo.episode_num);
+    tempoEl.textContent = "Começa em 10 s";
+    card.classList.remove("hidden");
+  }
+  _proxEp.timer = setInterval(() => {
+    const rest = proximoEpSegundos(_proxEp.fimMs, Date.now());
+    if (tempoEl) tempoEl.textContent = `Começa em ${rest} s`;
+    if (rest <= 0) {
+      executarProximoEpisodio();
+    }
+  }, 1000);
+}
+
+function executarProximoEpisodio() {
+  const ep = _proxEp.proximo;
+  const series = _proxEp.series;
+  const creds = _proxEp.creds;
+  const episodes = _proxEp.episodes;
+  cancelarProximoEpisodio();
+  if (!ep || !creds) return;
+  playEpisode({
+    episodeId: ep.id,
+    containerExtension: ep.container_extension || "mp4",
+    season: Number(ep.season) || 1,
+    episodeNum: ep.episode_num,
+    series,
+    creds,
+    episodes,
+  });
 }
 
 // ─── Downloads (v8): motor nativo ───
@@ -12030,7 +12207,12 @@ function fecharJogosSheet() {
 
 // Episódio: título "Série · S01E03" e capa da série (o episódio quase nunca
 // tem capa própria), e guarda a série para a Minha Lista e o histórico.
-function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds }) {
+function playEpisode({ episodeId, containerExtension, season, episodeNum, series, creds, episodes }) {
+  if (episodes) {
+    _proxEp.episodes = Array.isArray(episodes) ? episodes.slice() : [];
+    _proxEp.series = series || null;
+    _proxEp.creds = creds || null;
+  }
   const url = buildSeriesEpisodeUrl(creds, episodeId, containerExtension);
   const seriesName = (series && (series.name || series.title)) || "";
   playVodSelection(url, {
@@ -12050,6 +12232,11 @@ function playEpisode({ episodeId, containerExtension, season, episodeNum, series
 // "recentes" (que é só para canais).
 function playVodSelection(url, meta) {
   if (!url) { showToast("Não foi possível obter o link de reprodução."); return; }
+  if (!meta || !meta.castInfo || meta.castInfo.kind !== "episode") {
+    limparProximoEpisodio();
+  } else {
+    cancelarProximoEpisodio();
+  }
   closeVodModal();
   // "Continue Assistindo": retoma do ponto salvo assim que o vídeo começar.
   pendingResumeAt = meta.resumeAt > 0 ? meta.resumeAt : 0;
@@ -12092,6 +12279,8 @@ function loadSettingsForm() {
 
   document.getElementById("list-url").value  = url;
   document.getElementById("pref-fit").value  = fit;
+  const prefNextEp = document.getElementById("pref-next-ep");
+  if (prefNextEp) prefNextEp.checked = proximoEpAtivo(localStorage);
   document.getElementById("proxy-url").value = proxy;
   document.getElementById("proxy-save-indicator").style.display = proxy ? "flex" : "none";
   document.getElementById("epg-url").value = epgUrl;
@@ -14120,6 +14309,7 @@ document.addEventListener("DOMContentLoaded", () => {
       episodeNum: btn.dataset.epNum,
       series: _vodModalItem ? _vodModalItem.item : null,
       creds,
+      episodes: _vodModalEpisodes,
     });
   });
 
@@ -14181,6 +14371,17 @@ document.addEventListener("DOMContentLoaded", () => {
     setState({ playing: false });
     showPlayerArt();
     removeContinueWatching(ch.continueId);
+    if (ch.castInfo && ch.castInfo.kind === "episode" && _proxEp.episodes.length && proximoEpAtivo(localStorage)) {
+      const extra = ch.castInfo.extra || {};
+      const proximo = proximoEpisodioDe(_proxEp.episodes, {
+        id: extra.episodeId ?? ch.id,
+        season: extra.season,
+        episode: extra.episode,
+      });
+      if (proximo) {
+        iniciarContagemProximoEpisodio(proximo);
+      }
+    }
   });
   // Janela flutuante automática acompanha play/pause (depois dos listeners
   // acima, que já atualizaram userPausedVod)
@@ -14323,6 +14524,28 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("fit-select").value = e.target.value;
     document.getElementById("player-video").style.objectFit = e.target.value;
   });
+
+  const prefNextEpEl = document.getElementById("pref-next-ep");
+  if (prefNextEpEl) {
+    prefNextEpEl.addEventListener("change", e => {
+      lsSet("sintoniza_pref_proximo_ep", e.target.checked ? "1" : "0");
+    });
+  }
+
+  const assistNowBtn = document.getElementById("proximo-ep-assistir-btn");
+  if (assistNowBtn) {
+    assistNowBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      executarProximoEpisodio();
+    });
+  }
+  const cancelNextBtn = document.getElementById("proximo-ep-cancelar-btn");
+  if (cancelNextBtn) {
+    cancelNextBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      cancelarProximoEpisodio();
+    });
+  }
 
   // ── DOWNLOADS (v8): carrega a lista salva ──
   // O que estava "baixando" foi interrompido (app fechado): volta para a

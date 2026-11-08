@@ -42,6 +42,7 @@ const PURE_HELPER_NAMES = [
   "jogosEsportesDisponiveis", "jogosEsporteEfetivo", "jogosFiltrarSecoes",
   "liveRetryDelayMs", "shouldRetryLive",
   "saudeChave", "saudeListaId", "saudeValidar", "saudeEscondidos", "saudeFiltrarCanais",
+  "proximoEpisodioDe", "proximoEpSegundos", "proximoEpAtivo",
 ];
 
 function toHostRealm(value) {
