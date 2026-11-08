@@ -1,6 +1,6 @@
 {
  "v": 1,
- "gerado": 1793642916,
+ "gerado": 1794104086,
  "lista": "0f0a0108872b48",
  "canais": {
   "a beleza secreta dos animais": {
@@ -1016,7 +1016,7 @@
   "espn hd": {
    "e": "removido",
    "d": 1793642916,
-   "m": "xui-not_in_bouquet"
+   "m": "xui-invalid_stream_id"
   },
   "esquadrao relampago changeman": {
    "e": "removido",
@@ -1152,6 +1152,11 @@
    "e": "removido",
    "d": 1793642916,
    "m": "servidor-http-404"
+  },
+  "ge tv": {
+   "e": "instavel",
+   "d": 1794104086,
+   "m": "segmento-http-404"
   },
   "gigablaster": {
    "e": "removido",
@@ -2063,6 +2068,11 @@
    "d": 1793642916,
    "m": "servidor-http-404"
   },
+  "paramount+ 2": {
+   "e": "instavel",
+   "d": 1794104086,
+   "m": "segmento-http-404"
+  },
   "patrulha canina": {
    "e": "removido",
    "d": 1793642916,
@@ -2107,21 +2117,6 @@
    "e": "removido",
    "d": 1793642916,
    "m": "servidor-http-404"
-  },
-  "premiere 2 hd": {
-   "e": "removido",
-   "d": 1793642916,
-   "m": "xui-not_in_bouquet"
-  },
-  "premiere 3 hd": {
-   "e": "removido",
-   "d": 1793642916,
-   "m": "xui-not_in_bouquet"
-  },
-  "premiere 4 hd": {
-   "e": "removido",
-   "d": 1793642916,
-   "m": "xui-not_in_bouquet"
   },
   "premiere clubes 4k": {
    "e": "removido",
